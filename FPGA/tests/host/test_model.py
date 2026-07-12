@@ -5,6 +5,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from budgetcuda import Device
+from budgetcuda.compiler import HostBuffer, Layer, ModelPackage, build_tiny_conv_relu_package, upload_model
+from budgetcuda.dtypes import BufferUsage, DType, OpType
 from budgetcuda.model import Model
 
 
@@ -34,6 +36,82 @@ class ModelTest(unittest.TestCase):
         self.assertEqual(dev.writes[0][0], "input")
         self.assertEqual(dev.graph_calls, [("desc", "input", "output", 0)])
         self.assertEqual(result, dev.output)
+
+    def test_model_run_executes_mock_graph_relu(self):
+        dev = Device.mock()
+        package = ModelPackage(
+            buffers=[
+                HostBuffer("input", (4,), DType.INT8, usage=BufferUsage.ACTIVATION),
+                HostBuffer("output", (4,), DType.INT8, usage=BufferUsage.OUTPUT),
+            ],
+            layers=[Layer(OpType.ACTIVATION, input0=0, output=1)],
+            input_index=0,
+            output_index=1,
+        )
+        model = upload_model(dev, package)
+        result = model.run([-3, 0, 5, -128])
+        values = result.tolist() if hasattr(result, "tolist") else result
+        self.assertEqual(values, [0, 0, 5, 0])
+
+    def test_model_run_executes_mock_upsample_then_concat(self):
+        dev = Device.mock()
+        package = ModelPackage(
+            buffers=[
+                HostBuffer("input", (1, 1, 2, 2), DType.INT8, usage=BufferUsage.ACTIVATION),
+                HostBuffer.from_values("skip", (1, 1, 4, 4), DType.INT8, list(range(10, 26)), usage=BufferUsage.ACTIVATION),
+                HostBuffer("upsampled", (1, 1, 4, 4), DType.INT8, usage=BufferUsage.ACTIVATION),
+                HostBuffer("output", (1, 2, 4, 4), DType.INT8, usage=BufferUsage.OUTPUT),
+            ],
+            layers=[
+                Layer(OpType.UPSAMPLE, input0=0, output=2, n=1, c=1, h=2, w=2, out_h=4, out_w=4),
+                Layer(OpType.CONCAT, input0=2, input1=1, output=3, n=1, h=4, w=4, out_c=2),
+            ],
+            input_index=0,
+            output_index=3,
+        )
+        model = upload_model(dev, package)
+        result = model.run([1, 2, 3, 4])
+        values = result.reshape(-1).tolist() if hasattr(result, "reshape") else result
+        self.assertEqual(values[:16], [1, 1, 2, 2, 1, 1, 2, 2, 3, 3, 4, 4, 3, 3, 4, 4])
+        self.assertEqual(values[16:], list(range(10, 26)))
+
+    def test_model_run_executes_tiny_conv_relu_package(self):
+        dev = Device.mock()
+        package = build_tiny_conv_relu_package((1, 1, 3, 3), [[[[1, 0], [0, 1]]]], bias_values=[-10])
+        model = upload_model(dev, package)
+        result = model.run([1, 2, 3, 4, 5, 6, 7, 8, 9])
+        values = result.reshape(-1).tolist() if hasattr(result, "reshape") else result
+        self.assertEqual(values, [0, 0, 2, 4])
+
+    def test_model_run_executes_mock_requantize(self):
+        dev = Device.mock()
+        package = ModelPackage(
+            buffers=[
+                HostBuffer.from_values("input", (5,), DType.INT32, [-300, -2, 0, 8, 500], usage=BufferUsage.ACTIVATION),
+                HostBuffer.from_values("scale", (4,), DType.INT32, [1, 1, 0, 3], usage=BufferUsage.WEIGHT),
+                HostBuffer("output", (5,), DType.INT8, usage=BufferUsage.OUTPUT),
+            ],
+            layers=[Layer(OpType.REQUANTIZE, input0=0, output=2, scale=1)],
+            input_index=0,
+            output_index=2,
+        )
+        model = upload_model(dev, package)
+        result = model.run([-300, -2, 0, 8, 500])
+        values = result.tolist() if hasattr(result, "tolist") else result
+        self.assertEqual(values, [-128, 2, 3, 7, 127])
+
+    def test_model_run_executes_mock_power_of_two_leaky_relu(self):
+        dev = Device.mock()
+        package = ModelPackage(
+            buffers=[HostBuffer("input", (4,), DType.INT8), HostBuffer("output", (4,), DType.INT8, usage=BufferUsage.OUTPUT)],
+            layers=[Layer(OpType.ACTIVATION, input0=0, output=1, flags=1 | (2 << 8))],
+            input_index=0,
+            output_index=1,
+        )
+        model = upload_model(dev, package)
+        result = model.run([-8, -3, 0, 7])
+        values = result.tolist() if hasattr(result, "tolist") else result
+        self.assertEqual(values, [-2, -1, 0, 7])
 
 
 if __name__ == "__main__":

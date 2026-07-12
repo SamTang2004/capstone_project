@@ -1,6 +1,49 @@
 #include "bcuda_axi_dma.h"
 
+#include <stddef.h>
+
 #include "bcuda_status.h"
+
+static uint32_t bcuda_ceil_div_u32(uint32_t value, uint32_t divisor) {
+    return (value + divisor - 1u) / divisor;
+}
+
+static volatile uint32_t *bcuda_pl_regs(BcudaAxiDma *dma) {
+    return dma->register_base == 0 ? 0 : (volatile uint32_t *)dma->register_base;
+}
+
+static void bcuda_pl_write(BcudaAxiDma *dma, uint32_t offset, uint32_t value) {
+    volatile uint32_t *regs = bcuda_pl_regs(dma);
+    if (regs != 0) {
+        regs[offset / sizeof(uint32_t)] = value;
+    }
+}
+
+static uint32_t bcuda_pl_read(BcudaAxiDma *dma, uint32_t offset) {
+    volatile uint32_t *regs = bcuda_pl_regs(dma);
+    return regs == 0 ? 0 : regs[offset / sizeof(uint32_t)];
+}
+
+static uint32_t bcuda_stride_bytes(const BcudaBuffer *buffer, uint32_t fallback) {
+    if (buffer != 0 && buffer->rank >= 2 && buffer->shape[1] != 0) {
+        uint32_t element_bytes = buffer->dtype == BC_DTYPE_INT32 ? 4u : 1u;
+        return buffer->shape[1] * element_bytes;
+    }
+    return fallback;
+}
+
+static int bcuda_validate_final_tile_gemm(const BcudaGemmDesc *desc, const BcudaBuffer *A, const BcudaBuffer *B, const BcudaBuffer *C) {
+    if (desc->M != BCUDA_PL_TILE_DIM || desc->N != BCUDA_PL_TILE_DIM || desc->K != BCUDA_PL_TILE_DIM) {
+        return BC_STATUS_SHAPE_MISMATCH;
+    }
+    if (A->dtype != BC_DTYPE_INT8 || B->dtype != BC_DTYPE_INT8 || C->dtype != BC_DTYPE_INT32) {
+        return BC_STATUS_UNSUPPORTED_DTYPE;
+    }
+    if (A->size_bytes < BCUDA_PL_TILE_ELEMENTS || B->size_bytes < BCUDA_PL_TILE_ELEMENTS || C->size_bytes < BCUDA_PL_TILE_ELEMENTS * sizeof(uint32_t)) {
+        return BC_STATUS_SHAPE_MISMATCH;
+    }
+    return BC_STATUS_OK;
+}
 
 void bcuda_axi_dma_init(BcudaAxiDma *dma, uintptr_t register_base, uint32_t timeout_cycles) {
     if (dma == 0) {
@@ -9,6 +52,19 @@ void bcuda_axi_dma_init(BcudaAxiDma *dma, uintptr_t register_base, uint32_t time
     dma->register_base = register_base;
     dma->timeout_cycles = timeout_cycles;
     dma->last_control_word = 0;
+    dma->last_source_address = 0;
+    dma->last_transfer_bytes = 0;
+    dma->last_tile_size = 0;
+    dma->last_array_count = 0;
+    dma->last_m_tiles = 0;
+    dma->last_n_tiles = 0;
+    dma->last_k_tiles = 0;
+    dma->last_n_groups = 0;
+    dma->last_schedule_steps = 0;
+    dma->last_accumulator_entries = 0;
+    dma->last_memory_base = 0;
+    dma->last_memory_bytes = 0;
+    dma->last_memory_io_flags = 0;
 }
 
 int bcuda_axi_dma_submit_gemm(BcudaAxiDma *dma, const BcudaGemmDesc *desc, BcudaBuffer *A, BcudaBuffer *B, BcudaBuffer *C) {
@@ -18,12 +74,175 @@ int bcuda_axi_dma_submit_gemm(BcudaAxiDma *dma, const BcudaGemmDesc *desc, Bcuda
     if (desc->A_dtype != BC_DTYPE_INT8 || desc->B_dtype != BC_DTYPE_INT8 || desc->C_dtype != BC_DTYPE_INT32) {
         return BC_STATUS_UNSUPPORTED_DTYPE;
     }
+    int status = bcuda_validate_final_tile_gemm(desc, A, B, C);
+    if (status != BC_STATUS_OK) {
+        return status;
+    }
 
-    dma->last_control_word = 0x1u;
+    uint32_t a_stride = bcuda_stride_bytes(A, desc->K);
+    uint32_t b_stride = bcuda_stride_bytes(B, desc->N);
+    uint32_t c_stride = bcuda_stride_bytes(C, desc->N * sizeof(uint32_t));
+
+    if (dma->register_base != 0 &&
+        (A->physical_address > 0xffffffffu || B->physical_address > 0xffffffffu || C->physical_address > 0xffffffffu)) {
+        return BC_STATUS_SHAPE_MISMATCH;
+    }
+
+    dma->last_source_address = A->physical_address;
+    dma->last_transfer_bytes = BCUDA_PL_TILE_ELEMENTS + BCUDA_PL_TILE_ELEMENTS + BCUDA_PL_TILE_ELEMENTS * sizeof(uint32_t);
+    dma->last_tile_size = BCUDA_PL_TILE_DIM;
+    dma->last_array_count = BCUDA_PL_ARRAY_COUNT;
+    dma->last_control_word = BCUDA_PL_CONTROL_START;
+
+    if (dma->register_base != 0) {
+        bcuda_pl_write(dma, BCUDA_PL_REG_CONTROL, 0u);
+        bcuda_pl_write(dma, BCUDA_PL_REG_A_BASE, (uint32_t)A->physical_address);
+        bcuda_pl_write(dma, BCUDA_PL_REG_B_BASE, (uint32_t)B->physical_address);
+        bcuda_pl_write(dma, BCUDA_PL_REG_C_BASE, (uint32_t)C->physical_address);
+        bcuda_pl_write(dma, BCUDA_PL_REG_A_STRIDE, a_stride);
+        bcuda_pl_write(dma, BCUDA_PL_REG_B_STRIDE, b_stride);
+        bcuda_pl_write(dma, BCUDA_PL_REG_C_STRIDE, c_stride);
+        bcuda_pl_write(dma, BCUDA_PL_REG_M, desc->M);
+        bcuda_pl_write(dma, BCUDA_PL_REG_N, desc->N);
+        bcuda_pl_write(dma, BCUDA_PL_REG_K, desc->K);
+        bcuda_pl_write(dma, BCUDA_PL_REG_TILE_SIZE, BCUDA_PL_TILE_DIM);
+        bcuda_pl_write(dma, BCUDA_PL_REG_ARRAY_COUNT, BCUDA_PL_ARRAY_COUNT);
+        bcuda_pl_write(dma, BCUDA_PL_REG_CONTROL, BCUDA_PL_CONTROL_START);
+    }
+    return BC_STATUS_OK;
+}
+
+int bcuda_axi_dma_submit_requantize(BcudaAxiDma *dma, const BcudaRequantDesc *desc, BcudaBuffer *input, BcudaBuffer *output) {
+    if (dma == 0 || desc == 0 || input == 0 || output == 0) {
+        return BC_STATUS_GENERAL_ERROR;
+    }
+    if (input->dtype != BC_DTYPE_INT32 || output->dtype != BC_DTYPE_INT8) {
+        return BC_STATUS_UNSUPPORTED_DTYPE;
+    }
+    if (desc->element_count == 0 || desc->right_shift > 31u || desc->input_zero_point != 0 ||
+        (uint64_t)desc->element_count * sizeof(int32_t) > input->size_bytes || desc->element_count > output->size_bytes) {
+        return BC_STATUS_SHAPE_MISMATCH;
+    }
+    if (dma->register_base != 0 && (input->physical_address > 0xffffffffu || output->physical_address > 0xffffffffu)) {
+        return BC_STATUS_SHAPE_MISMATCH;
+    }
+
+    dma->last_source_address = input->physical_address;
+    dma->last_transfer_bytes = desc->element_count * (uint32_t)(sizeof(int32_t) + sizeof(int8_t));
+    dma->last_control_word = BCUDA_PL_CONTROL_START | BCUDA_PL_CONTROL_REQUANTIZE;
+    if (dma->register_base != 0) {
+        bcuda_pl_write(dma, BCUDA_PL_REG_CONTROL, 0u);
+        bcuda_pl_write(dma, BCUDA_PL_REG_A_BASE, (uint32_t)input->physical_address);
+        bcuda_pl_write(dma, BCUDA_PL_REG_C_BASE, (uint32_t)output->physical_address);
+        bcuda_pl_write(dma, BCUDA_PL_REG_M, desc->element_count);
+        bcuda_pl_write(dma, BCUDA_PL_REG_RQ_MULTIPLIER, (uint32_t)desc->multiplier);
+        bcuda_pl_write(dma, BCUDA_PL_REG_RQ_RIGHT_SHIFT, desc->right_shift);
+        bcuda_pl_write(dma, BCUDA_PL_REG_RQ_OUTPUT_ZERO_POINT, (uint32_t)desc->output_zero_point);
+        bcuda_pl_write(dma, BCUDA_PL_REG_CONTROL, dma->last_control_word);
+    }
+    return BC_STATUS_OK;
+}
+
+int bcuda_axi_dma_submit_tile_load(BcudaAxiDma *dma, const BcudaTileLoadDesc *desc, BcudaBuffer *source) {
+    if (dma == 0 || desc == 0 || source == 0) {
+        return BC_STATUS_GENERAL_ERROR;
+    }
+    if (desc->dtype != BC_DTYPE_INT8 || source->dtype != BC_DTYPE_INT8) {
+        return BC_STATUS_UNSUPPORTED_DTYPE;
+    }
+    if (desc->tile_rows == 0 || desc->tile_cols == 0 || desc->tile_rows > 16 || desc->tile_cols > 16) {
+        return BC_STATUS_SHAPE_MISMATCH;
+    }
+    if (desc->row_stride_bytes < desc->tile_cols) {
+        return BC_STATUS_SHAPE_MISMATCH;
+    }
+
+    uint64_t last_row_offset = desc->base_offset_bytes + (uint64_t)(desc->tile_rows - 1u) * desc->row_stride_bytes;
+    uint64_t final_byte = last_row_offset + desc->tile_cols;
+    if (final_byte > source->size_bytes) {
+        return BC_STATUS_SHAPE_MISMATCH;
+    }
+
+    dma->last_source_address = source->physical_address + (uintptr_t)desc->base_offset_bytes;
+    dma->last_transfer_bytes = desc->tile_rows * desc->tile_cols;
+    dma->last_control_word = 0x2u;
+    dma->last_control_word ^= (uint32_t)(dma->last_source_address & 0xffffffffu);
+    dma->last_control_word ^= desc->row_stride_bytes;
+    dma->last_control_word ^= (desc->tile_rows << 16) | desc->tile_cols;
+    dma->last_control_word ^= (desc->matrix_select & 1u) << 31;
+    dma->last_control_word ^= desc->flags;
+    return BC_STATUS_OK;
+}
+
+int bcuda_axi_dma_submit_tiled_gemm(BcudaAxiDma *dma, const BcudaGemmDesc *desc, const BcudaTiledGemmConfig *config, BcudaBuffer *A, BcudaBuffer *B, BcudaBuffer *C) {
+    if (dma == 0 || desc == 0 || config == 0 || A == 0 || B == 0 || C == 0) {
+        return BC_STATUS_GENERAL_ERROR;
+    }
+    if (desc->A_dtype != BC_DTYPE_INT8 || desc->B_dtype != BC_DTYPE_INT8 || desc->C_dtype != BC_DTYPE_INT32 ||
+        A->dtype != BC_DTYPE_INT8 || B->dtype != BC_DTYPE_INT8 || C->dtype != BC_DTYPE_INT32) {
+        return BC_STATUS_UNSUPPORTED_DTYPE;
+    }
+    if (desc->M == 0 || desc->N == 0 || desc->K == 0 || config->tile_size == 0 || config->tile_size > 16 || config->array_count == 0 || config->array_count > BCUDA_PL_ARRAY_COUNT) {
+        return BC_STATUS_SHAPE_MISMATCH;
+    }
+
+    uint32_t m_tiles = bcuda_ceil_div_u32(desc->M, config->tile_size);
+    uint32_t n_tiles = bcuda_ceil_div_u32(desc->N, config->tile_size);
+    uint32_t k_tiles = bcuda_ceil_div_u32(desc->K, config->tile_size);
+    uint32_t n_groups = bcuda_ceil_div_u32(n_tiles, config->array_count);
+    uint32_t schedule_steps = m_tiles * n_groups * k_tiles;
+
+    dma->last_tile_size = config->tile_size;
+    dma->last_array_count = config->array_count;
+    dma->last_m_tiles = m_tiles;
+    dma->last_n_tiles = n_tiles;
+    dma->last_k_tiles = k_tiles;
+    dma->last_n_groups = n_groups;
+    dma->last_schedule_steps = schedule_steps;
+    dma->last_source_address = A->physical_address;
+    dma->last_transfer_bytes = (uint32_t)(A->size_bytes + B->size_bytes + C->size_bytes);
+    dma->last_control_word = 0x4u;
     dma->last_control_word ^= (uint32_t)(A->physical_address & 0xffffffffu);
     dma->last_control_word ^= (uint32_t)(B->physical_address & 0xffffffffu);
     dma->last_control_word ^= (uint32_t)(C->physical_address & 0xffffffffu);
-    dma->last_control_word ^= desc->M ^ desc->N ^ desc->K ^ desc->flags;
+    dma->last_control_word ^= desc->M ^ desc->N ^ desc->K;
+    dma->last_control_word ^= config->tile_size << 8;
+    dma->last_control_word ^= config->array_count << 16;
+    dma->last_control_word ^= config->flags;
+    return BC_STATUS_OK;
+}
+
+int bcuda_axi_dma_configure_accumulator(BcudaAxiDma *dma, const BcudaAccumulatorConfig *config) {
+    if (dma == 0 || config == 0) {
+        return BC_STATUS_GENERAL_ERROR;
+    }
+    if (config->tile_entries == 0 || config->tile_entries > 256) {
+        return BC_STATUS_SHAPE_MISMATCH;
+    }
+
+    dma->last_accumulator_entries = config->tile_entries;
+    dma->last_control_word = 0x8u;
+    dma->last_control_word ^= config->tile_entries;
+    dma->last_control_word ^= (config->clear_on_first_pass & 1u) << 16;
+    dma->last_control_word ^= config->flags;
+    return BC_STATUS_OK;
+}
+
+int bcuda_axi_dma_configure_memory_io(BcudaAxiDma *dma, const BcudaMemoryIoConfig *config) {
+    if (dma == 0 || config == 0) {
+        return BC_STATUS_GENERAL_ERROR;
+    }
+    if (config->memory_base == 0 || config->memory_bytes == 0 || (config->memory_base & 0x3u) != 0 || (config->memory_bytes & 0x3u) != 0) {
+        return BC_STATUS_SHAPE_MISMATCH;
+    }
+
+    dma->last_memory_base = (uintptr_t)config->memory_base;
+    dma->last_memory_bytes = config->memory_bytes;
+    dma->last_memory_io_flags = config->flags;
+    dma->last_control_word = 0x20u;
+    dma->last_control_word ^= (uint32_t)(config->memory_base & 0xffffffffu);
+    dma->last_control_word ^= config->memory_bytes;
+    dma->last_control_word ^= config->flags;
     return BC_STATUS_OK;
 }
 
@@ -31,5 +250,20 @@ int bcuda_axi_dma_poll_done(BcudaAxiDma *dma) {
     if (dma == 0) {
         return BC_STATUS_GENERAL_ERROR;
     }
-    return dma->timeout_cycles == 0 ? BC_STATUS_EXECUTION_FAILED : BC_STATUS_OK;
+    if (dma->register_base == 0) {
+        return dma->timeout_cycles == 0 ? BC_STATUS_EXECUTION_FAILED : BC_STATUS_OK;
+    }
+
+    for (uint32_t cycle = 0; cycle < dma->timeout_cycles; ++cycle) {
+        uint32_t status = bcuda_pl_read(dma, BCUDA_PL_REG_STATUS);
+        if ((status & BCUDA_PL_STATUS_ERROR) != 0u) {
+            bcuda_pl_write(dma, BCUDA_PL_REG_CONTROL, 0u);
+            return BC_STATUS_EXECUTION_FAILED;
+        }
+        if ((status & BCUDA_PL_STATUS_DONE) != 0u) {
+            bcuda_pl_write(dma, BCUDA_PL_REG_CONTROL, 0u);
+            return BC_STATUS_OK;
+        }
+    }
+    return BC_STATUS_EXECUTION_FAILED;
 }

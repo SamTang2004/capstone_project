@@ -11,9 +11,11 @@ from budgetcuda.compiler import (
     MODEL_DESC_STRUCT,
     MODEL_MAGIC,
     HostBuffer,
+    GraphBuilder,
     Layer,
     ModelPackage,
     build_mlp_package,
+    build_tiny_conv_relu_package,
     upload_model,
 )
 from budgetcuda.dtypes import BufferUsage, DType, OpType
@@ -43,6 +45,36 @@ class CompilerTest(unittest.TestCase):
         self.assertEqual(package.buffers[1].usage, BufferUsage.WEIGHT)
         self.assertEqual(package.buffers[2].dtype, DType.INT32)
         self.assertEqual(package.layers[0].op_type, OpType.GEMM)
+
+    def test_graph_builder_creates_layer_sequence(self):
+        graph = GraphBuilder("demo")
+        inp = graph.add_buffer("input", (1, 1, 2, 2), DType.INT8, usage=BufferUsage.ACTIVATION)
+        up = graph.add_buffer("up", (1, 1, 4, 4), DType.INT8, usage=BufferUsage.ACTIVATION)
+        skip = graph.add_buffer("skip", (1, 1, 4, 4), DType.INT8, usage=BufferUsage.ACTIVATION)
+        out = graph.add_buffer("out", (1, 2, 4, 4), DType.INT8, usage=BufferUsage.OUTPUT)
+        graph.upsample(inp, up, n=1, c=1, h=2, w=2, out_h=4, out_w=4)
+        graph.concat_channels(up, skip, out, n=1, h=4, w=4, out_c=2)
+        package = graph.package(inp, out)
+        self.assertEqual(package.input_index, inp)
+        self.assertEqual(package.output_index, out)
+        self.assertEqual([layer.op_type for layer in package.layers], [OpType.UPSAMPLE, OpType.CONCAT])
+
+    def test_graph_builder_creates_requantize_layer_and_parameters(self):
+        graph = GraphBuilder("quant")
+        inp = graph.add_buffer("input", (4,), DType.INT32)
+        params = graph.requantize_params("scale", multiplier=3, right_shift=1, output_zero_point=-2)
+        out = graph.add_buffer("output", (4,), DType.INT8, usage=BufferUsage.OUTPUT)
+        graph.requantize(inp, out, params)
+        package = graph.package(inp, out)
+        self.assertEqual(package.layers[0].op_type, OpType.REQUANTIZE)
+        self.assertEqual(package.buffers[params].data, (3).to_bytes(4, "little", signed=True) + (1).to_bytes(4, "little") + bytes(4) + (-2).to_bytes(4, "little", signed=True))
+
+    def test_build_tiny_conv_relu_package_uses_supported_ops(self):
+        package = build_tiny_conv_relu_package((1, 1, 3, 3), [[[[1, 0], [0, 1]]]], bias_values=[-10])
+        self.assertEqual(package.buffers[0].shape, (1, 1, 3, 3))
+        self.assertEqual(package.buffers[1].usage, BufferUsage.WEIGHT)
+        self.assertEqual(package.buffers[package.output_index].dtype, DType.INT32)
+        self.assertEqual([layer.op_type for layer in package.layers], [OpType.CONV2D_GEMM, OpType.ACTIVATION])
 
     def test_upload_model_allocates_buffers_and_descriptor_on_device(self):
         dev = Device.mock()

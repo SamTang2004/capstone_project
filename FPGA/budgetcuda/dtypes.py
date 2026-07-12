@@ -57,6 +57,7 @@ class OpType(IntEnum):
     RESHAPE = 8
     DETECT_DECODE = 9
     NMS = 10
+    REQUANTIZE = 11
 
 
 DTYPE_ALIASES = {

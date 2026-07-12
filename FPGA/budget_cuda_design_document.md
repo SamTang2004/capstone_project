@@ -625,8 +625,47 @@ typedef struct {
     uint32_t workspace_buffer;
 
     uint32_t flags;
-    uint32_t reserved;
+    uint32_t reserved0;
+    uint32_t reserved1;
 } BcudaModelDesc;
+```
+
+Model descriptor byte format rules:
+
+```text
+- All fields are little-endian unsigned 32-bit integers.
+- BcudaModelDesc is 56 bytes.
+- magic must be 0x444D4342 ("BCMD" in little-endian memory).
+- version must be 1.
+- buffer_table_offset points to an array of BcudaModelBufferDesc records.
+- layer_desc_offset points to an array of BcudaLayerDesc records.
+- input_buffer, output_buffer, activation_arena_a, activation_arena_b, and
+  workspace_buffer are buffer-table indexes, not host-visible physical
+  addresses.
+```
+
+Model buffer descriptor:
+
+```c
+typedef struct {
+    uint32_t buffer_id;       // Device buffer handle allocated by ALLOC.
+    uint32_t dtype;           // BcudaDtype.
+    uint32_t layout;          // BcudaLayout.
+    uint32_t usage;           // BcudaBufferUsage.
+    uint32_t size_bytes;
+    uint32_t rank;
+    uint32_t dim0;
+    uint32_t dim1;
+} BcudaModelBufferDesc;
+```
+
+Buffer descriptor byte format rules:
+
+```text
+- BcudaModelBufferDesc is 32 bytes.
+- The current MVP stores dim0 and dim1 because executable PL GEMM is 2D.
+- Higher-rank CNN tensors are represented by the layer descriptor fields
+  until the descriptor format is extended with dim2/dim3.
 ```
 
 Layer descriptor:
@@ -662,7 +701,62 @@ typedef struct {
 
     uint32_t groups;
     uint32_t flags;
+    uint32_t reserved;
 } BcudaLayerDesc;
+```
+
+Layer descriptor byte format rules:
+
+```text
+- BcudaLayerDesc is 96 bytes.
+- input0, input1, input2, output, weight, bias, and scale are buffer-table
+  indexes.
+- For BC_OP_GEMM:
+    A_buffer = buffer_table[input0].buffer_id
+    B_buffer = buffer_table[weight].buffer_id
+    C_buffer = buffer_table[output].buffer_id
+    M = n
+    N = out_c
+    K = c
+    A/B dtype = INT8
+    C dtype = INT32
+    layout = ROW_MAJOR
+- For BC_OP_CONV2D_GEMM in the MVP firmware path:
+    input0 is INT8 NCHW activation
+    weight is INT8 OIHW weights
+    optional bias is INT32 with out_c entries
+    output is INT32 NCHW activation
+    n,c,h,w,out_c,out_h,out_w,kernel_h,kernel_w,stride_h,stride_w,pad_h,pad_w
+    define the convolution geometry
+    groups must be 1
+    the PS fallback computes the convolution directly until tiled im2col/GEMM
+    lowering is implemented
+- For BC_OP_ACTIVATION:
+    input0 and output must have the same dtype and byte count
+    MVP flags=0 means ReLU
+    supported dtypes are INT8 and INT32
+- For BC_OP_POOL:
+    MVP implements INT8 NCHW max-pooling
+    n,c,h,w,out_h,out_w,kernel_h,kernel_w,stride_h,stride_w,pad_h,pad_w
+    define the pooling geometry
+- For BC_OP_UPSAMPLE:
+    MVP implements nearest-neighbor NCHW resize
+    input0 and output must have the same dtype
+    n,c,h,w describe the input tensor
+    n,c,out_h,out_w describe the output tensor
+    supported dtypes are INT8, INT16, and INT32
+- For BC_OP_CONCAT:
+    MVP implements channel-axis NCHW concat for one to three inputs
+    input0 is required; input1 and input2 are optional when nonzero
+    output dtype must match all input dtypes
+    n,h,w define the shared spatial geometry
+    out_c is the total output channel count
+    each input channel count is inferred from its buffer byte size
+- For BC_OP_RESHAPE:
+    input0 and output must have equal byte size
+    the operation is a copy unless input and output are the same buffer
+- For unsupported op_type values, firmware must return
+  BC_STATUS_INVALID_COMMAND until that op's semantics are implemented.
 ```
 
 ---
@@ -1833,6 +1927,64 @@ YOLO support emerges from graph lowering.
 
 ### 9.2 Convolution Lowering
 
+Current MVP deployment subset:
+
+```text
+The host compiler can build Budget-CUDA model packages from graph-builder
+calls that target the cached IL descriptor format. The supported deployment
+subset is:
+
+- INT8 input tensors
+- INT8 resident weights
+- INT32 Conv2D/GEMM outputs
+- INT32-to-INT8 scalar fixed-point requantization
+- Conv2D with groups=1
+- ReLU on INT8 or INT32
+- ReLU or power-of-two Leaky ReLU on 16 unfolded INT8 lanes in PL
+- INT8 maxpool
+- nearest-neighbor upsample
+- channel-axis NCHW concat
+- reshape/copy
+
+The current helper build_tiny_conv_relu_package() emits:
+
+input INT8 NCHW
+    -> BC_OP_CONV2D_GEMM
+    -> INT32 activation
+    -> BC_OP_ACTIVATION / ReLU
+    -> INT32 output
+
+`BC_OP_REQUANTIZE` converts an INT32 activation to INT8 with a four-INT32
+parameter buffer: `[multiplier, right_shift, input_zero_point,
+output_zero_point]`. Its defined result is:
+
+```text
+sat_int8((((x - input_zero_point) * multiplier) >>> right_shift) + output_zero_point)
+```
+
+The production PL path implements the symmetric-accumulator case
+`input_zero_point = 0`. It streams from DDR and packs four INT8 results per
+DDR write, so a multi-layer INT8 CNN can feed its next Conv2D/GEMM without a
+PS data round trip. Per-channel requantization is the next optimization; the
+current descriptor and operator semantics deliberately remain per-tensor.
+
+This is sufficient for end-to-end model package upload, cached descriptor
+execution, correctness tests, and sequential INT8 CNN blocks.
+
+### 9.2.1 Array Workload Splitting and Activation
+
+The scalable GEMM controller splits `N` into groups of up to eight adjacent 16-column
+tiles. Each group shares one loaded A tile, loads one B tile into each active
+array, computes in parallel, and writes each C tile through the shared DDR
+path. For a final partial group, `active_arrays = ceil(remaining_N / 16)`.
+
+`BC_OP_ACTIVATION` uses `flags[0]` to select Leaky ReLU and `flags[10:8]` as
+the leak right shift. The PL activation vector unfolds 16 INT8 elements into
+lanes and evaluates all lanes combinationally: positive values pass through;
+negative values select `0` for ReLU or `x >>> shift` for Leaky ReLU. No
+multiplier is required for leaks of `2^-N`.
+```
+
 A convolution:
 
 ```text
@@ -1855,7 +2007,7 @@ Execution:
 ```text
 PS: generate X_col using im2col or tiled-im2col
 PL: execute GEMM
-PS/PL: bias, requantization, activation
+PL: requantization; PS or PL: bias and activation according to the graph plan
 ```
 
 ### 9.3 YOLO-Like Graph Example
@@ -2221,7 +2373,7 @@ Mitigation:
 
 ## 16. Final Design Statement
 
-Budget-CUDA is structured as a three-part accelerator stack. The host computer provides a Python API, quantization tools, model conversion, graph serialization, and a protocol client. The Zynq PS acts as the local device runtime: it parses the five-command protocol, manages Zynq DRAM using logical buffer handles, stores quantized model weights and descriptors, executes model graphs, runs non-GEMM operators in software, and invokes the PL for GEMM operations. The Zynq PL implements a fixed-function INT8 GEMM accelerator using eight 16x16 systolic arrays with BRAM/SRAM tile caches and INT32 accumulation.
+Budget-CUDA is structured as a three-part accelerator stack. The host computer provides a Python API, quantization tools, model conversion, graph serialization, and a protocol client. The Zynq PS acts as the local device runtime: it parses the five-command protocol, manages Zynq DRAM using logical buffer handles, stores quantized model weights and descriptors, executes model graphs, runs non-GEMM operators in software, and invokes the PL for GEMM operations. The PYNQ-Z2 deployment bitstream implements one 16x16 INT8 systolic array with tile caches and INT32 accumulation. The source-level cluster remains scalable to eight arrays for a larger FPGA target; synthesis showed that eight full arrays do not fit the PYNQ-Z2 Zynq-7020 fabric.
 
 The external protocol remains simple and generic:
 

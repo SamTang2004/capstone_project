@@ -6,6 +6,11 @@
 
 #define BCUDA_MAGIC 0x42435544u
 #define BCUDA_VERSION 1u
+#define BCUDA_MODEL_MAGIC 0x444D4342u
+#define BCUDA_MODEL_VERSION 1u
+#define BCUDA_ACTIVATION_LEAKY_RELU 0x00000001u
+#define BCUDA_ACTIVATION_LEAKY_SHIFT_SHIFT 8u
+#define BCUDA_ACTIVATION_LEAKY_SHIFT_MASK 0x00000700u
 
 enum {
     BC_CMD_ALLOC = 1,
@@ -38,7 +43,15 @@ enum {
 enum {
     BC_OP_GEMM = 1,
     BC_OP_GRAPH = 2,
-    BC_OP_CONV2D_GEMM = 3
+    BC_OP_CONV2D_GEMM = 3,
+    BC_OP_ACTIVATION = 4,
+    BC_OP_POOL = 5,
+    BC_OP_UPSAMPLE = 6,
+    BC_OP_CONCAT = 7,
+    BC_OP_RESHAPE = 8,
+    BC_OP_DETECT_DECODE = 9,
+    BC_OP_NMS = 10,
+    BC_OP_REQUANTIZE = 11
 };
 
 #pragma pack(push, 1)
@@ -163,6 +176,57 @@ typedef struct {
     uint32_t reserved;
 } BcudaGemmDesc;
 
+/* INT32 accumulator to INT8 activation conversion.  right_shift is 0..31. */
+typedef struct {
+    uint32_t input_buffer;
+    uint32_t output_buffer;
+    uint32_t element_count;
+    int32_t multiplier;
+    uint32_t right_shift;
+    int32_t input_zero_point;
+    int32_t output_zero_point;
+    uint32_t flags;
+} BcudaRequantDesc;
+
+/* Contents of the INT32 scale buffer referenced by a REQUANTIZE layer. */
+typedef struct {
+    int32_t multiplier;
+    uint32_t right_shift;
+    int32_t input_zero_point;
+    int32_t output_zero_point;
+} BcudaRequantParams;
+
+typedef struct {
+    uint32_t buffer_id;
+    uint32_t matrix_select;
+    uint64_t base_offset_bytes;
+    uint32_t row_stride_bytes;
+    uint32_t tile_rows;
+    uint32_t tile_cols;
+    uint32_t dtype;
+    uint32_t flags;
+} BcudaTileLoadDesc;
+
+typedef struct {
+    uint32_t tile_size;
+    uint32_t array_count;
+    uint32_t flags;
+    uint32_t reserved;
+} BcudaTiledGemmConfig;
+
+typedef struct {
+    uint32_t tile_entries;
+    uint32_t clear_on_first_pass;
+    uint32_t flags;
+    uint32_t reserved;
+} BcudaAccumulatorConfig;
+
+typedef struct {
+    uint64_t memory_base;
+    uint32_t memory_bytes;
+    uint32_t flags;
+} BcudaMemoryIoConfig;
+
 typedef struct {
     uint32_t model_desc_buffer;
     uint32_t input_buffer;
@@ -170,6 +234,61 @@ typedef struct {
     uint32_t flags;
     uint32_t reserved;
 } BcudaGraphExecDesc;
+
+typedef struct {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t num_layers;
+    uint32_t layer_desc_offset;
+    uint32_t num_buffers;
+    uint32_t buffer_table_offset;
+    uint32_t input_buffer;
+    uint32_t output_buffer;
+    uint32_t activation_arena_a;
+    uint32_t activation_arena_b;
+    uint32_t workspace_buffer;
+    uint32_t flags;
+    uint32_t reserved0;
+    uint32_t reserved1;
+} BcudaModelDesc;
+
+typedef struct {
+    uint32_t buffer_id;
+    uint32_t dtype;
+    uint32_t layout;
+    uint32_t usage;
+    uint32_t size_bytes;
+    uint32_t rank;
+    uint32_t dim0;
+    uint32_t dim1;
+} BcudaModelBufferDesc;
+
+typedef struct {
+    uint32_t op_type;
+    uint32_t input0;
+    uint32_t input1;
+    uint32_t input2;
+    uint32_t output;
+    uint32_t weight;
+    uint32_t bias;
+    uint32_t scale;
+    uint32_t n;
+    uint32_t c;
+    uint32_t h;
+    uint32_t w;
+    uint32_t out_c;
+    uint32_t out_h;
+    uint32_t out_w;
+    uint32_t kernel_h;
+    uint32_t kernel_w;
+    uint32_t stride_h;
+    uint32_t stride_w;
+    uint32_t pad_h;
+    uint32_t pad_w;
+    uint32_t groups;
+    uint32_t flags;
+    uint32_t reserved;
+} BcudaLayerDesc;
 #pragma pack(pop)
 
 int bcuda_validate_header(const BcudaHeader *header, uint32_t expected_command);

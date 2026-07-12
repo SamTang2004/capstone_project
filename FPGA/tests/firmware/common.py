@@ -26,6 +26,21 @@ BC_DTYPE_INT32 = 3
 BC_LAYOUT_ROW_MAJOR = 1
 BC_USAGE_ACTIVATION = 2
 BC_USAGE_OUTPUT = 4
+BC_USAGE_DESCRIPTOR = 5
+
+BCUDA_MODEL_MAGIC = 0x444D4342
+BCUDA_MODEL_VERSION = 1
+BC_OP_GEMM = 1
+BC_OP_GRAPH = 2
+BC_OP_CONV2D_GEMM = 3
+BC_OP_ACTIVATION = 4
+BC_OP_POOL = 5
+BC_OP_UPSAMPLE = 6
+BC_OP_CONCAT = 7
+BC_OP_RESHAPE = 8
+BC_OP_DETECT_DECODE = 9
+BC_OP_NMS = 10
+BC_OP_REQUANTIZE = 11
 
 
 class BcudaHeader(ctypes.Structure):
@@ -106,6 +121,49 @@ class BcudaGemmDesc(ctypes.Structure):
     ]
 
 
+class BcudaTileLoadDesc(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [
+        ("buffer_id", ctypes.c_uint32),
+        ("matrix_select", ctypes.c_uint32),
+        ("base_offset_bytes", ctypes.c_uint64),
+        ("row_stride_bytes", ctypes.c_uint32),
+        ("tile_rows", ctypes.c_uint32),
+        ("tile_cols", ctypes.c_uint32),
+        ("dtype", ctypes.c_uint32),
+        ("flags", ctypes.c_uint32),
+    ]
+
+
+class BcudaTiledGemmConfig(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [
+        ("tile_size", ctypes.c_uint32),
+        ("array_count", ctypes.c_uint32),
+        ("flags", ctypes.c_uint32),
+        ("reserved", ctypes.c_uint32),
+    ]
+
+
+class BcudaAccumulatorConfig(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [
+        ("tile_entries", ctypes.c_uint32),
+        ("clear_on_first_pass", ctypes.c_uint32),
+        ("flags", ctypes.c_uint32),
+        ("reserved", ctypes.c_uint32),
+    ]
+
+
+class BcudaMemoryIoConfig(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [
+        ("memory_base", ctypes.c_uint64),
+        ("memory_bytes", ctypes.c_uint32),
+        ("flags", ctypes.c_uint32),
+    ]
+
+
 class BcudaGraphExecDesc(ctypes.Structure):
     _pack_ = 1
     _fields_ = [
@@ -117,11 +175,88 @@ class BcudaGraphExecDesc(ctypes.Structure):
     ]
 
 
+class BcudaModelDesc(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [
+        ("magic", ctypes.c_uint32),
+        ("version", ctypes.c_uint32),
+        ("num_layers", ctypes.c_uint32),
+        ("layer_desc_offset", ctypes.c_uint32),
+        ("num_buffers", ctypes.c_uint32),
+        ("buffer_table_offset", ctypes.c_uint32),
+        ("input_buffer", ctypes.c_uint32),
+        ("output_buffer", ctypes.c_uint32),
+        ("activation_arena_a", ctypes.c_uint32),
+        ("activation_arena_b", ctypes.c_uint32),
+        ("workspace_buffer", ctypes.c_uint32),
+        ("flags", ctypes.c_uint32),
+        ("reserved0", ctypes.c_uint32),
+        ("reserved1", ctypes.c_uint32),
+    ]
+
+
+class BcudaModelBufferDesc(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [
+        ("buffer_id", ctypes.c_uint32),
+        ("dtype", ctypes.c_uint32),
+        ("layout", ctypes.c_uint32),
+        ("usage", ctypes.c_uint32),
+        ("size_bytes", ctypes.c_uint32),
+        ("rank", ctypes.c_uint32),
+        ("dim0", ctypes.c_uint32),
+        ("dim1", ctypes.c_uint32),
+    ]
+
+
+class BcudaLayerDesc(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [
+        ("op_type", ctypes.c_uint32),
+        ("input0", ctypes.c_uint32),
+        ("input1", ctypes.c_uint32),
+        ("input2", ctypes.c_uint32),
+        ("output", ctypes.c_uint32),
+        ("weight", ctypes.c_uint32),
+        ("bias", ctypes.c_uint32),
+        ("scale", ctypes.c_uint32),
+        ("n", ctypes.c_uint32),
+        ("c", ctypes.c_uint32),
+        ("h", ctypes.c_uint32),
+        ("w", ctypes.c_uint32),
+        ("out_c", ctypes.c_uint32),
+        ("out_h", ctypes.c_uint32),
+        ("out_w", ctypes.c_uint32),
+        ("kernel_h", ctypes.c_uint32),
+        ("kernel_w", ctypes.c_uint32),
+        ("stride_h", ctypes.c_uint32),
+        ("stride_w", ctypes.c_uint32),
+        ("pad_h", ctypes.c_uint32),
+        ("pad_w", ctypes.c_uint32),
+        ("groups", ctypes.c_uint32),
+        ("flags", ctypes.c_uint32),
+        ("reserved", ctypes.c_uint32),
+    ]
+
+
 class BcudaAxiDma(ctypes.Structure):
     _fields_ = [
         ("register_base", ctypes.c_size_t),
         ("timeout_cycles", ctypes.c_uint32),
         ("last_control_word", ctypes.c_uint32),
+        ("last_source_address", ctypes.c_size_t),
+        ("last_transfer_bytes", ctypes.c_uint32),
+        ("last_tile_size", ctypes.c_uint32),
+        ("last_array_count", ctypes.c_uint32),
+        ("last_m_tiles", ctypes.c_uint32),
+        ("last_n_tiles", ctypes.c_uint32),
+        ("last_k_tiles", ctypes.c_uint32),
+        ("last_n_groups", ctypes.c_uint32),
+        ("last_schedule_steps", ctypes.c_uint32),
+        ("last_accumulator_entries", ctypes.c_uint32),
+        ("last_memory_base", ctypes.c_size_t),
+        ("last_memory_bytes", ctypes.c_uint32),
+        ("last_memory_io_flags", ctypes.c_uint32),
     ]
 
 
@@ -271,3 +406,18 @@ def alloc_buffer(lib, size, desc=None, usage=BC_USAGE_ACTIVATION):
     if status != BC_STATUS_OK:
         raise AssertionError(f"alloc failed: {status}")
     return out_id.value
+
+
+def write_buffer(lib, buffer_id, data: bytes, offset=0):
+    payload = ctypes.create_string_buffer(data)
+    status = lib.bcuda_write_buffer(buffer_id, offset, payload, len(data))
+    if status != BC_STATUS_OK:
+        raise AssertionError(f"write failed: {status}")
+
+
+def read_buffer(lib, buffer_id, size, offset=0) -> bytes:
+    payload = ctypes.create_string_buffer(size)
+    status = lib.bcuda_read_buffer(buffer_id, offset, payload, size)
+    if status != BC_STATUS_OK:
+        raise AssertionError(f"read failed: {status}")
+    return payload.raw

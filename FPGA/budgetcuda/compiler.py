@@ -153,6 +153,140 @@ class ModelPackage:
         return model + buffer_table + layers
 
 
+class GraphBuilder:
+    def __init__(self, name: str = "graph"):
+        self.name = name
+        self.buffers: list[HostBuffer] = []
+        self.layers: list[Layer] = []
+
+    def add_buffer(
+        self,
+        name: str,
+        shape: Iterable[int],
+        dtype: str | int | DType,
+        usage: BufferUsage = BufferUsage.ACTIVATION,
+        data=None,
+        layout: str | int | Layout = Layout.ROW_MAJOR,
+    ) -> int:
+        full_name = name if name.startswith(f"{self.name}.") else f"{self.name}.{name}"
+        if data is None:
+            buffer = HostBuffer(full_name, tuple(shape), normalize_dtype(dtype), normalize_layout(layout), usage)
+        else:
+            buffer = HostBuffer.from_values(full_name, tuple(shape), dtype, data, usage=usage, layout=layout)
+        self.buffers.append(buffer)
+        return len(self.buffers) - 1
+
+    def conv2d(
+        self,
+        input_idx: int,
+        weight_idx: int,
+        output_idx: int,
+        *,
+        n: int,
+        c: int,
+        h: int,
+        w: int,
+        out_c: int,
+        out_h: int,
+        out_w: int,
+        kernel_h: int,
+        kernel_w: int,
+        stride_h: int = 1,
+        stride_w: int = 1,
+        pad_h: int = 0,
+        pad_w: int = 0,
+        bias_idx: int = 0,
+    ) -> None:
+        self.layers.append(
+            Layer(
+                OpType.CONV2D_GEMM,
+                input0=input_idx,
+                output=output_idx,
+                weight=weight_idx,
+                bias=bias_idx,
+                n=n,
+                c=c,
+                h=h,
+                w=w,
+                out_c=out_c,
+                out_h=out_h,
+                out_w=out_w,
+                kernel_h=kernel_h,
+                kernel_w=kernel_w,
+                stride_h=stride_h,
+                stride_w=stride_w,
+                pad_h=pad_h,
+                pad_w=pad_w,
+            )
+        )
+
+    def relu(self, input_idx: int, output_idx: int) -> None:
+        self.layers.append(Layer(OpType.ACTIVATION, input0=input_idx, output=output_idx))
+
+    def leaky_relu(self, input_idx: int, output_idx: int, right_shift: int) -> None:
+        if right_shift < 0 or right_shift > 7:
+            raise ValueError("Leaky ReLU right_shift must be in 0..7")
+        self.layers.append(Layer(OpType.ACTIVATION, input0=input_idx, output=output_idx, flags=1 | (right_shift << 8)))
+
+    def requantize_params(self, name: str, multiplier: int, right_shift: int, output_zero_point: int = 0, input_zero_point: int = 0) -> int:
+        if right_shift < 0 or right_shift > 31:
+            raise ValueError("right_shift must be in 0..31")
+        return self.add_buffer(name, (4,), DType.INT32, usage=BufferUsage.WEIGHT, data=[multiplier, right_shift, input_zero_point, output_zero_point])
+
+    def requantize(self, input_idx: int, output_idx: int, scale_idx: int) -> None:
+        self.layers.append(Layer(OpType.REQUANTIZE, input0=input_idx, output=output_idx, scale=scale_idx))
+
+    def maxpool2d(
+        self,
+        input_idx: int,
+        output_idx: int,
+        *,
+        n: int,
+        c: int,
+        h: int,
+        w: int,
+        out_h: int,
+        out_w: int,
+        kernel_h: int,
+        kernel_w: int,
+        stride_h: int,
+        stride_w: int,
+        pad_h: int = 0,
+        pad_w: int = 0,
+    ) -> None:
+        self.layers.append(
+            Layer(
+                OpType.POOL,
+                input0=input_idx,
+                output=output_idx,
+                n=n,
+                c=c,
+                h=h,
+                w=w,
+                out_h=out_h,
+                out_w=out_w,
+                kernel_h=kernel_h,
+                kernel_w=kernel_w,
+                stride_h=stride_h,
+                stride_w=stride_w,
+                pad_h=pad_h,
+                pad_w=pad_w,
+            )
+        )
+
+    def upsample(self, input_idx: int, output_idx: int, *, n: int, c: int, h: int, w: int, out_h: int, out_w: int) -> None:
+        self.layers.append(Layer(OpType.UPSAMPLE, input0=input_idx, output=output_idx, n=n, c=c, h=h, w=w, out_h=out_h, out_w=out_w))
+
+    def concat_channels(self, input0: int, input1: int, output_idx: int, *, n: int, h: int, w: int, out_c: int, input2: int = 0) -> None:
+        self.layers.append(Layer(OpType.CONCAT, input0=input0, input1=input1, input2=input2, output=output_idx, n=n, h=h, w=w, out_c=out_c))
+
+    def reshape(self, input_idx: int, output_idx: int) -> None:
+        self.layers.append(Layer(OpType.RESHAPE, input0=input_idx, output=output_idx))
+
+    def package(self, input_idx: int, output_idx: int) -> ModelPackage:
+        return ModelPackage(self.buffers, self.layers, input_idx, output_idx)
+
+
 def upload_model(device, package: ModelPackage) -> Model:
     tensors = []
     for buffer in package.buffers:
@@ -224,6 +358,55 @@ def build_mlp_package(
         out_c=output_features,
     )
     return ModelPackage(buffers=buffers, layers=[layer], input_index=0, output_index=2)
+
+
+def build_tiny_conv_relu_package(
+    input_shape: tuple[int, int, int, int],
+    weight_values,
+    bias_values=None,
+    kernel_shape: tuple[int, int] = (2, 2),
+    out_channels: int = 1,
+    name: str = "tiny_cnn",
+) -> ModelPackage:
+    n, c, h, w = input_shape
+    kernel_h, kernel_w = kernel_shape
+    out_h = h - kernel_h + 1
+    out_w = w - kernel_w + 1
+    if n <= 0 or c <= 0 or h <= 0 or w <= 0 or out_channels <= 0 or out_h <= 0 or out_w <= 0:
+        raise ValueError("Invalid tiny CNN dimensions")
+
+    graph = GraphBuilder(name)
+    input_idx = graph.add_buffer("input", input_shape, DType.INT8, usage=BufferUsage.ACTIVATION, layout=Layout.NCHW)
+    weight_idx = graph.add_buffer(
+        "conv.weight",
+        (out_channels, c, kernel_h, kernel_w),
+        DType.INT8,
+        usage=BufferUsage.WEIGHT,
+        data=weight_values,
+        layout=Layout.NCHW,
+    )
+    bias_idx = 0
+    if bias_values is not None:
+        bias_idx = graph.add_buffer("conv.bias", (out_channels,), DType.INT32, usage=BufferUsage.WEIGHT, data=bias_values)
+    conv_out_idx = graph.add_buffer("conv.out", (n, out_channels, out_h, out_w), DType.INT32, usage=BufferUsage.ACTIVATION, layout=Layout.NCHW)
+    output_idx = graph.add_buffer("output", (n, out_channels, out_h, out_w), DType.INT32, usage=BufferUsage.OUTPUT, layout=Layout.NCHW)
+    graph.conv2d(
+        input_idx,
+        weight_idx,
+        conv_out_idx,
+        n=n,
+        c=c,
+        h=h,
+        w=w,
+        out_c=out_channels,
+        out_h=out_h,
+        out_w=out_w,
+        kernel_h=kernel_h,
+        kernel_w=kernel_w,
+        bias_idx=bias_idx,
+    )
+    graph.relu(conv_out_idx, output_idx)
+    return graph.package(input_idx, output_idx)
 
 
 def _flatten(values) -> list:
