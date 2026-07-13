@@ -24,20 +24,28 @@ module accumulator_buffer #(
 
     localparam int ENTRY_COUNT = TILE_SIZE * TILE_SIZE;
 
-    // Port A performs the serialized read-modify-write accumulation. Port B
-    // is the registered tile-reader port consumed by tile_writer_ddr.
-    (* ram_style = "block" *) logic signed [31:0] mem [0:ENTRY_COUNT-1];
+    // Port A is a serialized read-or-write port for accumulation/bias seed.
+    // Port B is the registered tile-reader consumed by tile_writer_ddr.
+    // Keeping each port's operation mutually exclusive lets Vivado infer a
+    // true dual-port RAMB18 rather than implementing this tile in LUT logic.
+    (* ram_style = "block", ram_decomp = "power" *) logic signed [31:0] mem [0:ENTRY_COUNT-1];
     logic                    op_pending;
     logic                    pending_clear;
     logic [7:0]              pending_addr;
     logic signed [31:0]      pending_data;
     logic signed [31:0]      pending_old_value;
     logic signed [31:0]      pending_result;
+    logic                    port_a_write;
+    logic [7:0]              port_a_addr;
+    logic signed [31:0]      port_a_data;
 
     assign op_ready = !op_pending;
     // Used by Conv2D bias preload while the regular accumulator port is idle.
     assign seed_ready = 1'b1;
     assign pending_result = pending_clear ? pending_data : pending_old_value + pending_data;
+    assign port_a_write = op_pending || seed_valid;
+    assign port_a_addr = op_pending ? pending_addr : seed_addr;
+    assign port_a_data = op_pending ? pending_result : seed_data;
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin
@@ -55,14 +63,13 @@ module accumulator_buffer #(
                 read_data <= mem[read_addr];
             end
 
-            if (op_pending) begin
-                mem[pending_addr] <= pending_result;
-                op_result <= pending_result;
-                op_pending <= 1'b0;
+            if (port_a_write) begin
+                mem[port_a_addr] <= port_a_data;
             end
 
-            if (seed_valid) begin
-                mem[seed_addr] <= seed_data;
+            if (op_pending) begin
+                op_result <= pending_result;
+                op_pending <= 1'b0;
             end
 
             if (op_valid && op_ready) begin

@@ -27,8 +27,12 @@ module gemm_16x16_core (
     // The array consumes one A value per row and one B value per column on
     // every cycle.  Bank by row/column so each value has its own synchronous
     // memory read port instead of relying on a 16-read combinational array.
-    (* ram_style = "block" *) logic signed [7:0] a_bank [0:15][0:15];
-    (* ram_style = "block" *) logic signed [7:0] b_bank [0:15][0:15];
+    // Each systolic lane needs an independent synchronous read every cycle.
+    // Give every lane a BRAM-sized bank rather than a 16-byte LUTRAM.  The
+    // current controller uses addresses 0..15; the remaining depth reserves
+    // room for future ping-pong tile prefetch without changing this interface.
+    (* ram_style = "block", ram_decomp = "power" *) logic signed [7:0] a_bank [0:15][0:255];
+    (* ram_style = "block", ram_decomp = "power" *) logic signed [7:0] b_bank [0:15][0:255];
     logic signed [7:0] a_read_data [0:15];
     logic signed [7:0] b_read_data [0:15];
 
