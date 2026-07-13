@@ -10,6 +10,12 @@ module tb_bcuda_tiled_systolic_ddr_top;
     localparam int B_STRIDE = 16;
     localparam int C_STRIDE = 64;
     localparam int RQ_C_BASE = 3072;
+    localparam int CONV_A_BASE = 64;
+    localparam int CONV_B_BASE = 512;
+    localparam int CONV_C_BASE = 1536;
+    localparam int CONV_BIAS_BASE = 2560;
+    localparam int CONV_RQ_BASE = 3104;
+    localparam int CONV_RELU_BASE = 3136;
 
     logic clk = 1'b0;
     logic rst_n = 1'b0;
@@ -311,11 +317,72 @@ module tb_bcuda_tiled_systolic_ddr_top;
             errors++;
         end
 
+        /* Full PL path: NCHW/OIHW Conv2D with INT32 bias -> requantize -> ReLU. */
+        for (int i = 0; i < 9; i++) ddr[CONV_A_BASE + i] = i + 1;
+        ddr[CONV_B_BASE] = 8'sd1; ddr[CONV_B_BASE + 1] = 8'sd0;
+        ddr[CONV_B_BASE + 2] = 8'sd0; ddr[CONV_B_BASE + 3] = 8'sd1;
+        ddr[CONV_BIAS_BASE] = 8'hf6; ddr[CONV_BIAS_BASE + 1] = 8'hff;
+        ddr[CONV_BIAS_BASE + 2] = 8'hff; ddr[CONV_BIAS_BASE + 3] = 8'hff;
+        axi_write(6'h00, 32'h0);
+        axi_write(6'h08, CONV_A_BASE);
+        axi_write(6'h0C, CONV_B_BASE);
+        axi_write(6'h10, CONV_C_BASE);
+        axi_write(6'h14, 32'd1);       // input C
+        axi_write(6'h18, 32'd3);       // input H
+        axi_write(6'h1C, 32'd3);       // input W
+        axi_write(6'h20, 32'd1);       // output C
+        axi_write(6'h24, 32'd2);       // output H
+        axi_write(6'h28, 32'd2);       // output W
+        axi_write(6'h2C, 32'd2);       // kernel H
+        axi_write(6'h30, 32'd2);       // kernel W
+        axi_write(6'h34, 32'h00000101); // stride H/W
+        axi_write(6'h38, 32'd0);       // padding H/W
+        axi_write(6'h3C, CONV_BIAS_BASE);
+        axi_write(6'h00, 32'h5);       // START | CONV2D
+        repeat (2000) begin
+            axi_read(6'h04, status);
+            if (status[1]) break;
+        end
+        if (!status[1] || status[2] || $signed(load_word_le(CONV_C_BASE)) != -4 ||
+            $signed(load_word_le(CONV_C_BASE + 4)) != -2 || $signed(load_word_le(CONV_C_BASE + 8)) != 2 ||
+            $signed(load_word_le(CONV_C_BASE + 12)) != 4) begin
+            $error("Biased PL Conv2D result mismatch status=0x%08h got=[%0d,%0d,%0d,%0d]", status,
+                   $signed(load_word_le(CONV_C_BASE)), $signed(load_word_le(CONV_C_BASE + 4)),
+                   $signed(load_word_le(CONV_C_BASE + 8)), $signed(load_word_le(CONV_C_BASE + 12)));
+            $display("Accumulator entries after Conv: %0d %0d %0d %0d", $signed(dut.accumulator_banks[0].accumulator.mem[0]),
+                     $signed(dut.accumulator_banks[0].accumulator.mem[16]), $signed(dut.accumulator_banks[0].accumulator.mem[32]),
+                     $signed(dut.accumulator_banks[0].accumulator.mem[48]));
+            $display("Bias preload geometry rows=%0d cols=%0d", dut.bias_preloader.rows_r, dut.bias_preloader.cols_r);
+            errors++;
+        end
+
+        axi_write(6'h00, 32'h0);
+        axi_write(6'h08, CONV_C_BASE);
+        axi_write(6'h10, CONV_RQ_BASE);
+        axi_write(6'h20, 32'd4);
+        axi_write(6'h34, 32'd1);
+        axi_write(6'h38, 32'd0);
+        axi_write(6'h3C, 32'd0);
+        axi_write(6'h00, 32'h3);       // START | REQUANTIZE
+        repeat (300) begin axi_read(6'h04, status); if (status[1]) break; end
+        axi_write(6'h00, 32'h0);
+        axi_write(6'h08, CONV_RQ_BASE);
+        axi_write(6'h10, CONV_RELU_BASE);
+        axi_write(6'h20, 32'd4);
+        axi_write(6'h38, 32'd0);
+        axi_write(6'h00, 32'h9);       // START | ACTIVATION (ReLU)
+        repeat (300) begin axi_read(6'h04, status); if (status[1]) break; end
+        if (!status[1] || status[2] || $signed(ddr[CONV_RELU_BASE]) != 0 || $signed(ddr[CONV_RELU_BASE + 1]) != 0 ||
+            $signed(ddr[CONV_RELU_BASE + 2]) != 2 || $signed(ddr[CONV_RELU_BASE + 3]) != 4) begin
+            $error("PL Conv2D requantize/ReLU chain mismatch status=0x%08h", status);
+            errors++;
+        end
+
         if (errors != 0) begin
             $fatal(1, "Tiled DDR GEMM top golden trace failed with %0d errors", errors);
         end
 
-        $display("Tiled DDR GEMM top golden trace passed: 256 outputs plus requantize");
+        $display("Full tiled DDR GEMM, biased Conv2D, requantize, and ReLU golden trace passed");
         $finish;
     end
 

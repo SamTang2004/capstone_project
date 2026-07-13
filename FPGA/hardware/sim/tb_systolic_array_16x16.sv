@@ -74,7 +74,9 @@ module tb_systolic_array_16x16;
         #1;
         clear = 1'b0;
 
-        for (cycle = 0; cycle <= 45; cycle = cycle + 1) begin
+        // The PE multiplier is registered, so drain one cycle after the
+        // final skewed operands reach PE (15,15).
+        for (cycle = 0; cycle <= 46; cycle = cycle + 1) begin
             @(negedge clk);
             drive_cycle(cycle);
             enable = 1'b1;

@@ -56,7 +56,7 @@ module requantize_ddr (
     assign busy = state == REQUEST || state == RECEIVE || state == MULTIPLY || state == SCALE || state == PACK || state == WRITE;
     assign read_req_valid = state == REQUEST;
     assign read_req_addr = input_base_r + element_idx * 32'd4 + byte_idx;
-    assign read_data_ready = state == RECEIVE;
+    assign read_data_ready = state == RECEIVE || (state == REQUEST && read_data_valid);
     assign write_req_valid = state == WRITE;
     assign write_req_addr = write_addr_r;
     assign write_req_data = packed_word;
@@ -109,7 +109,10 @@ module requantize_ddr (
                     end
                 end
 
-                REQUEST: if (read_req_ready) state <= RECEIVE;
+                REQUEST: begin
+                    if (read_data_valid) state <= REQUEST;
+                    else if (read_req_ready) state <= RECEIVE;
+                end
 
                 RECEIVE: if (read_data_valid) begin
                     input_word[byte_idx * 8 +: 8] <= read_data;

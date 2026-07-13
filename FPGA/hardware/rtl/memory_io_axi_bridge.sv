@@ -57,7 +57,7 @@ module memory_io_axi_bridge (
 
     assign cmd_ready = state == IDLE;
     assign m_axi_awaddr = addr_r;
-    assign m_axi_awlen = 8'd0;
+    assign m_axi_awlen = {4'd0, len_r};
     assign m_axi_awsize = 3'd2;
     assign m_axi_awburst = 2'b01;
     assign m_axi_awvalid = state == WRITE_ADDR;

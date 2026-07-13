@@ -11,6 +11,11 @@ module accumulator_buffer #(
     input  logic signed [31:0]      op_data,
     output logic signed [31:0]      op_result,
 
+    input  logic                    seed_valid,
+    output logic                    seed_ready,
+    input  logic [7:0]              seed_addr,
+    input  logic signed [31:0]      seed_data,
+
     input  logic                    read_req,
     input  logic [7:0]              read_addr,
     output logic                    read_valid,
@@ -30,6 +35,8 @@ module accumulator_buffer #(
     logic signed [31:0]      pending_result;
 
     assign op_ready = !op_pending;
+    // Used by Conv2D bias preload while the regular accumulator port is idle.
+    assign seed_ready = 1'b1;
     assign pending_result = pending_clear ? pending_data : pending_old_value + pending_data;
 
     always_ff @(posedge clk) begin
@@ -52,6 +59,10 @@ module accumulator_buffer #(
                 mem[pending_addr] <= pending_result;
                 op_result <= pending_result;
                 op_pending <= 1'b0;
+            end
+
+            if (seed_valid) begin
+                mem[seed_addr] <= seed_data;
             end
 
             if (op_valid && op_ready) begin

@@ -69,6 +69,7 @@ module bcuda_tiled_systolic_ddr_top #(
         OP_ZERO_B,
         OP_LOAD_B,
         OP_LOAD_B_NEXT,
+        OP_BIAS_PRELOAD,
         OP_COMPUTE_WAIT,
         OP_ACCUMULATE,
         OP_WRITE_C
@@ -97,9 +98,29 @@ module bcuda_tiled_systolic_ddr_top #(
     wire [4:0] tile_size = regs_flat[11*32 +: 5];
     wire [7:0] array_count = regs_flat[12*32 +: 8];
     wire signed [31:0] rq_multiplier = regs_flat[13*32 +: 32];
-    wire [5:0] rq_right_shift = regs_flat[14*32 +: 6];
+    wire [31:0] rq_right_shift = regs_flat[14*32 +: 32];
     wire signed [31:0] rq_output_zero_point = regs_flat[15*32 +: 32];
+    wire [31:0] conv_bias_base = regs_flat[15*32 +: 32];
     wire requantize_mode = ctrl_word[1];
+    wire conv2d_mode = ctrl_word[2];
+    wire activation_mode = ctrl_word[3];
+    wire activation_leaky_mode = ctrl_word[4];
+    // In CONV2D mode the otherwise GEMM-specific geometry registers encode:
+    // A_STRIDE=C, B_STRIDE=H, C_STRIDE=W, M=out_C, N=out_H, K=out_W,
+    // TILE_SIZE=kernel_H, ARRAY_COUNT=kernel_W, RQ_MULTIPLIER=strides,
+    // RQ_RIGHT_SHIFT=pads. Batch is deliberately fixed to one.
+    wire [15:0] conv_input_c = a_stride[15:0];
+    wire [15:0] conv_input_h = b_stride[15:0];
+    wire [15:0] conv_input_w = c_stride[15:0];
+    wire [15:0] conv_out_c = dim_m;
+    wire [15:0] conv_out_h = dim_n;
+    wire [15:0] conv_out_w = dim_k;
+    wire [15:0] conv_gemm_m = conv_out_h * conv_out_w;
+    wire [15:0] conv_gemm_k = conv_input_c * tile_size * array_count;
+    wire [7:0] conv_stride_h = rq_multiplier[7:0];
+    wire [7:0] conv_stride_w = rq_multiplier[15:8];
+    wire [7:0] conv_pad_h = rq_right_shift[7:0];
+    wire [7:0] conv_pad_w = rq_right_shift[15:8];
 
     logic controller_start;
     logic controller_busy;
@@ -196,6 +217,24 @@ module bcuda_tiled_systolic_ddr_top #(
     logic [31:0] rq_write_req_data;
     logic [3:0] rq_write_req_strb;
 
+    logic bias_preload_start, bias_preload_busy, bias_preload_done, bias_preload_error;
+    logic bias_read_req_valid, bias_read_req_ready, bias_read_data_valid, bias_read_data_ready;
+    logic [31:0] bias_read_req_addr;
+    logic [7:0] bias_read_data;
+    logic bias_accum_valid;
+    logic [7:0] bias_accum_addr;
+    logic signed [31:0] bias_accum_data;
+
+    logic activation_start;
+    logic activation_busy, activation_done, activation_error;
+    logic activation_read_req_valid, activation_read_req_ready;
+    logic [31:0] activation_read_req_addr;
+    logic activation_read_data_valid, activation_read_data_ready;
+    logic [7:0] activation_read_data;
+    logic activation_write_req_valid, activation_write_req_ready;
+    logic [31:0] activation_write_req_addr, activation_write_req_data;
+    logic [3:0] activation_write_req_strb;
+
     logic memio_read_req_valid;
     logic memio_read_req_ready;
     logic [31:0] memio_read_req_addr;
@@ -210,9 +249,21 @@ module bcuda_tiled_systolic_ddr_top #(
     wire [4:0] writer_n_len = (n_group_cols > (write_array_idx * 16 + 16)) ? 5'd16 : (n_group_cols - write_array_idx * 16);
 
     assign start_pulse = ctrl_word[0] && !ctrl_start_d;
-    assign controller_start = start_pulse && !requantize_mode;
+    assign controller_start = start_pulse && !requantize_mode && !activation_mode;
     assign rq_start = start_pulse && requantize_mode;
-    assign status_word = {29'd0, error_r, done_r, controller_busy || rq_busy || op_state != OP_IDLE};
+    assign activation_start = start_pulse && activation_mode;
+    // Bits 2:0 retain the firmware ABI. Upper bits expose live board-level
+    // progress so an HP0 handshake stall can be diagnosed through AXI-Lite.
+    assign status_word = {
+        14'd0,
+        loader_read_req_valid, loader_read_req_ready,
+        loader_read_data_valid, loader_read_data_ready,
+        mem_cmd_ready, mem_cmd_valid, memio_busy,
+        writer_busy, core_busy, loader_busy, controller_busy,
+        op_state,
+        error_r, done_r,
+        controller_busy || rq_busy || activation_busy || op_state != OP_IDLE
+    };
 
     assign load_a_done = (op_state == OP_LOAD_A) && loader_done;
     assign load_b_done = (op_state == OP_LOAD_B) && loader_done;
@@ -228,19 +279,28 @@ module bcuda_tiled_systolic_ddr_top #(
     assign loader_rows = loader_matrix_select ? k_len : m_len;
     assign loader_cols = loader_matrix_select ? b_len : k_len;
 
-    assign memio_read_req_valid = rq_busy ? rq_read_req_valid : loader_read_req_valid;
-    assign loader_read_req_ready = !rq_busy && memio_read_req_ready;
-    assign rq_read_req_ready = rq_busy && memio_read_req_ready;
-    assign memio_read_req_addr = rq_busy ? rq_read_req_addr : loader_read_req_addr;
-    assign loader_read_data_valid = !rq_busy && memio_read_data_valid;
-    assign rq_read_data_valid = rq_busy && memio_read_data_valid;
-    assign memio_read_data_ready = rq_busy ? rq_read_data_ready : loader_read_data_ready;
+    assign memio_read_req_valid = bias_preload_busy ? bias_read_req_valid : (activation_busy ? activation_read_req_valid : (rq_busy ? rq_read_req_valid : loader_read_req_valid));
+    assign loader_read_req_ready = !bias_preload_busy && !activation_busy && !rq_busy && memio_read_req_ready;
+    assign rq_read_req_ready = !bias_preload_busy && !activation_busy && rq_busy && memio_read_req_ready;
+    assign activation_read_req_ready = !bias_preload_busy && activation_busy && memio_read_req_ready;
+    assign bias_read_req_ready = bias_preload_busy && memio_read_req_ready;
+    assign memio_read_req_addr = bias_preload_busy ? bias_read_req_addr : (activation_busy ? activation_read_req_addr : (rq_busy ? rq_read_req_addr : loader_read_req_addr));
+    assign loader_read_data_valid = !bias_preload_busy && !activation_busy && !rq_busy && memio_read_data_valid;
+    assign rq_read_data_valid = !bias_preload_busy && !activation_busy && rq_busy && memio_read_data_valid;
+    assign activation_read_data_valid = !bias_preload_busy && activation_busy && memio_read_data_valid;
+    assign bias_read_data_valid = bias_preload_busy && memio_read_data_valid;
+    assign memio_read_data_ready = bias_preload_busy ? bias_read_data_ready : (activation_busy ? activation_read_data_ready : (rq_busy ? rq_read_data_ready : loader_read_data_ready));
     assign loader_read_data = memio_read_data;
     assign rq_read_data = memio_read_data;
+    assign activation_read_data = memio_read_data;
+    assign bias_read_data = memio_read_data;
 
     assign accum_op_valid = (op_state == OP_ACCUMULATE);
-    assign accum_op_clear = clear_accumulators;
-    assign core_result_addr = accum_idx;
+    // A biased Conv2D tile has already been initialized by the preload engine;
+    // its first systolic pass must add, not clear that seeded accumulator state.
+    assign accum_op_clear = (op_state == OP_BIAS_PRELOAD) ? 1'b1 :
+                            ((conv2d_mode && conv_bias_base != 0) ? 1'b0 : clear_accumulators);
+    assign core_result_addr = (op_state == OP_BIAS_PRELOAD) ? bias_accum_addr : accum_idx;
     assign core_result_array = accum_array_idx;
     assign accum_read_addr = writer_tile_read_addr;
     assign accum_read_req = writer_tile_read_req;
@@ -280,11 +340,11 @@ module bcuda_tiled_systolic_ddr_top #(
         .clk(aclk),
         .rst_n(aresetn),
         .start(controller_start),
-        .M(dim_m),
-        .N(dim_n),
-        .K(dim_k),
-        .tile_size(tile_size),
-        .array_count(array_count),
+        .M(conv2d_mode ? conv_gemm_m : dim_m),
+        .N(conv2d_mode ? conv_out_c : dim_n),
+        .K(conv2d_mode ? conv_gemm_k : dim_k),
+        .tile_size(conv2d_mode ? 5'd16 : tile_size),
+        .array_count(conv2d_mode ? 8'd1 : array_count),
         .busy(controller_busy),
         .done(controller_done),
         .error(controller_error),
@@ -319,12 +379,12 @@ module bcuda_tiled_systolic_ddr_top #(
         .read_data_valid(memio_read_data_valid),
         .read_data_ready(memio_read_data_ready),
         .read_data(memio_read_data),
-        .write_req_valid(rq_busy ? rq_write_req_valid : writer_write_req_valid),
+        .write_req_valid(activation_busy ? activation_write_req_valid : (rq_busy ? rq_write_req_valid : writer_write_req_valid)),
         .write_req_ready(memio_write_req_ready),
-        .write_req_addr(rq_busy ? rq_write_req_addr : writer_write_req_addr),
-        .write_req_data(rq_busy ? rq_write_req_data : writer_write_req_data),
-        .write_req_strb(rq_busy ? rq_write_req_strb : writer_write_req_strb),
-        .write_req_last(rq_busy ? 1'b1 : writer_write_req_last),
+        .write_req_addr(activation_busy ? activation_write_req_addr : (rq_busy ? rq_write_req_addr : writer_write_req_addr)),
+        .write_req_data(activation_busy ? activation_write_req_data : (rq_busy ? rq_write_req_data : writer_write_req_data)),
+        .write_req_strb(activation_busy ? activation_write_req_strb : (rq_busy ? rq_write_req_strb : writer_write_req_strb)),
+        .write_req_last(activation_busy ? 1'b1 : (rq_busy ? 1'b1 : writer_write_req_last)),
         .mem_cmd_valid(mem_cmd_valid),
         .mem_cmd_ready(mem_cmd_ready),
         .mem_cmd_write(mem_cmd_write),
@@ -345,16 +405,25 @@ module bcuda_tiled_systolic_ddr_top #(
         .error(memio_error)
     );
 
-    assign writer_write_req_ready = !rq_busy && memio_write_req_ready;
-    assign rq_write_req_ready = rq_busy && memio_write_req_ready;
+    assign writer_write_req_ready = !activation_busy && !rq_busy && memio_write_req_ready;
+    assign rq_write_req_ready = !activation_busy && rq_busy && memio_write_req_ready;
+    assign activation_write_req_ready = activation_busy && memio_write_req_ready;
 
-    tile_loader_ddr loader (
+    conv2d_tile_loader_ddr loader (
         .clk(aclk),
         .rst_n(aresetn),
         .start(loader_start),
         .matrix_select(loader_matrix_select),
+        .conv_mode(conv2d_mode),
         .base_addr(loader_base_addr),
         .row_stride(loader_row_stride),
+        .input_base_addr(a_base),
+        .weight_base_addr(b_base),
+        .input_c(conv_input_c), .input_h(conv_input_h), .input_w(conv_input_w),
+        .out_c(conv_out_c), .out_h(conv_out_h), .out_w(conv_out_w),
+        .kernel_h({3'd0, tile_size}), .kernel_w(array_count),
+        .stride_h(conv_stride_h), .stride_w(conv_stride_w), .pad_h(conv_pad_h), .pad_w(conv_pad_w),
+        .m0(m0), .k0(k0), .n0(n0 + load_b_array_idx * 16),
         .tile_rows(loader_rows),
         .tile_cols(loader_cols),
         .busy(loader_busy),
@@ -400,8 +469,12 @@ module bcuda_tiled_systolic_ddr_top #(
                 .op_ready(accum_op_ready_array[array_idx]),
                 .op_clear(accum_op_clear),
                 .op_addr(accum_idx),
-                .op_data(core_result_data),
+                .op_data((op_state == OP_BIAS_PRELOAD) ? bias_accum_data : core_result_data),
                 .op_result(),
+                .seed_valid(op_state == OP_BIAS_PRELOAD && bias_accum_valid && accum_array_idx == array_idx),
+                .seed_ready(),
+                .seed_addr(bias_accum_addr),
+                .seed_data(bias_accum_data),
                 .read_req(accum_read_req),
                 .read_addr(accum_read_addr),
                 .read_valid(accum_read_valid_array[array_idx]),
@@ -411,12 +484,23 @@ module bcuda_tiled_systolic_ddr_top #(
     endgenerate
     assign accum_op_ready = accum_op_ready_array[accum_array_idx];
 
-    tile_writer_ddr writer (
+    assign bias_preload_start = (op_state == OP_IDLE) && compute_start && clear_accumulators && conv2d_mode && conv_bias_base != 0;
+    conv_bias_preload_ddr bias_preloader (
+        .clk(aclk), .rst_n(aresetn), .start(bias_preload_start), .bias_base_addr(conv_bias_base), .channel_offset(n0), .tile_rows(m_len), .tile_cols(n_group_cols[4:0]),
+        .busy(bias_preload_busy), .done(bias_preload_done), .error(bias_preload_error),
+        .read_req_valid(bias_read_req_valid), .read_req_ready(bias_read_req_ready), .read_req_addr(bias_read_req_addr),
+        .read_data_valid(bias_read_data_valid), .read_data_ready(bias_read_data_ready), .read_data(bias_read_data),
+        .accum_valid(bias_accum_valid), .accum_ready(1'b1), .accum_addr(bias_accum_addr), .accum_data(bias_accum_data)
+    );
+
+    conv2d_tile_writer_ddr writer (
         .clk(aclk),
         .rst_n(aresetn),
         .start(writer_start),
+        .conv_mode(conv2d_mode),
         .base_addr(c_base + (m0 * c_stride) + ((n0 + write_array_idx * 16) * 32'd4)),
         .row_stride(c_stride),
+        .output_base_addr(c_base), .out_h(conv_out_h), .out_w(conv_out_w), .m0(m0), .n0(n0 + write_array_idx * 16),
         .tile_rows(m_len),
         .tile_cols(writer_n_len),
         .busy(writer_busy),
@@ -459,6 +543,15 @@ module bcuda_tiled_systolic_ddr_top #(
         .write_req_strb(rq_write_req_strb)
     );
 
+    activation_ddr_parallel activation (
+        .clk(aclk), .rst_n(aresetn), .start(activation_start), .leaky_mode(activation_leaky_mode), .leaky_shift(rq_right_shift[2:0]),
+        .input_base_addr(a_base), .output_base_addr(c_base), .element_count({16'd0, dim_m}),
+        .busy(activation_busy), .done(activation_done), .error(activation_error),
+        .read_req_valid(activation_read_req_valid), .read_req_ready(activation_read_req_ready), .read_req_addr(activation_read_req_addr),
+        .read_data_valid(activation_read_data_valid), .read_data_ready(activation_read_data_ready), .read_data(activation_read_data),
+        .write_req_valid(activation_write_req_valid), .write_req_ready(activation_write_req_ready), .write_req_addr(activation_write_req_addr), .write_req_data(activation_write_req_data), .write_req_strb(activation_write_req_strb)
+    );
+
     always_ff @(posedge aclk) begin
         if (!aresetn) begin
             op_state <= OP_IDLE;
@@ -484,7 +577,7 @@ module bcuda_tiled_systolic_ddr_top #(
 
             // Configuration validation belongs to gemm_controller at start.
             // Register reset values are intentionally not a fault while idle.
-            if (controller_error || loader_error || writer_error || rq_error || memio_error) begin
+            if (controller_error || loader_error || writer_error || rq_error || activation_error || bias_preload_error || memio_error) begin
                 error_r <= 1'b1;
             end
 
@@ -492,6 +585,9 @@ module bcuda_tiled_systolic_ddr_top #(
                 done_r <= 1'b1;
             end
             if (rq_done) begin
+                done_r <= 1'b1;
+            end
+            if (activation_done) begin
                 done_r <= 1'b1;
             end
             if (!ctrl_word[0]) begin
@@ -513,8 +609,8 @@ module bcuda_tiled_systolic_ddr_top #(
                     end else if (load_b_start) begin
                         op_state <= OP_ZERO_B;
                     end else if (compute_start) begin
-                        core_start <= 1'b1;
-                        op_state <= OP_COMPUTE_WAIT;
+                        if (conv2d_mode && clear_accumulators && conv_bias_base != 0) op_state <= OP_BIAS_PRELOAD;
+                        else begin core_start <= 1'b1; op_state <= OP_COMPUTE_WAIT; end
                     end else if (write_c_start) begin
                         op_state <= OP_WRITE_C;
                     end
@@ -558,6 +654,13 @@ module bcuda_tiled_systolic_ddr_top #(
                 end
 
                 OP_LOAD_B_NEXT: op_state <= OP_LOAD_B;
+
+                OP_BIAS_PRELOAD: begin
+                    if (bias_preload_done) begin
+                        core_start <= 1'b1;
+                        op_state <= OP_COMPUTE_WAIT;
+                    end
+                end
 
                 OP_COMPUTE_WAIT: begin
                     if (core_done) begin

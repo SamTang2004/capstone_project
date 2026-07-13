@@ -13,12 +13,16 @@ set final_rtl_files [list \
     [file join $hw_dir "rtl" "memory_io_driver.sv"] \
     [file join $hw_dir "rtl" "tile_loader_ddr.sv"] \
     [file join $hw_dir "rtl" "tile_writer_ddr.sv"] \
+    [file join $hw_dir "rtl" "conv2d_tile_loader_ddr.sv"] \
+    [file join $hw_dir "rtl" "conv2d_tile_writer_ddr.sv"] \
+    [file join $hw_dir "rtl" "conv_bias_preload_ddr.sv"] \
     [file join $hw_dir "rtl" "requantize_ddr.sv"] \
     [file join $hw_dir "rtl" "pe_int8_mac.sv"] \
     [file join $hw_dir "rtl" "systolic_array_16x16.sv"] \
     [file join $hw_dir "rtl" "gemm_16x16_core.sv"] \
     [file join $hw_dir "rtl" "gemm_array_cluster_8.sv"] \
     [file join $hw_dir "rtl" "activation_unfold_parallel.sv"] \
+    [file join $hw_dir "rtl" "activation_ddr_parallel.sv"] \
     [file join $hw_dir "rtl" "gemm_controller.sv"] \
     [file join $hw_dir "rtl" "accumulator_buffer.sv"] \
     [file join $hw_dir "rtl" "bcuda_tiled_systolic_ddr_top.sv"] \

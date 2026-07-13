@@ -21,9 +21,20 @@ module tb_requantize_ddr;
 
     always #5 clk = ~clk;
     assign read_req_ready = 1'b1;
-    assign read_data_valid = read_data_ready;
-    assign read_data = input_bytes[read_req_addr - 32'h100];
     assign write_req_ready = 1'b1;
+
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            read_data_valid <= 1'b0;
+            read_data <= '0;
+        end else begin
+            if (read_data_valid && read_data_ready) read_data_valid <= 1'b0;
+            if (read_req_valid && read_req_ready) begin
+                read_data <= input_bytes[read_req_addr - 32'h100];
+                read_data_valid <= 1'b1;
+            end
+        end
+    end
 
     requantize_ddr dut (
         .clk(clk), .rst_n(rst_n), .start(start),

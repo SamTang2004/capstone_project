@@ -149,7 +149,7 @@ static int bcuda_execute_gemm_layer(BcudaGraphRuntime *runtime, const BcudaBuffe
     return bcuda_execute_gemm(runtime, &gemm);
 }
 
-static int bcuda_execute_activation_layer(const BcudaBuffer *model_buffer, const BcudaModelDesc *model, const BcudaLayerDesc *layer) {
+static int bcuda_execute_activation_layer(BcudaGraphRuntime *runtime, const BcudaBuffer *model_buffer, const BcudaModelDesc *model, const BcudaLayerDesc *layer) {
     BcudaBuffer *input = 0;
     BcudaBuffer *output = 0;
     int status = bcuda_graph_table_buffer(model_buffer, model, layer->input0, &input);
@@ -165,6 +165,10 @@ static int bcuda_execute_activation_layer(const BcudaBuffer *model_buffer, const
     }
     if (input->dtype != BC_DTYPE_INT8 && input->dtype != BC_DTYPE_INT32) {
         return BC_STATUS_UNSUPPORTED_DTYPE;
+    }
+    if (input->dtype == BC_DTYPE_INT8 && runtime != 0 && runtime->dma != 0 && runtime->dma->register_base != 0) {
+        status = bcuda_axi_dma_submit_activation(runtime->dma, layer, input, output);
+        return status == BC_STATUS_OK ? bcuda_axi_dma_poll_done(runtime->dma) : status;
     }
     uint32_t leaky = layer->flags & BCUDA_ACTIVATION_LEAKY_RELU;
     uint32_t shift = (layer->flags & BCUDA_ACTIVATION_LEAKY_SHIFT_MASK) >> BCUDA_ACTIVATION_LEAKY_SHIFT_SHIFT;
@@ -422,7 +426,7 @@ static int bcuda_execute_pool_layer(const BcudaBuffer *model_buffer, const Bcuda
     return BC_STATUS_OK;
 }
 
-static int bcuda_execute_conv2d_layer(const BcudaBuffer *model_buffer, const BcudaModelDesc *model, const BcudaLayerDesc *layer) {
+static int bcuda_execute_conv2d_layer(BcudaGraphRuntime *runtime, const BcudaBuffer *model_buffer, const BcudaModelDesc *model, const BcudaLayerDesc *layer) {
     BcudaBuffer *input = 0;
     BcudaBuffer *weight = 0;
     BcudaBuffer *output = 0;
@@ -444,6 +448,10 @@ static int bcuda_execute_conv2d_layer(const BcudaBuffer *model_buffer, const Bcu
         if (status != BC_STATUS_OK) {
             return status;
         }
+    }
+    if (runtime != 0 && runtime->dma != 0 && runtime->dma->register_base != 0) {
+        status = bcuda_axi_dma_submit_conv2d(runtime->dma, layer, input, weight, bias, output);
+        return status == BC_STATUS_OK ? bcuda_axi_dma_poll_done(runtime->dma) : status;
     }
     if (input->dtype != BC_DTYPE_INT8 || weight->dtype != BC_DTYPE_INT8 || output->dtype != BC_DTYPE_INT32 ||
         (bias != 0 && bias->dtype != BC_DTYPE_INT32)) {
@@ -587,10 +595,10 @@ int bcuda_execute_graph(BcudaGraphRuntime *runtime, const BcudaGraphExecDesc *de
                 status = bcuda_execute_gemm_layer(runtime, model, &model_desc, &layer);
                 break;
             case BC_OP_CONV2D_GEMM:
-                status = bcuda_execute_conv2d_layer(model, &model_desc, &layer);
+                status = bcuda_execute_conv2d_layer(runtime, model, &model_desc, &layer);
                 break;
             case BC_OP_ACTIVATION:
-                status = bcuda_execute_activation_layer(model, &model_desc, &layer);
+                status = bcuda_execute_activation_layer(runtime, model, &model_desc, &layer);
                 break;
             case BC_OP_REQUANTIZE:
                 status = bcuda_execute_requantize_layer(runtime, model, &model_desc, &layer);

@@ -143,6 +143,49 @@ int bcuda_axi_dma_submit_requantize(BcudaAxiDma *dma, const BcudaRequantDesc *de
     return BC_STATUS_OK;
 }
 
+int bcuda_axi_dma_submit_conv2d(BcudaAxiDma *dma, const BcudaLayerDesc *layer, BcudaBuffer *input, BcudaBuffer *weight, BcudaBuffer *bias, BcudaBuffer *output) {
+    if (dma == 0 || layer == 0 || input == 0 || weight == 0 || output == 0) return BC_STATUS_GENERAL_ERROR;
+    if (input->dtype != BC_DTYPE_INT8 || weight->dtype != BC_DTYPE_INT8 || output->dtype != BC_DTYPE_INT32 ||
+        layer->n != 1u || layer->groups != 1u || layer->c == 0u || layer->h == 0u || layer->w == 0u || layer->out_c == 0u ||
+        layer->out_h == 0u || layer->out_w == 0u || layer->kernel_h == 0u || layer->kernel_h > 16u || layer->kernel_w == 0u ||
+        layer->kernel_w > 16u || layer->stride_h == 0u || layer->stride_w == 0u || layer->stride_h > 255u || layer->stride_w > 255u ||
+        layer->pad_h > 255u || layer->pad_w > 255u || (bias != 0 && (bias->dtype != BC_DTYPE_INT32 || bias->size_bytes < (uint64_t)layer->out_c * sizeof(int32_t)))) return BC_STATUS_SHAPE_MISMATCH;
+    if (dma->register_base == 0) return BC_STATUS_EXECUTION_FAILED;
+    bcuda_pl_write(dma, BCUDA_PL_REG_CONTROL, 0u);
+    bcuda_pl_write(dma, BCUDA_PL_REG_A_BASE, (uint32_t)input->physical_address);
+    bcuda_pl_write(dma, BCUDA_PL_REG_B_BASE, (uint32_t)weight->physical_address);
+    bcuda_pl_write(dma, BCUDA_PL_REG_C_BASE, (uint32_t)output->physical_address);
+    bcuda_pl_write(dma, BCUDA_PL_REG_A_STRIDE, layer->c);
+    bcuda_pl_write(dma, BCUDA_PL_REG_B_STRIDE, layer->h);
+    bcuda_pl_write(dma, BCUDA_PL_REG_C_STRIDE, layer->w);
+    bcuda_pl_write(dma, BCUDA_PL_REG_M, layer->out_c);
+    bcuda_pl_write(dma, BCUDA_PL_REG_N, layer->out_h);
+    bcuda_pl_write(dma, BCUDA_PL_REG_K, layer->out_w);
+    bcuda_pl_write(dma, BCUDA_PL_REG_TILE_SIZE, layer->kernel_h);
+    bcuda_pl_write(dma, BCUDA_PL_REG_ARRAY_COUNT, layer->kernel_w);
+    bcuda_pl_write(dma, BCUDA_PL_REG_RQ_MULTIPLIER, layer->stride_h | (layer->stride_w << 8));
+    bcuda_pl_write(dma, BCUDA_PL_REG_RQ_RIGHT_SHIFT, layer->pad_h | (layer->pad_w << 8));
+    bcuda_pl_write(dma, BCUDA_PL_REG_RQ_OUTPUT_ZERO_POINT, bias == 0 ? 0u : (uint32_t)bias->physical_address);
+    dma->last_control_word = BCUDA_PL_CONTROL_START | BCUDA_PL_CONTROL_CONV2D;
+    bcuda_pl_write(dma, BCUDA_PL_REG_CONTROL, dma->last_control_word);
+    return BC_STATUS_OK;
+}
+
+int bcuda_axi_dma_submit_activation(BcudaAxiDma *dma, const BcudaLayerDesc *layer, BcudaBuffer *input, BcudaBuffer *output) {
+    uint32_t flags;
+    if (dma == 0 || layer == 0 || input == 0 || output == 0 || input->dtype != BC_DTYPE_INT8 || output->dtype != BC_DTYPE_INT8 || input->size_bytes != output->size_bytes || input->size_bytes == 0 || dma->register_base == 0) return BC_STATUS_SHAPE_MISMATCH;
+    flags = BCUDA_PL_CONTROL_START | BCUDA_PL_CONTROL_ACTIVATION;
+    if ((layer->flags & BCUDA_ACTIVATION_LEAKY_RELU) != 0u) flags |= BCUDA_PL_CONTROL_LEAKY_RELU;
+    bcuda_pl_write(dma, BCUDA_PL_REG_CONTROL, 0u);
+    bcuda_pl_write(dma, BCUDA_PL_REG_A_BASE, (uint32_t)input->physical_address);
+    bcuda_pl_write(dma, BCUDA_PL_REG_C_BASE, (uint32_t)output->physical_address);
+    bcuda_pl_write(dma, BCUDA_PL_REG_M, (uint32_t)input->size_bytes);
+    bcuda_pl_write(dma, BCUDA_PL_REG_RQ_RIGHT_SHIFT, (layer->flags & BCUDA_ACTIVATION_LEAKY_SHIFT_MASK) >> BCUDA_ACTIVATION_LEAKY_SHIFT_SHIFT);
+    dma->last_control_word = flags;
+    bcuda_pl_write(dma, BCUDA_PL_REG_CONTROL, flags);
+    return BC_STATUS_OK;
+}
+
 int bcuda_axi_dma_submit_tile_load(BcudaAxiDma *dma, const BcudaTileLoadDesc *desc, BcudaBuffer *source) {
     if (dma == 0 || desc == 0 || source == 0) {
         return BC_STATUS_GENERAL_ERROR;

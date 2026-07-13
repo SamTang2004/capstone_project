@@ -18,7 +18,9 @@ module systolic_array_16x16 (
     generate
         for (r = 0; r < 16; r = r + 1) begin : gen_rows
             for (c = 0; c < 16; c = c + 1) begin : gen_cols
-                pe_int8_mac pe (
+                // The Zynq-7020 has 220 DSP48s total. Reserve headroom for
+                // the surrounding datapath and map 180 of 256 MACs to DSPs.
+                pe_int8_mac #(.USE_DSP((r * 16 + c) < 180)) pe (
                     .clk(clk),
                     .rst_n(rst_n),
                     .clear(clear),

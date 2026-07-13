@@ -30,6 +30,7 @@ if {[catch {exec {*}$compile_cmd} compile_output compile_options]} {
 }
 puts $compile_output
 
+# The active memory tests exercise cache-line reads and coalesced AXI bursts.
 set test_tops {
     tb_pe_int8_mac
     tb_tile_loader_ddr
@@ -37,8 +38,8 @@ set test_tops {
     tb_gemm_array_cluster_8
     tb_activation_unfold_parallel
     tb_requantize_ddr
-    tb_memory_io_driver
-    tb_memory_io_axi_bridge
+    tb_memory_io_driver_burst
+    tb_memory_io_axi_bridge_burst
     tb_ps_pl_mmio_control
     tb_bcuda_tiled_systolic_ddr_top
     tb_accumulator_buffer

@@ -29,6 +29,9 @@ enum {
 enum {
     BCUDA_PL_CONTROL_START = 0x00000001u,
     BCUDA_PL_CONTROL_REQUANTIZE = 0x00000002u,
+    BCUDA_PL_CONTROL_CONV2D = 0x00000004u,
+    BCUDA_PL_CONTROL_ACTIVATION = 0x00000008u,
+    BCUDA_PL_CONTROL_LEAKY_RELU = 0x00000010u,
     BCUDA_PL_STATUS_BUSY = 0x00000001u,
     BCUDA_PL_STATUS_DONE = 0x00000002u,
     BCUDA_PL_STATUS_ERROR = 0x00000004u,
@@ -59,6 +62,8 @@ typedef struct {
 void bcuda_axi_dma_init(BcudaAxiDma *dma, uintptr_t register_base, uint32_t timeout_cycles);
 int bcuda_axi_dma_submit_gemm(BcudaAxiDma *dma, const BcudaGemmDesc *desc, BcudaBuffer *A, BcudaBuffer *B, BcudaBuffer *C);
 int bcuda_axi_dma_submit_requantize(BcudaAxiDma *dma, const BcudaRequantDesc *desc, BcudaBuffer *input, BcudaBuffer *output);
+int bcuda_axi_dma_submit_conv2d(BcudaAxiDma *dma, const BcudaLayerDesc *layer, BcudaBuffer *input, BcudaBuffer *weight, BcudaBuffer *bias, BcudaBuffer *output);
+int bcuda_axi_dma_submit_activation(BcudaAxiDma *dma, const BcudaLayerDesc *layer, BcudaBuffer *input, BcudaBuffer *output);
 int bcuda_axi_dma_submit_tile_load(BcudaAxiDma *dma, const BcudaTileLoadDesc *desc, BcudaBuffer *source);
 int bcuda_axi_dma_submit_tiled_gemm(BcudaAxiDma *dma, const BcudaGemmDesc *desc, const BcudaTiledGemmConfig *config, BcudaBuffer *A, BcudaBuffer *B, BcudaBuffer *C);
 int bcuda_axi_dma_configure_accumulator(BcudaAxiDma *dma, const BcudaAccumulatorConfig *config);

@@ -84,6 +84,16 @@ module memory_io_driver #(
                     cache_valid <= 1'b0;
                 end
             end
+            // A producer may move to a non-contiguous address (for example,
+            // after completing one NCHW channel). Drain the accumulated run
+            // before accepting that next request instead of holding ready low
+            // forever waiting for a continuation that cannot arrive.
+            if (write_req_valid && !write_req_ready && write_count != 0 &&
+                !write_flush_pending && !write_send_active && !write_inflight &&
+                !fill_active && !read_pending && write_req_addr != write_base + (write_count << 2)) begin
+                write_burst_len <= write_count;
+                write_flush_pending <= 1'b1;
+            end
             if (mem_cmd_valid && mem_cmd_ready) begin
                 if (issue_write) begin
                     write_flush_pending <= 1'b0; write_send_active <= 1'b1; write_send_index <= '0; write_inflight <= 1'b1;
