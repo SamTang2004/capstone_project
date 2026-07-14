@@ -361,7 +361,7 @@ static int bcuda_execute_reshape_layer(const BcudaBuffer *model_buffer, const Bc
     return BC_STATUS_OK;
 }
 
-static int bcuda_execute_upsample_layer(const BcudaBuffer *model_buffer, const BcudaModelDesc *model, const BcudaLayerDesc *layer) {
+static int bcuda_execute_upsample_layer(BcudaGraphRuntime *runtime, const BcudaBuffer *model_buffer, const BcudaModelDesc *model, const BcudaLayerDesc *layer) {
     BcudaBuffer *input = 0;
     BcudaBuffer *output = 0;
     int status = bcuda_graph_table_buffer(model_buffer, model, layer->input0, &input);
@@ -386,6 +386,10 @@ static int bcuda_execute_upsample_layer(const BcudaBuffer *model_buffer, const B
     uint64_t output_bytes = (uint64_t)layer->n * layer->c * layer->out_h * layer->out_w * elem_bytes;
     if (input_bytes > input->size_bytes || output_bytes > output->size_bytes) {
         return BC_STATUS_SHAPE_MISMATCH;
+    }
+    if (runtime != 0 && runtime->dma != 0 && runtime->dma->register_base != 0) {
+        status = bcuda_axi_dma_submit_upsample(runtime->dma, layer, input, output);
+        return status == BC_STATUS_OK ? bcuda_axi_dma_poll_done(runtime->dma) : status;
     }
 
     const uint8_t *src = (const uint8_t *)input->virtual_address;
@@ -423,7 +427,7 @@ static int bcuda_concat_copy_input(const BcudaBuffer *input, BcudaBuffer *output
     return BC_STATUS_OK;
 }
 
-static int bcuda_execute_concat_layer(const BcudaBuffer *model_buffer, const BcudaModelDesc *model, const BcudaLayerDesc *layer) {
+static int bcuda_execute_concat_layer(BcudaGraphRuntime *runtime, const BcudaBuffer *model_buffer, const BcudaModelDesc *model, const BcudaLayerDesc *layer) {
     BcudaBuffer *inputs[3] = {0, 0, 0};
     BcudaBuffer *output = 0;
     uint32_t input_indexes[3] = {layer->input0, layer->input1, layer->input2};
@@ -461,16 +465,25 @@ static int bcuda_execute_concat_layer(const BcudaBuffer *model_buffer, const Bcu
         if (in_channels == 0 || channel_offset + in_channels > layer->out_c) {
             return BC_STATUS_SHAPE_MISMATCH;
         }
-        status = bcuda_concat_copy_input(inputs[i], output, output->dtype, layer->n, in_channels, layer->out_c, layer->h, layer->w, channel_offset);
-        if (status != BC_STATUS_OK) {
-            return status;
+        if (runtime == 0 || runtime->dma == 0 || runtime->dma->register_base == 0) {
+            status = bcuda_concat_copy_input(inputs[i], output, output->dtype, layer->n, in_channels, layer->out_c, layer->h, layer->w, channel_offset);
+            if (status != BC_STATUS_OK) {
+                return status;
+            }
         }
         channel_offset += in_channels;
     }
-    return channel_offset == layer->out_c ? BC_STATUS_OK : BC_STATUS_SHAPE_MISMATCH;
+    if (channel_offset != layer->out_c) {
+        return BC_STATUS_SHAPE_MISMATCH;
+    }
+    if (runtime != 0 && runtime->dma != 0 && runtime->dma->register_base != 0) {
+        status = bcuda_axi_dma_submit_concat(runtime->dma, layer, inputs[0], inputs[1], input_count == 3 ? inputs[2] : 0, output);
+        return status == BC_STATUS_OK ? bcuda_axi_dma_poll_done(runtime->dma) : status;
+    }
+    return BC_STATUS_OK;
 }
 
-static int bcuda_execute_pool_layer(const BcudaBuffer *model_buffer, const BcudaModelDesc *model, const BcudaLayerDesc *layer) {
+static int bcuda_execute_pool_layer(BcudaGraphRuntime *runtime, const BcudaBuffer *model_buffer, const BcudaModelDesc *model, const BcudaLayerDesc *layer) {
     BcudaBuffer *input = 0;
     BcudaBuffer *output = 0;
     int status = bcuda_graph_table_buffer(model_buffer, model, layer->input0, &input);
@@ -492,6 +505,10 @@ static int bcuda_execute_pool_layer(const BcudaBuffer *model_buffer, const Bcuda
     uint64_t output_elements = (uint64_t)layer->n * layer->c * layer->out_h * layer->out_w;
     if (input_elements > input->size_bytes || output_elements > output->size_bytes) {
         return BC_STATUS_SHAPE_MISMATCH;
+    }
+    if (runtime != 0 && runtime->dma != 0 && runtime->dma->register_base != 0) {
+        status = bcuda_axi_dma_submit_maxpool(runtime->dma, layer, input, output);
+        return status == BC_STATUS_OK ? bcuda_axi_dma_poll_done(runtime->dma) : status;
     }
 
     const int8_t *src = (const int8_t *)input->virtual_address;
@@ -708,13 +725,13 @@ int bcuda_execute_graph(BcudaGraphRuntime *runtime, const BcudaGraphExecDesc *de
                 status = bcuda_execute_requantize_layer(runtime, model, &model_desc, &layer);
                 break;
             case BC_OP_POOL:
-                status = bcuda_execute_pool_layer(model, &model_desc, &layer);
+                status = bcuda_execute_pool_layer(runtime, model, &model_desc, &layer);
                 break;
             case BC_OP_UPSAMPLE:
-                status = bcuda_execute_upsample_layer(model, &model_desc, &layer);
+                status = bcuda_execute_upsample_layer(runtime, model, &model_desc, &layer);
                 break;
             case BC_OP_CONCAT:
-                status = bcuda_execute_concat_layer(model, &model_desc, &layer);
+                status = bcuda_execute_concat_layer(runtime, model, &model_desc, &layer);
                 break;
             case BC_OP_RESHAPE:
                 status = bcuda_execute_reshape_layer(model, &model_desc, &layer);

@@ -37,6 +37,7 @@ set test_tops {
     tb_tile_writer_ddr
     tb_gemm_array_cluster_8
     tb_activation_unfold_parallel
+    tb_cnn_tensor_ops_ddr
     tb_requantize_ddr
     tb_memory_io_driver_burst
     tb_memory_io_axi_bridge_burst

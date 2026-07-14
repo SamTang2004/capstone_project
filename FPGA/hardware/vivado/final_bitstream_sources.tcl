@@ -23,6 +23,7 @@ set final_rtl_files [list \
     [file join $hw_dir "rtl" "gemm_array_cluster_8.sv"] \
     [file join $hw_dir "rtl" "activation_unfold_parallel.sv"] \
     [file join $hw_dir "rtl" "activation_ddr_parallel.sv"] \
+    [file join $hw_dir "rtl" "cnn_tensor_ops_ddr.sv"] \
     [file join $hw_dir "rtl" "gemm_controller.sv"] \
     [file join $hw_dir "rtl" "accumulator_buffer.sv"] \
     [file join $hw_dir "rtl" "bcuda_tiled_systolic_ddr_top.sv"] \

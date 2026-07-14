@@ -16,6 +16,10 @@ module tb_bcuda_tiled_systolic_ddr_top;
     localparam int CONV_BIAS_BASE = 2560;
     localparam int CONV_RQ_BASE = 3104;
     localparam int CONV_RELU_BASE = 3136;
+    localparam int TENSOR0_BASE = 3200;
+    localparam int TENSOR1_BASE = 3264;
+    localparam int TENSOR2_BASE = 3328;
+    localparam int TENSOR_OUT_BASE = 3456;
 
     logic clk = 1'b0;
     logic rst_n = 1'b0;
@@ -409,11 +413,44 @@ module tb_bcuda_tiled_systolic_ddr_top;
             errors++;
         end
 
+        /* MaxPool, integer nearest upsample, and concat use the same HP0 path. */
+        ddr[TENSOR0_BASE] = 1; ddr[TENSOR0_BASE + 1] = -2; ddr[TENSOR0_BASE + 2] = 3;
+        ddr[TENSOR0_BASE + 3] = 4; ddr[TENSOR0_BASE + 4] = 5; ddr[TENSOR0_BASE + 5] = -6;
+        ddr[TENSOR0_BASE + 6] = -7; ddr[TENSOR0_BASE + 7] = 8; ddr[TENSOR0_BASE + 8] = 9;
+        axi_write(6'h00, 0); axi_write(6'h08, TENSOR0_BASE); axi_write(6'h10, TENSOR_OUT_BASE);
+        axi_write(6'h14, 1); axi_write(6'h18, 1); axi_write(6'h1C, 3); axi_write(6'h20, 3); axi_write(6'h24, 2); axi_write(6'h28, 2);
+        axi_write(6'h2C, 2); axi_write(6'h30, 2); axi_write(6'h34, 32'h00000101); axi_write(6'h38, 0); axi_write(6'h00, 32'h21);
+        repeat (5000) begin axi_read(6'h04, status); if (status[1]) break; end
+        if (!status[1] || status[2] || $signed(ddr[TENSOR_OUT_BASE]) != 5 || $signed(ddr[TENSOR_OUT_BASE + 1]) != 5 ||
+            $signed(ddr[TENSOR_OUT_BASE + 2]) != 8 || $signed(ddr[TENSOR_OUT_BASE + 3]) != 9) begin
+            $error("PL MaxPool mismatch status=0x%08h", status); errors++;
+        end
+
+        ddr[TENSOR0_BASE] = 1; ddr[TENSOR0_BASE + 1] = 2; ddr[TENSOR0_BASE + 2] = 3; ddr[TENSOR0_BASE + 3] = 4;
+        axi_write(6'h00, 0); axi_write(6'h08, TENSOR0_BASE); axi_write(6'h10, TENSOR_OUT_BASE);
+        axi_write(6'h14, 1); axi_write(6'h18, 1); axi_write(6'h1C, 2); axi_write(6'h20, 2); axi_write(6'h24, 4); axi_write(6'h28, 4);
+        axi_write(6'h34, 32'h00000202); axi_write(6'h00, 32'h41);
+        repeat (5000) begin axi_read(6'h04, status); if (status[1]) break; end
+        if (!status[1] || status[2] || $signed(ddr[TENSOR_OUT_BASE]) != 1 || $signed(ddr[TENSOR_OUT_BASE + 2]) != 2 ||
+            $signed(ddr[TENSOR_OUT_BASE + 8]) != 3 || $signed(ddr[TENSOR_OUT_BASE + 10]) != 4) begin
+            $error("PL upsample mismatch status=0x%08h", status); errors++;
+        end
+
+        ddr[TENSOR0_BASE] = 1; ddr[TENSOR0_BASE + 1] = 2; ddr[TENSOR1_BASE] = 3; ddr[TENSOR1_BASE + 1] = 4; ddr[TENSOR2_BASE] = 5; ddr[TENSOR2_BASE + 1] = 6;
+        axi_write(6'h00, 0); axi_write(6'h08, TENSOR0_BASE); axi_write(6'h0C, TENSOR1_BASE); axi_write(6'h10, TENSOR_OUT_BASE); axi_write(6'h3C, TENSOR2_BASE);
+        axi_write(6'h14, 1); axi_write(6'h18, 1); axi_write(6'h1C, 1); axi_write(6'h20, 2); axi_write(6'h24, 1); axi_write(6'h28, 2);
+        axi_write(6'h34, 1); axi_write(6'h38, 1); axi_write(6'h00, 32'h81);
+        repeat (5000) begin axi_read(6'h04, status); if (status[1]) break; end
+        if (!status[1] || status[2] || $signed(ddr[TENSOR_OUT_BASE]) != 1 || $signed(ddr[TENSOR_OUT_BASE + 1]) != 2 ||
+            $signed(ddr[TENSOR_OUT_BASE + 2]) != 3 || $signed(ddr[TENSOR_OUT_BASE + 3]) != 4 || $signed(ddr[TENSOR_OUT_BASE + 4]) != 5 || $signed(ddr[TENSOR_OUT_BASE + 5]) != 6) begin
+            $error("PL concat mismatch status=0x%08h", status); errors++;
+        end
+
         if (errors != 0) begin
             $fatal(1, "Tiled DDR GEMM top golden trace failed with %0d errors", errors);
         end
 
-        $display("Full tiled DDR GEMM, biased Conv2D, requantize, and ReLU golden trace passed");
+        $display("Full tiled DDR GEMM, Conv2D, requantize, activation, pool, upsample, and concat golden trace passed");
         $finish;
     end
 

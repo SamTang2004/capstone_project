@@ -210,6 +210,61 @@ int bcuda_axi_dma_submit_activation(BcudaAxiDma *dma, const BcudaLayerDesc *laye
     return BC_STATUS_OK;
 }
 
+static int bcuda_pl_validate_int8_tensor_op(BcudaAxiDma *dma, BcudaBuffer *input, BcudaBuffer *output) {
+    if (dma == 0 || input == 0 || output == 0 || dma->register_base == 0 || input->dtype != BC_DTYPE_INT8 || output->dtype != BC_DTYPE_INT8 ||
+        input->physical_address > 0xffffffffu || output->physical_address > 0xffffffffu) return BC_STATUS_SHAPE_MISMATCH;
+    return BC_STATUS_OK;
+}
+
+int bcuda_axi_dma_submit_maxpool(BcudaAxiDma *dma, const BcudaLayerDesc *layer, BcudaBuffer *input, BcudaBuffer *output) {
+    if (layer == 0 || bcuda_pl_validate_int8_tensor_op(dma, input, output) != BC_STATUS_OK || layer->n == 0 || layer->c == 0 || layer->h == 0 || layer->w == 0 ||
+        layer->out_h == 0 || layer->out_w == 0 || layer->kernel_h == 0 || layer->kernel_h > 16 || layer->kernel_w == 0 || layer->kernel_w > 16 ||
+        layer->stride_h == 0 || layer->stride_h > 255 || layer->stride_w == 0 || layer->stride_w > 255 || layer->pad_h > 255 || layer->pad_w > 255 ||
+        input->size_bytes < (uint64_t)layer->n * layer->c * layer->h * layer->w || output->size_bytes < (uint64_t)layer->n * layer->c * layer->out_h * layer->out_w) return BC_STATUS_SHAPE_MISMATCH;
+    bcuda_pl_write(dma, BCUDA_PL_REG_CONTROL, 0u);
+    bcuda_pl_write(dma, BCUDA_PL_REG_A_BASE, (uint32_t)input->physical_address);
+    bcuda_pl_write(dma, BCUDA_PL_REG_C_BASE, (uint32_t)output->physical_address);
+    bcuda_pl_write(dma, BCUDA_PL_REG_A_STRIDE, layer->n); bcuda_pl_write(dma, BCUDA_PL_REG_B_STRIDE, layer->c); bcuda_pl_write(dma, BCUDA_PL_REG_C_STRIDE, layer->h);
+    bcuda_pl_write(dma, BCUDA_PL_REG_M, layer->w); bcuda_pl_write(dma, BCUDA_PL_REG_N, layer->out_h); bcuda_pl_write(dma, BCUDA_PL_REG_K, layer->out_w);
+    bcuda_pl_write(dma, BCUDA_PL_REG_TILE_SIZE, layer->kernel_h); bcuda_pl_write(dma, BCUDA_PL_REG_ARRAY_COUNT, layer->kernel_w);
+    bcuda_pl_write(dma, BCUDA_PL_REG_RQ_MULTIPLIER, layer->stride_h | (layer->stride_w << 8)); bcuda_pl_write(dma, BCUDA_PL_REG_RQ_RIGHT_SHIFT, layer->pad_h | (layer->pad_w << 8));
+    dma->last_control_word = BCUDA_PL_CONTROL_START | BCUDA_PL_CONTROL_MAXPOOL;
+    bcuda_pl_write(dma, BCUDA_PL_REG_CONTROL, dma->last_control_word);
+    return BC_STATUS_OK;
+}
+
+int bcuda_axi_dma_submit_upsample(BcudaAxiDma *dma, const BcudaLayerDesc *layer, BcudaBuffer *input, BcudaBuffer *output) {
+    uint32_t scale_h, scale_w;
+    if (layer == 0 || bcuda_pl_validate_int8_tensor_op(dma, input, output) != BC_STATUS_OK || layer->n == 0 || layer->c == 0 || layer->h == 0 || layer->w == 0 || layer->out_h == 0 || layer->out_w == 0 ||
+        layer->out_h % layer->h != 0 || layer->out_w % layer->w != 0 || input->size_bytes < (uint64_t)layer->n * layer->c * layer->h * layer->w || output->size_bytes < (uint64_t)layer->n * layer->c * layer->out_h * layer->out_w) return BC_STATUS_SHAPE_MISMATCH;
+    scale_h = layer->out_h / layer->h; scale_w = layer->out_w / layer->w;
+    if (scale_h == 0 || scale_h > 255 || scale_w == 0 || scale_w > 255) return BC_STATUS_SHAPE_MISMATCH;
+    bcuda_pl_write(dma, BCUDA_PL_REG_CONTROL, 0u);
+    bcuda_pl_write(dma, BCUDA_PL_REG_A_BASE, (uint32_t)input->physical_address); bcuda_pl_write(dma, BCUDA_PL_REG_C_BASE, (uint32_t)output->physical_address);
+    bcuda_pl_write(dma, BCUDA_PL_REG_A_STRIDE, layer->n); bcuda_pl_write(dma, BCUDA_PL_REG_B_STRIDE, layer->c); bcuda_pl_write(dma, BCUDA_PL_REG_C_STRIDE, layer->h);
+    bcuda_pl_write(dma, BCUDA_PL_REG_M, layer->w); bcuda_pl_write(dma, BCUDA_PL_REG_N, layer->out_h); bcuda_pl_write(dma, BCUDA_PL_REG_K, layer->out_w);
+    bcuda_pl_write(dma, BCUDA_PL_REG_RQ_MULTIPLIER, scale_h | (scale_w << 8));
+    dma->last_control_word = BCUDA_PL_CONTROL_START | BCUDA_PL_CONTROL_UPSAMPLE;
+    bcuda_pl_write(dma, BCUDA_PL_REG_CONTROL, dma->last_control_word);
+    return BC_STATUS_OK;
+}
+
+int bcuda_axi_dma_submit_concat(BcudaAxiDma *dma, const BcudaLayerDesc *layer, BcudaBuffer *input0, BcudaBuffer *input1, BcudaBuffer *input2, BcudaBuffer *output) {
+    uint32_t c0, c1, c2;
+    if (layer == 0 || input0 == 0 || input1 == 0 || output == 0 || bcuda_pl_validate_int8_tensor_op(dma, input0, output) != BC_STATUS_OK || input1->dtype != BC_DTYPE_INT8 || input1->physical_address > 0xffffffffu || layer->n == 0 || layer->h == 0 || layer->w == 0 || layer->out_c == 0) return BC_STATUS_SHAPE_MISMATCH;
+    c0 = (uint32_t)(input0->size_bytes / ((uint64_t)layer->n * layer->h * layer->w)); c1 = (uint32_t)(input1->size_bytes / ((uint64_t)layer->n * layer->h * layer->w));
+    c2 = input2 == 0 ? 0u : (uint32_t)(input2->size_bytes / ((uint64_t)layer->n * layer->h * layer->w));
+    if (c0 == 0 || c1 == 0 || c0 + c1 + c2 != layer->out_c || c1 > 65535 || c2 > 65535 || (input2 != 0 && (input2->dtype != BC_DTYPE_INT8 || input2->physical_address > 0xffffffffu)) || output->size_bytes < (uint64_t)layer->n * layer->out_c * layer->h * layer->w) return BC_STATUS_SHAPE_MISMATCH;
+    bcuda_pl_write(dma, BCUDA_PL_REG_CONTROL, 0u);
+    bcuda_pl_write(dma, BCUDA_PL_REG_A_BASE, (uint32_t)input0->physical_address); bcuda_pl_write(dma, BCUDA_PL_REG_B_BASE, (uint32_t)input1->physical_address); bcuda_pl_write(dma, BCUDA_PL_REG_C_BASE, (uint32_t)output->physical_address);
+    bcuda_pl_write(dma, BCUDA_PL_REG_A_STRIDE, layer->n); bcuda_pl_write(dma, BCUDA_PL_REG_B_STRIDE, c0); bcuda_pl_write(dma, BCUDA_PL_REG_C_STRIDE, layer->h);
+    bcuda_pl_write(dma, BCUDA_PL_REG_M, layer->w); bcuda_pl_write(dma, BCUDA_PL_REG_N, layer->h); bcuda_pl_write(dma, BCUDA_PL_REG_K, layer->w);
+    bcuda_pl_write(dma, BCUDA_PL_REG_RQ_MULTIPLIER, c1); bcuda_pl_write(dma, BCUDA_PL_REG_RQ_RIGHT_SHIFT, c2); bcuda_pl_write(dma, BCUDA_PL_REG_RQ_OUTPUT_ZERO_POINT, input2 == 0 ? 0u : (uint32_t)input2->physical_address);
+    dma->last_control_word = BCUDA_PL_CONTROL_START | BCUDA_PL_CONTROL_CONCAT;
+    bcuda_pl_write(dma, BCUDA_PL_REG_CONTROL, dma->last_control_word);
+    return BC_STATUS_OK;
+}
+
 int bcuda_axi_dma_submit_tile_load(BcudaAxiDma *dma, const BcudaTileLoadDesc *desc, BcudaBuffer *source) {
     if (dma == 0 || desc == 0 || source == 0) {
         return BC_STATUS_GENERAL_ERROR;
