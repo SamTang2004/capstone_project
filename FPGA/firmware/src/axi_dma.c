@@ -32,16 +32,40 @@ static uint32_t bcuda_stride_bytes(const BcudaBuffer *buffer, uint32_t fallback)
     return fallback;
 }
 
-static int bcuda_validate_final_tile_gemm(const BcudaGemmDesc *desc, const BcudaBuffer *A, const BcudaBuffer *B, const BcudaBuffer *C) {
-    if (desc->M != BCUDA_PL_TILE_DIM || desc->N != BCUDA_PL_TILE_DIM || desc->K != BCUDA_PL_TILE_DIM) {
+static int bcuda_validate_tiled_gemm(const BcudaGemmDesc *desc, const BcudaBuffer *A, const BcudaBuffer *B, const BcudaBuffer *C) {
+    uint64_t a_required;
+    uint64_t b_required;
+    uint64_t c_required;
+    uint32_t a_stride;
+    uint32_t b_stride;
+    uint32_t c_stride;
+
+    // The PL controller operates on 16-wide tiles.  Host/compiler padding is
+    // required for edge tiles so the PS never exposes an undersized CMA row.
+    if (desc->M == 0 || desc->N == 0 || desc->K == 0 ||
+        (desc->M % BCUDA_PL_TILE_DIM) != 0 ||
+        (desc->N % BCUDA_PL_TILE_DIM) != 0 ||
+        (desc->K % BCUDA_PL_TILE_DIM) != 0) {
         return BC_STATUS_SHAPE_MISMATCH;
     }
     if (A->dtype != BC_DTYPE_INT8 || B->dtype != BC_DTYPE_INT8 || C->dtype != BC_DTYPE_INT32) {
         return BC_STATUS_UNSUPPORTED_DTYPE;
     }
-    if (A->size_bytes < BCUDA_PL_TILE_ELEMENTS || B->size_bytes < BCUDA_PL_TILE_ELEMENTS || C->size_bytes < BCUDA_PL_TILE_ELEMENTS * sizeof(uint32_t)) {
+    if (desc->A_layout != BC_LAYOUT_ROW_MAJOR || desc->B_layout != BC_LAYOUT_ROW_MAJOR || desc->C_layout != BC_LAYOUT_ROW_MAJOR ||
+        A->layout != BC_LAYOUT_ROW_MAJOR || B->layout != BC_LAYOUT_ROW_MAJOR || C->layout != BC_LAYOUT_ROW_MAJOR) {
         return BC_STATUS_SHAPE_MISMATCH;
     }
+
+    a_stride = bcuda_stride_bytes(A, desc->K);
+    b_stride = bcuda_stride_bytes(B, desc->N);
+    c_stride = bcuda_stride_bytes(C, desc->N * sizeof(uint32_t));
+    if (a_stride < desc->K || b_stride < desc->N || c_stride < desc->N * sizeof(uint32_t) ||
+        (c_stride & 0x3u) != 0u) return BC_STATUS_SHAPE_MISMATCH;
+
+    a_required = (uint64_t)(desc->M - 1u) * a_stride + desc->K;
+    b_required = (uint64_t)(desc->K - 1u) * b_stride + desc->N;
+    c_required = (uint64_t)(desc->M - 1u) * c_stride + (uint64_t)desc->N * sizeof(uint32_t);
+    if (a_required > A->size_bytes || b_required > B->size_bytes || c_required > C->size_bytes) return BC_STATUS_SHAPE_MISMATCH;
     return BC_STATUS_OK;
 }
 
@@ -74,7 +98,7 @@ int bcuda_axi_dma_submit_gemm(BcudaAxiDma *dma, const BcudaGemmDesc *desc, Bcuda
     if (desc->A_dtype != BC_DTYPE_INT8 || desc->B_dtype != BC_DTYPE_INT8 || desc->C_dtype != BC_DTYPE_INT32) {
         return BC_STATUS_UNSUPPORTED_DTYPE;
     }
-    int status = bcuda_validate_final_tile_gemm(desc, A, B, C);
+    int status = bcuda_validate_tiled_gemm(desc, A, B, C);
     if (status != BC_STATUS_OK) {
         return status;
     }
@@ -89,7 +113,7 @@ int bcuda_axi_dma_submit_gemm(BcudaAxiDma *dma, const BcudaGemmDesc *desc, Bcuda
     }
 
     dma->last_source_address = A->physical_address;
-    dma->last_transfer_bytes = BCUDA_PL_TILE_ELEMENTS + BCUDA_PL_TILE_ELEMENTS + BCUDA_PL_TILE_ELEMENTS * sizeof(uint32_t);
+    dma->last_transfer_bytes = (uint32_t)(A->size_bytes + B->size_bytes + C->size_bytes);
     dma->last_tile_size = BCUDA_PL_TILE_DIM;
     dma->last_array_count = BCUDA_PL_ARRAY_COUNT;
     dma->last_control_word = BCUDA_PL_CONTROL_START;
@@ -225,7 +249,7 @@ int bcuda_axi_dma_submit_tiled_gemm(BcudaAxiDma *dma, const BcudaGemmDesc *desc,
         A->dtype != BC_DTYPE_INT8 || B->dtype != BC_DTYPE_INT8 || C->dtype != BC_DTYPE_INT32) {
         return BC_STATUS_UNSUPPORTED_DTYPE;
     }
-    if (desc->M == 0 || desc->N == 0 || desc->K == 0 || config->tile_size == 0 || config->tile_size > 16 || config->array_count == 0 || config->array_count > BCUDA_PL_ARRAY_COUNT) {
+    if (config->tile_size != BCUDA_PL_TILE_DIM || config->array_count != BCUDA_PL_ARRAY_COUNT) {
         return BC_STATUS_SHAPE_MISMATCH;
     }
 
@@ -244,15 +268,7 @@ int bcuda_axi_dma_submit_tiled_gemm(BcudaAxiDma *dma, const BcudaGemmDesc *desc,
     dma->last_schedule_steps = schedule_steps;
     dma->last_source_address = A->physical_address;
     dma->last_transfer_bytes = (uint32_t)(A->size_bytes + B->size_bytes + C->size_bytes);
-    dma->last_control_word = 0x4u;
-    dma->last_control_word ^= (uint32_t)(A->physical_address & 0xffffffffu);
-    dma->last_control_word ^= (uint32_t)(B->physical_address & 0xffffffffu);
-    dma->last_control_word ^= (uint32_t)(C->physical_address & 0xffffffffu);
-    dma->last_control_word ^= desc->M ^ desc->N ^ desc->K;
-    dma->last_control_word ^= config->tile_size << 8;
-    dma->last_control_word ^= config->array_count << 16;
-    dma->last_control_word ^= config->flags;
-    return BC_STATUS_OK;
+    return bcuda_axi_dma_submit_gemm(dma, desc, A, B, C);
 }
 
 int bcuda_axi_dma_configure_accumulator(BcudaAxiDma *dma, const BcudaAccumulatorConfig *config) {

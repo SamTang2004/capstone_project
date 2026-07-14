@@ -74,13 +74,26 @@ class FirmwareAxiDmaTest(unittest.TestCase):
         self.assertEqual(self.lib.bcuda_axi_dma_poll_done(ctypes.byref(dma)), BC_STATUS_OK)
         self.assertEqual(regs[0], 0)
 
-    def test_bcuda_axi_dma_submit_gemm_rejects_non_final_tile_shape(self):
+    def test_bcuda_axi_dma_submit_gemm_rejects_unpadded_tile_shape(self):
         dma = BcudaAxiDma(0, 100, 0)
         desc = BcudaGemmDesc(1, 2, 3, 2, 2, 2, BC_DTYPE_INT8, BC_DTYPE_INT8, BC_DTYPE_INT32, 1, 1, 1, 0, 0)
         A = BcudaBuffer(1, 0x1000, None, 4, BC_DTYPE_INT8, 1, 2, 2, (ctypes.c_uint32 * 4)(2, 2, 1, 1), 1)
         B = BcudaBuffer(2, 0x2000, None, 4, BC_DTYPE_INT8, 1, 2, 2, (ctypes.c_uint32 * 4)(2, 2, 1, 1), 1)
         C = BcudaBuffer(3, 0x3000, None, 16, BC_DTYPE_INT32, 1, 4, 2, (ctypes.c_uint32 * 4)(2, 2, 1, 1), 1)
         self.assertEqual(self.lib.bcuda_axi_dma_submit_gemm(ctypes.byref(dma), ctypes.byref(desc), ctypes.byref(A), ctypes.byref(B), ctypes.byref(C)), BC_STATUS_SHAPE_MISMATCH)
+
+    def test_bcuda_axi_dma_submit_gemm_programs_multi_tile_shape(self):
+        regs = (ctypes.c_uint32 * 16)()
+        dma = BcudaAxiDma(ctypes.addressof(regs), 8, 0)
+        desc = BcudaGemmDesc(1, 2, 3, 128, 64, 32, BC_DTYPE_INT8, BC_DTYPE_INT8, BC_DTYPE_INT32, 1, 1, 1, 0, 0)
+        A = BcudaBuffer(1, 0x1000, None, 128 * 32, BC_DTYPE_INT8, 1, 2, 2, (ctypes.c_uint32 * 4)(128, 32, 1, 1), 1)
+        B = BcudaBuffer(2, 0x3000, None, 32 * 64, BC_DTYPE_INT8, 1, 2, 2, (ctypes.c_uint32 * 4)(32, 64, 1, 1), 1)
+        C = BcudaBuffer(3, 0x4000, None, 128 * 64 * 4, BC_DTYPE_INT32, 1, 4, 2, (ctypes.c_uint32 * 4)(128, 64, 1, 1), 1)
+
+        self.assertEqual(self.lib.bcuda_axi_dma_submit_gemm(ctypes.byref(dma), ctypes.byref(desc), ctypes.byref(A), ctypes.byref(B), ctypes.byref(C)), BC_STATUS_OK)
+        self.assertEqual([regs[8], regs[9], regs[10]], [128, 64, 32])
+        self.assertEqual([regs[5], regs[6], regs[7]], [32, 64, 256])
+        self.assertEqual(regs[0], 1)
 
     def test_bcuda_axi_dma_submit_gemm_rejects_unsupported_dtype(self):
         dma = BcudaAxiDma(0, 100, 0)
@@ -111,11 +124,11 @@ class FirmwareAxiDmaTest(unittest.TestCase):
 
     def test_bcuda_axi_dma_submit_tiled_gemm_records_controller_schedule(self):
         dma = BcudaAxiDma()
-        desc = BcudaGemmDesc(1, 2, 3, 35, 41, 27, BC_DTYPE_INT8, BC_DTYPE_INT8, BC_DTYPE_INT32, 1, 1, 1, 0, 0)
+        desc = BcudaGemmDesc(1, 2, 3, 48, 48, 32, BC_DTYPE_INT8, BC_DTYPE_INT8, BC_DTYPE_INT32, 1, 1, 1, 0, 0)
         config = BcudaTiledGemmConfig(16, 1, 0, 0)
-        A = BcudaBuffer(1, 0x1000, None, 35 * 27, BC_DTYPE_INT8, 1, 2, 2, (ctypes.c_uint32 * 4)(35, 27, 1, 1), 1)
-        B = BcudaBuffer(2, 0x2000, None, 27 * 41, BC_DTYPE_INT8, 1, 2, 2, (ctypes.c_uint32 * 4)(27, 41, 1, 1), 1)
-        C = BcudaBuffer(3, 0x3000, None, 35 * 41 * 4, BC_DTYPE_INT32, 1, 4, 2, (ctypes.c_uint32 * 4)(35, 41, 1, 1), 1)
+        A = BcudaBuffer(1, 0x1000, None, 48 * 32, BC_DTYPE_INT8, 1, 2, 2, (ctypes.c_uint32 * 4)(48, 32, 1, 1), 1)
+        B = BcudaBuffer(2, 0x2000, None, 32 * 48, BC_DTYPE_INT8, 1, 2, 2, (ctypes.c_uint32 * 4)(32, 48, 1, 1), 1)
+        C = BcudaBuffer(3, 0x3000, None, 48 * 48 * 4, BC_DTYPE_INT32, 1, 4, 2, (ctypes.c_uint32 * 4)(48, 48, 1, 1), 1)
         self.assertEqual(self.lib.bcuda_axi_dma_submit_tiled_gemm(ctypes.byref(dma), ctypes.byref(desc), ctypes.byref(config), ctypes.byref(A), ctypes.byref(B), ctypes.byref(C)), BC_STATUS_OK)
         self.assertEqual(dma.last_tile_size, 16)
         self.assertEqual(dma.last_array_count, 1)

@@ -11,8 +11,8 @@ from .tensor import Tensor
 
 
 class Device:
-    def __init__(self, address: str | None = None, port: int = 9000, protocol: ProtocolClient | None = None):
-        self.protocol = protocol or ProtocolClient(address=address, port=port)
+    def __init__(self, address: str | None = None, port: int | None = None, timeout: float | None = None, protocol: ProtocolClient | None = None):
+        self.protocol = protocol or ProtocolClient(address=address, port=port, timeout=timeout)
 
     @classmethod
     def mock(cls) -> "Device":

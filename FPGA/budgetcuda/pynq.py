@@ -236,12 +236,13 @@ class PynqPlRuntime:
 
 
 class PynqDevice(Device):
-    def __init__(self, address: str, port: int = 9000):
-        super().__init__(address=address, port=port)
+    def __init__(self, address: str | None = None, port: int | None = None, timeout: float | None = None):
+        super().__init__(address=address, port=port, timeout=timeout)
 
     def load_model(self, package: ModelPackage):
         return upload_model(self, package)
 
 
-def connect(address: str, port: int = 9000) -> PynqDevice:
-    return PynqDevice(address, port)
+def connect(address: str | None = None, port: int | None = None, timeout: float | None = None) -> PynqDevice:
+    """Connect to a board runtime, using environment settings or the PYNQ default."""
+    return PynqDevice(address, port, timeout)

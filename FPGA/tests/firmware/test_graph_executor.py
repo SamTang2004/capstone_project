@@ -201,11 +201,22 @@ class FirmwareGraphExecutorTest(unittest.TestCase):
         self.assertEqual(ctypes.sizeof(BcudaLayerDesc), LAYER_DESC_STRUCT.size)
 
     def test_bcuda_execute_gemm_resolves_buffers_and_submits_dma(self):
-        A = alloc_buffer(self.lib, 256, tensor_desc(BC_DTYPE_INT8, 2, 16))
-        B = alloc_buffer(self.lib, 256, tensor_desc(BC_DTYPE_INT8, 2, 16))
-        C = alloc_buffer(self.lib, 1024, tensor_desc(BC_DTYPE_INT32, 2, 16), usage=BC_USAGE_OUTPUT)
+        A = alloc_buffer(self.lib, 256, tensor_desc(BC_DTYPE_INT8, 2, 16, 16))
+        B = alloc_buffer(self.lib, 256, tensor_desc(BC_DTYPE_INT8, 2, 16, 16))
+        C = alloc_buffer(self.lib, 1024, tensor_desc(BC_DTYPE_INT32, 2, 16, 16), usage=BC_USAGE_OUTPUT)
         desc = BcudaGemmDesc(A, B, C, 16, 16, 16, BC_DTYPE_INT8, BC_DTYPE_INT8, BC_DTYPE_INT32, 1, 1, 1, 0, 0)
         self.assertEqual(self.lib.bcuda_execute_gemm(ctypes.byref(self.runtime), ctypes.byref(desc)), BC_STATUS_OK)
+        self.assertNotEqual(self.dma.last_control_word, 0)
+
+    def test_bcuda_execute_gemm_pads_irregular_shape_for_pl(self):
+        self.arena = init_buffer_manager(self.lib, arena_size=65536)
+        A = alloc_buffer(self.lib, 37 * 29, tensor_desc(BC_DTYPE_INT8, 2, 37, 29))
+        B = alloc_buffer(self.lib, 29 * 53, tensor_desc(BC_DTYPE_INT8, 2, 29, 53))
+        C = alloc_buffer(self.lib, 37 * 53 * 4, tensor_desc(BC_DTYPE_INT32, 2, 37, 53), usage=BC_USAGE_OUTPUT)
+        desc = BcudaGemmDesc(A, B, C, 37, 53, 29, BC_DTYPE_INT8, BC_DTYPE_INT8, BC_DTYPE_INT32, 1, 1, 1, 0, 0)
+
+        self.assertEqual(self.lib.bcuda_execute_gemm(ctypes.byref(self.runtime), ctypes.byref(desc)), BC_STATUS_OK)
+        self.assertEqual(self.dma.last_transfer_bytes, 48 * 32 + 32 * 64 + 48 * 64 * 4)
         self.assertNotEqual(self.dma.last_control_word, 0)
 
     def test_bcuda_execute_gemm_rejects_invalid_buffer_handle(self):
@@ -220,9 +231,9 @@ class FirmwareGraphExecutorTest(unittest.TestCase):
         self.assertEqual(self.lib.bcuda_execute_graph(ctypes.byref(self.runtime), ctypes.byref(desc)), BC_STATUS_INVALID_COMMAND)
 
     def test_bcuda_execute_graph_parses_descriptor_and_executes_gemm_layer(self):
-        A = alloc_buffer(self.lib, 256, tensor_desc(BC_DTYPE_INT8, 2, 16))
-        B = alloc_buffer(self.lib, 256, tensor_desc(BC_DTYPE_INT8, 2, 16))
-        C = alloc_buffer(self.lib, 1024, tensor_desc(BC_DTYPE_INT32, 2, 16), usage=BC_USAGE_OUTPUT)
+        A = alloc_buffer(self.lib, 256, tensor_desc(BC_DTYPE_INT8, 2, 16, 16))
+        B = alloc_buffer(self.lib, 256, tensor_desc(BC_DTYPE_INT8, 2, 16, 16))
+        C = alloc_buffer(self.lib, 1024, tensor_desc(BC_DTYPE_INT32, 2, 16, 16), usage=BC_USAGE_OUTPUT)
         descriptor = build_single_gemm_model_descriptor(A, B, C)
         model = alloc_buffer(self.lib, len(descriptor), tensor_desc(BC_DTYPE_INT8, 1, len(descriptor)), usage=BC_USAGE_DESCRIPTOR)
         write_buffer(self.lib, model, descriptor)

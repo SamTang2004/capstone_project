@@ -61,6 +61,7 @@ module tb_bcuda_tiled_systolic_ddr_top;
     logic [31:0] pending_read_addr;
     logic [4:0] pending_read_remaining;
     logic [31:0] pending_write_addr;
+    logic [1:0] ddr_phase;
     int errors;
     integer read_cmd_count;
     integer write_cmd_count;
@@ -69,7 +70,7 @@ module tb_bcuda_tiled_systolic_ddr_top;
     always #5 clk = ~clk;
 
     initial begin
-        repeat (20000) @(posedge clk);
+        repeat (40000) @(posedge clk);
         $fatal(1, "Tiled DDR top timeout state=%0d rq_busy=%0b read_pending=%0b count=%0d flush=%0b send=%0b inflight=%0b", dut.requantizer.state, dut.rq_busy, dut.memio.read_pending, dut.memio.write_count, dut.memio.write_flush_pending, dut.memio.write_send_active, dut.memio.write_inflight);
     end
 
@@ -171,9 +172,13 @@ module tb_bcuda_tiled_systolic_ddr_top;
             pending_read_remaining <= '0;
             pending_write_addr <= '0;
             mem_read_last <= 1'b0;
+            ddr_phase <= '0;
         end else begin
-            mem_cmd_ready <= 1'b1;
-            mem_write_ready <= 1'b1;
+            // Model ordinary HP0/interconnect stalls.  The command channel
+            // pauses one in four cycles and write data every other cycle.
+            ddr_phase <= ddr_phase + 1'b1;
+            mem_cmd_ready <= ddr_phase != 2'd0;
+            mem_write_ready <= ddr_phase[0];
             mem_read_valid <= pending_read;
             mem_read_data <= load_word_le(pending_read_addr);
             mem_read_last <= pending_read && pending_read_remaining == 1;
@@ -253,7 +258,7 @@ module tb_bcuda_tiled_systolic_ddr_top;
         axi_write(6'h30, 32'd1);
         axi_write(6'h00, 32'h1);
 
-        repeat (2000) begin
+        repeat (5000) begin
             axi_read(6'h04, status);
             if (status[1]) begin
                 break;
@@ -282,6 +287,32 @@ module tb_bcuda_tiled_systolic_ddr_top;
             got = load_word_le(C_BASE + i * 4);
             if (got !== c_mem[i]) begin
                 $error("Tiled DDR GEMM C mismatch index %0d expected=0x%08h got=0x%08h", i, c_mem[i], got);
+                errors++;
+            end
+        end
+
+        // Regression for the board failure where a new GEMM began with two
+        // words retained from the preceding result tile.  Dirty C first, then
+        // issue the same GEMM again without resetting the PL datapath.
+        for (int i = 0; i < 16 * 16 * 4; i++) begin
+            ddr[C_BASE + i] = 8'hA5;
+        end
+        axi_write(6'h00, 32'h0);
+        axi_write(6'h00, 32'h1);
+        repeat (5000) begin
+            axi_read(6'h04, status);
+            if (status[1]) begin
+                break;
+            end
+        end
+        if (!status[1] || status[2]) begin
+            $fatal(1, "Back-to-back tiled DDR GEMM did not complete cleanly, status=0x%08h", status);
+        end
+        for (int i = 0; i < 256; i++) begin
+            logic [31:0] got;
+            got = load_word_le(C_BASE + i * 4);
+            if (got !== c_mem[i]) begin
+                $error("Back-to-back tiled DDR GEMM C mismatch index %0d expected=0x%08h got=0x%08h", i, c_mem[i], got);
                 errors++;
             end
         end
@@ -339,7 +370,7 @@ module tb_bcuda_tiled_systolic_ddr_top;
         axi_write(6'h38, 32'd0);       // padding H/W
         axi_write(6'h3C, CONV_BIAS_BASE);
         axi_write(6'h00, 32'h5);       // START | CONV2D
-        repeat (2000) begin
+        repeat (5000) begin
             axi_read(6'h04, status);
             if (status[1]) break;
         end

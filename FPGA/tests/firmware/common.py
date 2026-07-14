@@ -388,8 +388,8 @@ def compile_firmware_library(name: str):
     return ctypes.CDLL(str(out))
 
 
-def tensor_desc(dtype=BC_DTYPE_INT8, rank=1, dim0=4):
-    return BcudaTensorDesc(dtype, rank, dim0, 1, 1, 1, BC_LAYOUT_ROW_MAJOR, 0)
+def tensor_desc(dtype=BC_DTYPE_INT8, rank=1, dim0=4, dim1=1, dim2=1, dim3=1):
+    return BcudaTensorDesc(dtype, rank, dim0, dim1, dim2, dim3, BC_LAYOUT_ROW_MAJOR, 0)
 
 
 def init_buffer_manager(lib, arena_size=4096):

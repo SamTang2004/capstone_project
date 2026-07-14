@@ -289,17 +289,31 @@ class GraphBuilder:
 
 def upload_model(device, package: ModelPackage) -> Model:
     tensors = []
-    for buffer in package.buffers:
-        tensor = device.alloc(buffer.shape, buffer.dtype, buffer.layout, buffer.usage)
-        if buffer.data is not None:
-            if len(buffer.data) != buffer.size_bytes:
+    descriptor_tensor = None
+    try:
+        for buffer in package.buffers:
+            if buffer.data is not None and len(buffer.data) != buffer.size_bytes:
                 raise ValueError(f"Buffer {buffer.name} has {len(buffer.data)} bytes, expected {buffer.size_bytes}")
-            device.write(tensor, buffer.data)
-        tensors.append(tensor)
+            tensor = device.alloc(buffer.shape, buffer.dtype, buffer.layout, buffer.usage)
+            if buffer.data is not None:
+                device.write(tensor, buffer.data)
+            tensors.append(tensor)
 
-    descriptor = package.serialize_descriptor([tensor.buffer_id for tensor in tensors])
-    descriptor_tensor = device.alloc((len(descriptor),), "int8", usage="descriptor")
-    device.write(descriptor_tensor, descriptor)
+        descriptor = package.serialize_descriptor([tensor.buffer_id for tensor in tensors])
+        descriptor_tensor = device.alloc((len(descriptor),), "int8", usage="descriptor")
+        device.write(descriptor_tensor, descriptor)
+    except Exception:
+        if descriptor_tensor is not None:
+            try:
+                device.free(descriptor_tensor)
+            except Exception:
+                pass
+        for tensor in reversed(tensors):
+            try:
+                device.free(tensor)
+            except Exception:
+                pass
+        raise
 
     weights = [
         tensor
@@ -312,6 +326,7 @@ def upload_model(device, package: ModelPackage) -> Model:
         tensors[package.input_index],
         tensors[package.output_index],
         weights=weights,
+        tensors=tensors,
     )
 
 

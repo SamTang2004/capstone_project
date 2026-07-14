@@ -92,6 +92,106 @@ static uint32_t bcuda_dtype_bytes(uint32_t dtype) {
     }
 }
 
+static uint32_t bcuda_round_up_tile(uint32_t value) {
+    return (value + 15u) & ~15u;
+}
+
+static uint32_t bcuda_row_stride(const BcudaBuffer *buffer, uint32_t fallback, uint32_t element_bytes) {
+    if (buffer != 0 && buffer->rank >= 2 && buffer->shape[1] != 0) {
+        return buffer->shape[1] * element_bytes;
+    }
+    return fallback;
+}
+
+static int bcuda_gemm_buffer_fits(const BcudaBuffer *buffer, uint32_t rows, uint32_t row_bytes, uint32_t stride) {
+    uint64_t required;
+    if (buffer == 0 || rows == 0 || stride < row_bytes) return 0;
+    required = (uint64_t)(rows - 1u) * stride + row_bytes;
+    return required <= buffer->size_bytes;
+}
+
+static BcudaTensorDesc bcuda_tensor_desc_2d(uint32_t dtype, uint32_t rows, uint32_t cols) {
+    BcudaTensorDesc desc;
+    memset(&desc, 0, sizeof(desc));
+    desc.dtype = dtype;
+    desc.rank = 2;
+    desc.dim0 = rows;
+    desc.dim1 = cols;
+    desc.layout = BC_LAYOUT_ROW_MAJOR;
+    return desc;
+}
+
+static int bcuda_execute_padded_gemm(BcudaGraphRuntime *runtime, const BcudaGemmDesc *desc,
+                                     BcudaBuffer *A, BcudaBuffer *B, BcudaBuffer *C) {
+    BcudaBuffer *padded_a = 0;
+    BcudaBuffer *padded_b = 0;
+    BcudaBuffer *padded_c = 0;
+    BcudaGemmDesc padded_desc;
+    uint32_t padded_m = bcuda_round_up_tile(desc->M);
+    uint32_t padded_n = bcuda_round_up_tile(desc->N);
+    uint32_t padded_k = bcuda_round_up_tile(desc->K);
+    uint32_t a_stride = bcuda_row_stride(A, desc->K, 1);
+    uint32_t b_stride = bcuda_row_stride(B, desc->N, 1);
+    uint32_t c_stride = bcuda_row_stride(C, desc->N * sizeof(int32_t), sizeof(int32_t));
+    uint32_t a_id = 0, b_id = 0, c_id = 0;
+    int status;
+
+    if (padded_m == 0 || padded_n == 0 || padded_k == 0 ||
+        !bcuda_gemm_buffer_fits(A, desc->M, desc->K, a_stride) ||
+        !bcuda_gemm_buffer_fits(B, desc->K, desc->N, b_stride) ||
+        !bcuda_gemm_buffer_fits(C, desc->M, desc->N * sizeof(int32_t), c_stride)) {
+        return BC_STATUS_SHAPE_MISMATCH;
+    }
+
+    status = bcuda_alloc_buffer((uint64_t)padded_m * padded_k,
+                                bcuda_tensor_desc_2d(BC_DTYPE_INT8, padded_m, padded_k), A->usage, &a_id);
+    if (status != BC_STATUS_OK) goto done;
+    status = bcuda_alloc_buffer((uint64_t)padded_k * padded_n,
+                                bcuda_tensor_desc_2d(BC_DTYPE_INT8, padded_k, padded_n), B->usage, &b_id);
+    if (status != BC_STATUS_OK) goto done;
+    status = bcuda_alloc_buffer((uint64_t)padded_m * padded_n * sizeof(int32_t),
+                                bcuda_tensor_desc_2d(BC_DTYPE_INT32, padded_m, padded_n), C->usage, &c_id);
+    if (status != BC_STATUS_OK) goto done;
+    if (bcuda_get_buffer(a_id, &padded_a) != BC_STATUS_OK ||
+        bcuda_get_buffer(b_id, &padded_b) != BC_STATUS_OK ||
+        bcuda_get_buffer(c_id, &padded_c) != BC_STATUS_OK) {
+        status = BC_STATUS_GENERAL_ERROR;
+        goto done;
+    }
+
+    memset(padded_a->virtual_address, 0, (size_t)padded_a->size_bytes);
+    memset(padded_b->virtual_address, 0, (size_t)padded_b->size_bytes);
+    memset(padded_c->virtual_address, 0, (size_t)padded_c->size_bytes);
+    for (uint32_t row = 0; row < desc->M; row++) {
+        memcpy((uint8_t *)padded_a->virtual_address + (uint64_t)row * padded_k,
+               (const uint8_t *)A->virtual_address + (uint64_t)row * a_stride, desc->K);
+    }
+    for (uint32_t row = 0; row < desc->K; row++) {
+        memcpy((uint8_t *)padded_b->virtual_address + (uint64_t)row * padded_n,
+               (const uint8_t *)B->virtual_address + (uint64_t)row * b_stride, desc->N);
+    }
+
+    padded_desc = *desc;
+    padded_desc.M = padded_m;
+    padded_desc.N = padded_n;
+    padded_desc.K = padded_k;
+    status = bcuda_axi_dma_submit_gemm(runtime->dma, &padded_desc, padded_a, padded_b, padded_c);
+    if (status == BC_STATUS_OK) status = bcuda_axi_dma_poll_done(runtime->dma);
+    if (status == BC_STATUS_OK) {
+        for (uint32_t row = 0; row < desc->M; row++) {
+            memcpy((uint8_t *)C->virtual_address + (uint64_t)row * c_stride,
+                   (const uint8_t *)padded_c->virtual_address + (uint64_t)row * padded_n * sizeof(int32_t),
+                   (size_t)desc->N * sizeof(int32_t));
+        }
+    }
+
+done:
+    if (c_id != 0) bcuda_free_buffer(c_id);
+    if (b_id != 0) bcuda_free_buffer(b_id);
+    if (a_id != 0) bcuda_free_buffer(a_id);
+    return status;
+}
+
 static int32_t bcuda_read_i32(const uint8_t *base) {
     int32_t value = 0;
     memcpy(&value, base, sizeof(value));
@@ -532,6 +632,10 @@ int bcuda_execute_gemm(BcudaGraphRuntime *runtime, const BcudaGemmDesc *desc) {
     status = bcuda_get_buffer(desc->C_buffer, &C);
     if (status != BC_STATUS_OK) {
         return status;
+    }
+
+    if ((desc->M & 15u) != 0u || (desc->N & 15u) != 0u || (desc->K & 15u) != 0u) {
+        return bcuda_execute_padded_gemm(runtime, desc, A, B, C);
     }
 
     status = bcuda_axi_dma_submit_gemm(runtime->dma, desc, A, B, C);

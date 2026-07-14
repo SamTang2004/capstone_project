@@ -25,10 +25,14 @@ class RecordingDevice(Device):
     def read(self, tensor, offset_bytes=0, nbytes=None):
         return self.output
 
+    def free(self, tensor):
+        self.freed.append(tensor)
+
 
 class ModelTest(unittest.TestCase):
     def test_model_run_writes_input_executes_graph_and_reads_output(self):
         dev = RecordingDevice()
+        dev.freed = []
         model = Model(dev, descriptor_tensor="desc", input_tensor="input", output_tensor="output")
         result = model.run([9])
 
@@ -36,6 +40,16 @@ class ModelTest(unittest.TestCase):
         self.assertEqual(dev.writes[0][0], "input")
         self.assertEqual(dev.graph_calls, [("desc", "input", "output", 0)])
         self.assertEqual(result, dev.output)
+
+    def test_model_close_releases_descriptor_and_model_tensors_once(self):
+        dev = RecordingDevice()
+        dev.freed = []
+        model = Model(dev, descriptor_tensor="desc", input_tensor="input", output_tensor="output", tensors=["input", "output"])
+        model.close()
+        model.close()
+        self.assertEqual(dev.freed, ["desc", "output", "input"])
+        with self.assertRaisesRegex(RuntimeError, "closed"):
+            model.run([1])
 
     def test_model_run_executes_mock_graph_relu(self):
         dev = Device.mock()

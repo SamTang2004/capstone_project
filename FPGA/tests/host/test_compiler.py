@@ -83,6 +83,7 @@ class CompilerTest(unittest.TestCase):
         self.assertEqual(model.input_tensor.shape, (1, 2))
         self.assertEqual(model.output_tensor.shape, (1, 2))
         self.assertEqual(len(model.weights), 1)
+        self.assertEqual(len(model.tensors), len(package.buffers))
         self.assertEqual(model.descriptor_tensor.size_bytes, len(package.serialize_descriptor([1, 2, 3])))
 
 

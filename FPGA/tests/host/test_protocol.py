@@ -6,7 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from budgetcuda.dtypes import OpType
 from budgetcuda.mock import MockBackend
-from budgetcuda.protocol import ProtocolClient
+from budgetcuda.protocol import DEFAULT_PROTOCOL_PORT, DEFAULT_PYNQ_IP, ProtocolClient
 from budgetcuda.serializer import pack_gemm_desc
 
 
@@ -53,9 +53,10 @@ class ProtocolTest(unittest.TestCase):
         with self.assertRaises(KeyError):
             client.read(999, 0, 1)
 
-    def test_protocol_client_requires_address_or_transport(self):
-        with self.assertRaises(ValueError):
-            ProtocolClient()
+    def test_protocol_client_uses_default_board_endpoint(self):
+        client = ProtocolClient()
+        self.assertEqual(client.transport.address, DEFAULT_PYNQ_IP)
+        self.assertEqual(client.transport.port, DEFAULT_PROTOCOL_PORT)
 
 
 if __name__ == "__main__":

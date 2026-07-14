@@ -58,6 +58,19 @@ class FirmwareBufferManagerTest(unittest.TestCase):
         alloc_buffer(self.lib, 4, tensor_desc(dim0=4))
         self.assertGreaterEqual(self.lib.bcuda_buffer_bytes_used(), 4)
 
+    def test_bcuda_reuses_freed_space_and_keeps_dma_physical_address(self):
+        self.lib.bcuda_buffer_manager_init_with_physical.argtypes = [ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t, ctypes.c_uint64]
+        self.lib.bcuda_buffer_manager_init_with_physical(self.arena, 0x1E000000, len(self.arena))
+        first = alloc_buffer(self.lib, 64, tensor_desc(dim0=64))
+        first_ptr = ctypes.POINTER(BcudaBuffer)()
+        self.assertEqual(self.lib.bcuda_get_buffer(first, ctypes.byref(first_ptr)), BC_STATUS_OK)
+        self.assertEqual(first_ptr.contents.physical_address, 0x1E000000)
+        self.assertEqual(self.lib.bcuda_free_buffer(first), BC_STATUS_OK)
+        second = alloc_buffer(self.lib, 64, tensor_desc(dim0=64))
+        second_ptr = ctypes.POINTER(BcudaBuffer)()
+        self.assertEqual(self.lib.bcuda_get_buffer(second, ctypes.byref(second_ptr)), BC_STATUS_OK)
+        self.assertEqual(second_ptr.contents.physical_address, 0x1E000000)
+
 
 if __name__ == "__main__":
     unittest.main()

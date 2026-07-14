@@ -8,6 +8,7 @@
 #define BUFFER_STATE_USED 1u
 
 static uint8_t *g_arena;
+static uintptr_t g_physical_base;
 static uint64_t g_arena_bytes;
 static uint64_t g_arena_offset;
 static uint32_t g_next_buffer_id;
@@ -17,12 +18,17 @@ static uint64_t align_up_u64(uint64_t value, uint64_t alignment) {
     return (value + alignment - 1u) & ~(alignment - 1u);
 }
 
-void bcuda_buffer_manager_init(uint8_t *arena, uint64_t arena_bytes) {
+void bcuda_buffer_manager_init_with_physical(uint8_t *arena, uintptr_t physical_base, uint64_t arena_bytes) {
     g_arena = arena;
+    g_physical_base = physical_base;
     g_arena_bytes = arena_bytes;
     g_arena_offset = 0;
     g_next_buffer_id = 1;
     memset(g_buffers, 0, sizeof(g_buffers));
+}
+
+void bcuda_buffer_manager_init(uint8_t *arena, uint64_t arena_bytes) {
+    bcuda_buffer_manager_init_with_physical(arena, (uintptr_t)arena, arena_bytes);
 }
 
 int bcuda_alloc_buffer(uint64_t size_bytes, BcudaTensorDesc desc, uint32_t usage, uint32_t *out_id) {
@@ -44,14 +50,34 @@ int bcuda_alloc_buffer(uint64_t size_bytes, BcudaTensorDesc desc, uint32_t usage
         return BC_STATUS_OUT_OF_MEMORY;
     }
 
-    uint64_t aligned_offset = align_up_u64(g_arena_offset, 64);
+    uint64_t aligned_offset = 0;
+    for (;;) {
+        uint64_t next_offset = aligned_offset;
+        for (uint32_t i = 0; i < BCUDA_MAX_BUFFERS; i++) {
+            const BcudaBuffer *other = &g_buffers[i];
+            if (other->state != BUFFER_STATE_USED) {
+                continue;
+            }
+            uint64_t other_offset = (uint64_t)((const uint8_t *)other->virtual_address - g_arena);
+            if (aligned_offset < other_offset + other->size_bytes && other_offset < aligned_offset + size_bytes) {
+                uint64_t after_other = align_up_u64(other_offset + other->size_bytes, 64);
+                if (after_other > next_offset) {
+                    next_offset = after_other;
+                }
+            }
+        }
+        if (next_offset == aligned_offset) {
+            break;
+        }
+        aligned_offset = next_offset;
+    }
     if (aligned_offset + size_bytes > g_arena_bytes) {
         return BC_STATUS_OUT_OF_MEMORY;
     }
 
     BcudaBuffer *buffer = &g_buffers[slot];
     buffer->buffer_id = g_next_buffer_id++;
-    buffer->physical_address = (uintptr_t)(g_arena + aligned_offset);
+    buffer->physical_address = g_physical_base + aligned_offset;
     buffer->virtual_address = g_arena + aligned_offset;
     buffer->size_bytes = size_bytes;
     buffer->dtype = desc.dtype;
@@ -64,7 +90,9 @@ int bcuda_alloc_buffer(uint64_t size_bytes, BcudaTensorDesc desc, uint32_t usage
     buffer->shape[3] = desc.dim3;
     buffer->state = BUFFER_STATE_USED;
 
-    g_arena_offset = aligned_offset + size_bytes;
+    if (aligned_offset + size_bytes > g_arena_offset) {
+        g_arena_offset = aligned_offset + size_bytes;
+    }
     *out_id = buffer->buffer_id;
     return BC_STATUS_OK;
 }

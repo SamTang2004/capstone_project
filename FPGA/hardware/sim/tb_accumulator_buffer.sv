@@ -72,7 +72,7 @@ module tb_accumulator_buffer;
             if (!op_ready) $fatal(1, "accumulator did not accept op %0d", i);
             @(negedge clk);
             op_valid = 1'b0;
-            @(posedge clk);
+            wait (op_ready);
             #1;
             if (op_result !== expected) $fatal(1, "accumulator op mismatch at %0d addr=%0d expected=%0d got=%0d", i, op_addr, expected, op_result);
             model[op_addr] = expected;
@@ -87,13 +87,13 @@ module tb_accumulator_buffer;
             read_req = 1'b1;
             @(posedge clk);
             #1;
-            read_req = 1'b0;
             if (!read_valid) $fatal(1, "accumulator read response missing at %0d", i);
-            #1;
             if (read_data !== signed'(final_words[i]) || model[i] !== signed'(final_words[i])) begin
                 $fatal(1, "accumulator final mismatch addr=%0d expected=%0d read=%0d model=%0d",
                     i, signed'(final_words[i]), read_data, model[i]);
             end
+            @(negedge clk);
+            read_req = 1'b0;
         end
 
         $display("Accumulator buffer golden trace passed: %0d ops, %0d reads", OP_COUNT, ENTRY_COUNT);
