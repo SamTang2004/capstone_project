@@ -42,6 +42,7 @@ module gemm_controller #(
 
     typedef enum logic [3:0] {
         STATE_IDLE,
+        STATE_PREPARE_GROUP,
         STATE_LOAD_A_START,
         STATE_LOAD_A_WAIT,
         STATE_LOAD_B_START,
@@ -68,7 +69,10 @@ module gemm_controller #(
     logic [DIM_WIDTH-1:0] m_tile_r;
     logic [DIM_WIDTH-1:0] n_group_tile_r;
     logic [DIM_WIDTH-1:0] k_tile_r;
-    logic [DIM_WIDTH-1:0] active_arrays_dim;
+    logic [DIM_WIDTH-1:0] active_arrays_dim_calc;
+    logic [DIM_WIDTH-1:0] n_group_cols_calc;
+    logic [7:0] active_arrays_r;
+    logic [DIM_WIDTH-1:0] n_group_cols_r;
 
     function automatic logic [DIM_WIDTH-1:0] ceil_div_tile(input logic [DIM_WIDTH-1:0] value);
         logic [DIM_WIDTH:0] adjusted;
@@ -113,9 +117,10 @@ module gemm_controller #(
     assign k0 = k_tile_r << 4;
     assign m_len = tile_extent(M_latched, m0, MAX_TILE_SIZE);
     assign k_len = tile_extent(K_latched, k0, MAX_TILE_SIZE);
-    assign active_arrays_dim = min_dim(array_count_latched, n_tiles - n_group_tile_r);
-    assign active_arrays = active_arrays_dim[7:0];
-    assign n_group_cols = min_dim(N_latched - n0, active_arrays_dim << 4);
+    assign active_arrays_dim_calc = min_dim(array_count_latched, n_tiles - n_group_tile_r);
+    assign n_group_cols_calc = min_dim(N_latched - n0, active_arrays_dim_calc << 4);
+    assign active_arrays = active_arrays_r;
+    assign n_group_cols = n_group_cols_r;
     assign clear_accumulators = busy && (k_tile_r == '0);
     assign write_c_tiles = busy && (k_tile_r == k_tiles - 1'b1);
 
@@ -135,6 +140,8 @@ module gemm_controller #(
             m_tile_r <= '0;
             n_group_tile_r <= '0;
             k_tile_r <= '0;
+            active_arrays_r <= '0;
+            n_group_cols_r <= '0;
         end else begin
             done <= 1'b0;
 
@@ -157,9 +164,15 @@ module gemm_controller #(
                             m_tile_r <= '0;
                             n_group_tile_r <= '0;
                             k_tile_r <= '0;
-                            state <= STATE_LOAD_A_START;
+                            state <= STATE_PREPARE_GROUP;
                         end
                     end
+                end
+
+                STATE_PREPARE_GROUP: begin
+                    active_arrays_r <= active_arrays_dim_calc[7:0];
+                    n_group_cols_r <= n_group_cols_calc;
+                    state <= STATE_LOAD_A_START;
                 end
 
                 STATE_LOAD_A_START: state <= STATE_LOAD_A_WAIT;
@@ -198,12 +211,12 @@ module gemm_controller #(
                         k_tile_r <= '0;
                         if (n_group_tile_r + array_count_latched < n_tiles) begin
                             n_group_tile_r <= n_group_tile_r + array_count_latched;
-                            state <= STATE_LOAD_A_START;
+                            state <= STATE_PREPARE_GROUP;
                         end else begin
                             n_group_tile_r <= '0;
                             if (m_tile_r + 1'b1 < m_tiles) begin
                                 m_tile_r <= m_tile_r + 1'b1;
-                                state <= STATE_LOAD_A_START;
+                                state <= STATE_PREPARE_GROUP;
                             end else begin
                                 state <= STATE_DONE;
                             end

@@ -75,8 +75,15 @@ module bcuda_tiled_systolic_ddr_top #(
         OP_WRITE_C
     } op_state_t;
 
-    typedef enum logic [2:0] {
+    typedef enum logic [3:0] {
         LOADER_LAUNCH_IDLE,
+        LOADER_LAUNCH_MUL0,
+        LOADER_LAUNCH_MUL1,
+        LOADER_LAUNCH_ADD01,
+        LOADER_LAUNCH_MUL2,
+        LOADER_LAUNCH_MUL3,
+        LOADER_LAUNCH_ADD23,
+        LOADER_LAUNCH_COMBINE,
         LOADER_LAUNCH_PRODUCT,
         LOADER_LAUNCH_BASE,
         LOADER_LAUNCH_FINAL,
@@ -84,8 +91,12 @@ module bcuda_tiled_systolic_ddr_top #(
         LOADER_LAUNCH_WAIT
     } loader_launch_state_t;
 
-    typedef enum logic [2:0] {
+    typedef enum logic [3:0] {
         WRITER_LAUNCH_IDLE,
+        WRITER_LAUNCH_ROW_CHUNKS,
+        WRITER_LAUNCH_ROW_PAIRS,
+        WRITER_LAUNCH_ROW_COMBINE,
+        WRITER_LAUNCH_GEOMETRY,
         WRITER_LAUNCH_PRODUCT,
         WRITER_LAUNCH_BASE,
         WRITER_LAUNCH_FINAL,
@@ -186,6 +197,10 @@ module bcuda_tiled_systolic_ddr_top #(
     logic [4:0] loader_cols;
     loader_launch_state_t loader_launch_state;
     logic [31:0] loader_base_seed_r, loader_row_offset_r, loader_column_offset_r, loader_base_sum_r;
+    logic [15:0] loader_offset_index_r;
+    logic [31:0] loader_offset_stride_r;
+    logic [23:0] loader_offset_chunk0_r, loader_offset_chunk1_r;
+    logic [31:0] loader_offset_pair_low_r, loader_offset_pair_high_r;
     logic loader_busy;
     logic loader_done;
     logic loader_error;
@@ -241,8 +256,15 @@ module bcuda_tiled_systolic_ddr_top #(
     writer_launch_state_t writer_launch_state;
     logic [31:0] writer_base_addr_r, writer_base_seed_r;
     logic [31:0] writer_row_offset_r, writer_column_offset_r, writer_base_sum_r;
+    logic [15:0] writer_m0_seed_r;
+    logic [31:0] writer_stride_seed_r;
+    logic writer_conv2d_seed_r;
+    (* use_dsp = "no" *) logic [23:0] writer_row_chunk0_r, writer_row_chunk1_r;
+    (* use_dsp = "no" *) logic [23:0] writer_row_chunk2_r, writer_row_chunk3_r;
+    logic [31:0] writer_row_pair_low_r, writer_row_pair_high_r;
     logic [15:0] writer_n0_r;
     logic [4:0] writer_rows_r, writer_cols_r;
+    logic [15:0] writer_n0_seed_r, writer_col_offset_seed_r, writer_n_group_cols_seed_r;
 
     logic rq_start;
     logic rq_busy;
@@ -321,8 +343,6 @@ module bcuda_tiled_systolic_ddr_top #(
     wire [4:0] b_len = (n_group_cols > (load_b_array_idx * 16 + 16)) ? 5'd16 : (n_group_cols - load_b_array_idx * 16);
     wire [2:0] writer_request_array = writer_done ? write_array_idx + 1'b1 : write_array_idx;
     wire [15:0] writer_request_col_offset = {13'd0, writer_request_array} << 4;
-    wire [4:0] writer_request_n_len = (n_group_cols > writer_request_col_offset + 16) ?
-                                             5'd16 : n_group_cols - writer_request_col_offset;
 
     assign start_pulse = ctrl_word[0] && !ctrl_start_d;
     assign controller_start = dispatch_pulse && !requantize_mode && !activation_mode && !tensor_mode && !avgpool_mode;
@@ -455,6 +475,12 @@ module bcuda_tiled_systolic_ddr_top #(
             loader_row_offset_r <= '0;
             loader_column_offset_r <= '0;
             loader_base_sum_r <= '0;
+            loader_offset_index_r <= '0;
+            loader_offset_stride_r <= '0;
+            loader_offset_chunk0_r <= '0;
+            loader_offset_chunk1_r <= '0;
+            loader_offset_pair_low_r <= '0;
+            loader_offset_pair_high_r <= '0;
         end else begin
             loader_start <= 1'b0;
             case (loader_launch_state)
@@ -466,14 +492,44 @@ module bcuda_tiled_systolic_ddr_top #(
                         loader_rows <= ((op_state == OP_ZERO_B) || (op_state == OP_LOAD_B) || (op_state == OP_LOAD_B_NEXT)) ? k_len : m_len;
                         loader_cols <= ((op_state == OP_ZERO_B) || (op_state == OP_LOAD_B) || (op_state == OP_LOAD_B_NEXT)) ? b_len : k_len;
                         if ((op_state == OP_ZERO_B) || (op_state == OP_LOAD_B) || (op_state == OP_LOAD_B_NEXT)) begin
-                            loader_row_offset_r <= k0 * b_stride;
+                            loader_offset_index_r <= k0;
+                            loader_offset_stride_r <= b_stride;
                             loader_column_offset_r <= n0 + (load_b_array_idx << 4);
                         end else begin
-                            loader_row_offset_r <= m0 * a_stride;
+                            loader_offset_index_r <= m0;
+                            loader_offset_stride_r <= a_stride;
                             loader_column_offset_r <= k0;
                         end
-                        loader_launch_state <= LOADER_LAUNCH_PRODUCT;
+                        loader_launch_state <= LOADER_LAUNCH_MUL0;
                     end
+                end
+                LOADER_LAUNCH_MUL0: begin
+                    loader_offset_chunk0_r <= loader_offset_stride_r[7:0] * loader_offset_index_r;
+                    loader_launch_state <= LOADER_LAUNCH_MUL1;
+                end
+                LOADER_LAUNCH_MUL1: begin
+                    loader_offset_chunk1_r <= loader_offset_stride_r[15:8] * loader_offset_index_r;
+                    loader_launch_state <= LOADER_LAUNCH_ADD01;
+                end
+                LOADER_LAUNCH_ADD01: begin
+                    loader_offset_pair_low_r <= {8'd0, loader_offset_chunk0_r} + ({8'd0, loader_offset_chunk1_r} << 8);
+                    loader_launch_state <= LOADER_LAUNCH_MUL2;
+                end
+                LOADER_LAUNCH_MUL2: begin
+                    loader_offset_chunk0_r <= loader_offset_stride_r[23:16] * loader_offset_index_r;
+                    loader_launch_state <= LOADER_LAUNCH_MUL3;
+                end
+                LOADER_LAUNCH_MUL3: begin
+                    loader_offset_chunk1_r <= loader_offset_stride_r[31:24] * loader_offset_index_r;
+                    loader_launch_state <= LOADER_LAUNCH_ADD23;
+                end
+                LOADER_LAUNCH_ADD23: begin
+                    loader_offset_pair_high_r <= {8'd0, loader_offset_chunk0_r} + ({8'd0, loader_offset_chunk1_r} << 8);
+                    loader_launch_state <= LOADER_LAUNCH_COMBINE;
+                end
+                LOADER_LAUNCH_COMBINE: begin
+                    loader_row_offset_r <= loader_offset_pair_low_r + (loader_offset_pair_high_r << 16);
+                    loader_launch_state <= LOADER_LAUNCH_PRODUCT;
                 end
                 LOADER_LAUNCH_PRODUCT: begin
                     loader_base_sum_r <= loader_base_seed_r + loader_row_offset_r;
@@ -556,27 +612,70 @@ module bcuda_tiled_systolic_ddr_top #(
             writer_row_offset_r <= '0;
             writer_column_offset_r <= '0;
             writer_base_sum_r <= '0;
+            writer_m0_seed_r <= '0;
+            writer_stride_seed_r <= '0;
+            writer_conv2d_seed_r <= 1'b0;
+            writer_row_chunk0_r <= '0;
+            writer_row_chunk1_r <= '0;
+            writer_row_chunk2_r <= '0;
+            writer_row_chunk3_r <= '0;
+            writer_row_pair_low_r <= '0;
+            writer_row_pair_high_r <= '0;
             writer_n0_r <= '0;
             writer_rows_r <= '0;
             writer_cols_r <= '0;
+            writer_n0_seed_r <= '0;
+            writer_col_offset_seed_r <= '0;
+            writer_n_group_cols_seed_r <= '0;
         end else begin
             writer_start <= 1'b0;
             case (writer_launch_state)
                 WRITER_LAUNCH_IDLE: begin
                     if (writer_start_request) begin
                         writer_base_seed_r <= c_base;
-                        writer_n0_r <= n0 + writer_request_col_offset;
+                        writer_n0_seed_r <= n0;
+                        writer_col_offset_seed_r <= writer_request_col_offset;
+                        writer_n_group_cols_seed_r <= n_group_cols;
                         writer_rows_r <= m_len;
-                        writer_cols_r <= writer_request_n_len;
+                        writer_m0_seed_r <= m0;
+                        writer_stride_seed_r <= c_stride;
+                        writer_conv2d_seed_r <= conv2d_mode;
                         if (conv2d_mode) begin
-                            writer_row_offset_r <= '0;
                             writer_column_offset_r <= '0;
                         end else begin
-                            writer_row_offset_r <= m0 * c_stride;
                             writer_column_offset_r <= (n0 + writer_request_col_offset) << 2;
                         end
-                        writer_launch_state <= WRITER_LAUNCH_PRODUCT;
+                        writer_launch_state <= WRITER_LAUNCH_ROW_CHUNKS;
                     end
+                end
+                WRITER_LAUNCH_ROW_CHUNKS: begin
+                    if (writer_conv2d_seed_r) begin
+                        writer_row_chunk0_r <= '0;
+                        writer_row_chunk1_r <= '0;
+                        writer_row_chunk2_r <= '0;
+                        writer_row_chunk3_r <= '0;
+                    end else begin
+                        writer_row_chunk0_r <= writer_m0_seed_r * writer_stride_seed_r[7:0];
+                        writer_row_chunk1_r <= writer_m0_seed_r * writer_stride_seed_r[15:8];
+                        writer_row_chunk2_r <= writer_m0_seed_r * writer_stride_seed_r[23:16];
+                        writer_row_chunk3_r <= writer_m0_seed_r * writer_stride_seed_r[31:24];
+                    end
+                    writer_launch_state <= WRITER_LAUNCH_ROW_PAIRS;
+                end
+                WRITER_LAUNCH_ROW_PAIRS: begin
+                    writer_row_pair_low_r <= writer_row_chunk0_r + (writer_row_chunk1_r << 8);
+                    writer_row_pair_high_r <= writer_row_chunk2_r + (writer_row_chunk3_r << 8);
+                    writer_launch_state <= WRITER_LAUNCH_ROW_COMBINE;
+                end
+                WRITER_LAUNCH_ROW_COMBINE: begin
+                    writer_row_offset_r <= writer_row_pair_low_r + (writer_row_pair_high_r << 16);
+                    writer_launch_state <= WRITER_LAUNCH_GEOMETRY;
+                end
+                WRITER_LAUNCH_GEOMETRY: begin
+                    writer_n0_r <= writer_n0_seed_r + writer_col_offset_seed_r;
+                    writer_cols_r <= (writer_n_group_cols_seed_r > writer_col_offset_seed_r + 16) ?
+                                     5'd16 : writer_n_group_cols_seed_r - writer_col_offset_seed_r;
+                    writer_launch_state <= WRITER_LAUNCH_PRODUCT;
                 end
                 WRITER_LAUNCH_PRODUCT: begin
                     writer_base_sum_r <= writer_base_seed_r + writer_row_offset_r;

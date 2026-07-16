@@ -191,14 +191,14 @@ module tb_bcuda_tiled_systolic_ddr_top;
             else if (writer_request_cycle >= 0) writer_request_cycle <= writer_request_cycle + 1;
             if (dut.writer_start) begin
                 writer_launch_cycle <= writer_request_cycle;
-                if (writer_request_cycle != 4)
-                    $fatal(1, "TileWriter launch pipeline latency was %0d cycles, expected 4", writer_request_cycle);
+                if (writer_request_cycle != 8)
+                    $fatal(1, "TileWriter launch pipeline latency was %0d cycles, expected 8", writer_request_cycle);
             end
             if (dut.loader_start_request) loader_request_cycle <= 0;
             else if (loader_request_cycle >= 0) loader_request_cycle <= loader_request_cycle + 1;
             if (dut.loader_start) begin
                 loader_launch_cycle <= loader_request_cycle;
-                if (loader_request_cycle < 4) $fatal(1, "TileLoader launch pipeline latency was %0d cycles, expected at least 4", loader_request_cycle);
+                if (loader_request_cycle < 11) $fatal(1, "TileLoader launch pipeline latency was %0d cycles, expected at least 11", loader_request_cycle);
             end
         end
         if (!rst_n) begin
