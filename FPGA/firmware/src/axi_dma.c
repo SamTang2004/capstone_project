@@ -233,6 +233,23 @@ int bcuda_axi_dma_submit_maxpool(BcudaAxiDma *dma, const BcudaLayerDesc *layer, 
     return BC_STATUS_OK;
 }
 
+int bcuda_axi_dma_submit_avgpool(BcudaAxiDma *dma, const BcudaLayerDesc *layer, BcudaBuffer *input, BcudaBuffer *output) {
+    if (layer == 0 || bcuda_pl_validate_int8_tensor_op(dma, input, output) != BC_STATUS_OK || layer->n == 0 || layer->c == 0 || layer->h == 0 || layer->w == 0 ||
+        layer->out_h == 0 || layer->out_w == 0 || layer->kernel_h == 0 || layer->kernel_h > 16 || layer->kernel_w == 0 || layer->kernel_w > 16 ||
+        layer->stride_h == 0 || layer->stride_h > 255 || layer->stride_w == 0 || layer->stride_w > 255 || layer->pad_h > 255 || layer->pad_w > 255 ||
+        input->size_bytes < (uint64_t)layer->n * layer->c * layer->h * layer->w || output->size_bytes < (uint64_t)layer->n * layer->c * layer->out_h * layer->out_w) return BC_STATUS_SHAPE_MISMATCH;
+    bcuda_pl_write(dma, BCUDA_PL_REG_CONTROL, 0u);
+    bcuda_pl_write(dma, BCUDA_PL_REG_A_BASE, (uint32_t)input->physical_address);
+    bcuda_pl_write(dma, BCUDA_PL_REG_C_BASE, (uint32_t)output->physical_address);
+    bcuda_pl_write(dma, BCUDA_PL_REG_A_STRIDE, layer->n); bcuda_pl_write(dma, BCUDA_PL_REG_B_STRIDE, layer->c); bcuda_pl_write(dma, BCUDA_PL_REG_C_STRIDE, layer->h);
+    bcuda_pl_write(dma, BCUDA_PL_REG_M, layer->w); bcuda_pl_write(dma, BCUDA_PL_REG_N, layer->out_h); bcuda_pl_write(dma, BCUDA_PL_REG_K, layer->out_w);
+    bcuda_pl_write(dma, BCUDA_PL_REG_TILE_SIZE, layer->kernel_h); bcuda_pl_write(dma, BCUDA_PL_REG_ARRAY_COUNT, layer->kernel_w);
+    bcuda_pl_write(dma, BCUDA_PL_REG_RQ_MULTIPLIER, layer->stride_h | (layer->stride_w << 8)); bcuda_pl_write(dma, BCUDA_PL_REG_RQ_RIGHT_SHIFT, layer->pad_h | (layer->pad_w << 8));
+    dma->last_control_word = BCUDA_PL_CONTROL_START | BCUDA_PL_CONTROL_AVGPOOL;
+    bcuda_pl_write(dma, BCUDA_PL_REG_CONTROL, dma->last_control_word);
+    return BC_STATUS_OK;
+}
+
 int bcuda_axi_dma_submit_upsample(BcudaAxiDma *dma, const BcudaLayerDesc *layer, BcudaBuffer *input, BcudaBuffer *output) {
     uint32_t scale_h, scale_w;
     if (layer == 0 || bcuda_pl_validate_int8_tensor_op(dma, input, output) != BC_STATUS_OK || layer->n == 0 || layer->c == 0 || layer->h == 0 || layer->w == 0 || layer->out_h == 0 || layer->out_w == 0 ||
@@ -374,7 +391,9 @@ int bcuda_axi_dma_poll_done(BcudaAxiDma *dma) {
             bcuda_pl_write(dma, BCUDA_PL_REG_CONTROL, 0u);
             return BC_STATUS_EXECUTION_FAILED;
         }
-        if ((status & BCUDA_PL_STATUS_DONE) != 0u) {
+        /* DONE marks the producer's final request; BUSY remains asserted
+         * until the shared HP0 write path has drained it. */
+        if ((status & (BCUDA_PL_STATUS_DONE | BCUDA_PL_STATUS_BUSY)) == BCUDA_PL_STATUS_DONE) {
             bcuda_pl_write(dma, BCUDA_PL_REG_CONTROL, 0u);
             return BC_STATUS_OK;
         }

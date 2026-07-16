@@ -107,7 +107,11 @@ module memory_io_driver #(
                 if (mem_write_last) write_send_active <= 1'b0;
                 else write_send_index <= write_send_index + 1'b1;
             end
-            if (write_inflight && !write_send_active && mem_cmd_ready) begin
+            // mem_cmd_ready indicates that the bridge is idle.  When a new
+            // queued burst is accepted in that same cycle, do not clear the
+            // in-flight marker for the newly launched transaction.  Losing it
+            // permits the next producer write to overtake AXI B completion.
+            if (write_inflight && !write_send_active && !write_flush_pending && mem_cmd_ready) begin
                 write_inflight <= 1'b0; write_count <= '0;
             end
             if (mem_read_valid) begin

@@ -337,6 +337,24 @@ class FirmwareGraphExecutorTest(unittest.TestCase):
         self.assertEqual(self.lib.bcuda_execute_graph(ctypes.byref(self.runtime), ctypes.byref(BcudaGraphExecDesc(model, inp, out, 0, 0))), BC_STATUS_OK)
         self.assertEqual(read_buffer(self.lib, out, 4), bytes([5, 8, 14, 16]))
 
+    def test_bcuda_execute_graph_runs_int8_average_and_global_pool_nchw(self):
+        inp = alloc_buffer(self.lib, 9, tensor_desc(BC_DTYPE_INT8, 4, 1))
+        pooled = alloc_buffer(self.lib, 4, tensor_desc(BC_DTYPE_INT8, 4, 1))
+        out = alloc_buffer(self.lib, 1, tensor_desc(BC_DTYPE_INT8, 4, 1), usage=BC_USAGE_OUTPUT)
+        write_buffer(self.lib, inp, bytes([249, 254, 3, 8, 4, 251, 6, 9, 255]))
+        descriptor = pack_model_descriptor(
+            [(inp, BC_DTYPE_INT8, 2, 2, 9, 3, 1, 1), (pooled, BC_DTYPE_INT8, 2, 3, 4, 2, 1, 1), (out, BC_DTYPE_INT8, 2, 4, 1, 1, 1, 1)],
+            [
+                layer_entry(BC_OP_POOL, input0=0, output=1, n=1, c=1, h=3, w=3, out_h=2, out_w=2, kernel_h=2, kernel_w=2, stride_h=1, stride_w=1, flags=1),
+                layer_entry(BC_OP_POOL, input0=0, output=2, n=1, c=1, h=3, w=3, out_h=1, out_w=1, kernel_h=3, kernel_w=3, stride_h=1, stride_w=1, flags=1),
+            ],
+        )
+        model = alloc_buffer(self.lib, len(descriptor), tensor_desc(BC_DTYPE_INT8, 1, len(descriptor)), usage=BC_USAGE_DESCRIPTOR)
+        write_buffer(self.lib, model, descriptor)
+        self.assertEqual(self.lib.bcuda_execute_graph(ctypes.byref(self.runtime), ctypes.byref(BcudaGraphExecDesc(model, inp, out, 0, 0))), BC_STATUS_OK)
+        self.assertEqual(read_buffer(self.lib, pooled, 4), bytes([0, 0, 6, 1]))
+        self.assertEqual(read_buffer(self.lib, out, 1), bytes([1]))
+
     def test_bcuda_execute_graph_runs_conv2d_int8_to_int32(self):
         inp = alloc_buffer(self.lib, 9, tensor_desc(BC_DTYPE_INT8, 4, 1))
         weight = alloc_buffer(self.lib, 4, tensor_desc(BC_DTYPE_INT8, 4, 1))

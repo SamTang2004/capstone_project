@@ -24,17 +24,15 @@ module gemm_16x16_core (
 
     state_t state;
 
-    // The array consumes one A value per row and one B value per column on
-    // every cycle.  Bank by row/column so each value has its own synchronous
-    // memory read port instead of relying on a 16-read combinational array.
-    // Each systolic lane needs an independent synchronous read every cycle.
-    // Give every lane a BRAM-sized bank rather than a 16-byte LUTRAM.  The
-    // current controller uses addresses 0..15; the remaining depth reserves
-    // room for future ping-pong tile prefetch without changing this interface.
-    (* ram_style = "block", ram_decomp = "power" *) logic signed [7:0] a_bank [0:15][0:255];
-    (* ram_style = "block", ram_decomp = "power" *) logic signed [7:0] b_bank [0:15][0:255];
-    logic signed [7:0] a_read_data [0:15];
-    logic signed [7:0] b_read_data [0:15];
+    // Four 32-bit BRAM slices form each 128-bit pre-skewed wave memory.
+    // Static byte-write cases preserve one-byte loading without creating a
+    // variable packed-memory selector in simulation or synthesis.
+    (* ram_style = "block" *) logic [31:0] a_wave0 [0:63], a_wave1 [0:63], a_wave2 [0:63], a_wave3 [0:63];
+    (* ram_style = "block" *) logic [31:0] b_wave0 [0:63], b_wave1 [0:63], b_wave2 [0:63], b_wave3 [0:63];
+    logic [127:0] a_wave_read_data;
+    logic [127:0] b_wave_read_data;
+    logic [5:0] load_wave_addr;
+    logic [3:0] load_wave_lane;
 
     logic [7:0] clear_idx;
     logic [5:0] compute_cycle;
@@ -44,6 +42,45 @@ module gemm_16x16_core (
     logic signed [32*256-1:0] c_flat;
 
     assign result_data = c_flat[result_addr*32 +: 32];
+    assign load_wave_addr = {2'b0, load_addr[7:4]} + {2'b0, load_addr[3:0]};
+    assign load_wave_lane = load_matrix ? load_addr[3:0] : load_addr[7:4];
+
+    always_ff @(posedge clk) begin
+        if (load_valid && !busy) begin
+            if (!load_matrix) begin
+                case (load_wave_lane)
+                    4'd0: a_wave0[load_wave_addr][7:0] <= load_data; 4'd1: a_wave0[load_wave_addr][15:8] <= load_data;
+                    4'd2: a_wave0[load_wave_addr][23:16] <= load_data; 4'd3: a_wave0[load_wave_addr][31:24] <= load_data;
+                    4'd4: a_wave1[load_wave_addr][7:0] <= load_data; 4'd5: a_wave1[load_wave_addr][15:8] <= load_data;
+                    4'd6: a_wave1[load_wave_addr][23:16] <= load_data; 4'd7: a_wave1[load_wave_addr][31:24] <= load_data;
+                    4'd8: a_wave2[load_wave_addr][7:0] <= load_data; 4'd9: a_wave2[load_wave_addr][15:8] <= load_data;
+                    4'd10: a_wave2[load_wave_addr][23:16] <= load_data; 4'd11: a_wave2[load_wave_addr][31:24] <= load_data;
+                    4'd12: a_wave3[load_wave_addr][7:0] <= load_data; 4'd13: a_wave3[load_wave_addr][15:8] <= load_data;
+                    4'd14: a_wave3[load_wave_addr][23:16] <= load_data; default: a_wave3[load_wave_addr][31:24] <= load_data;
+                endcase
+            end else begin
+                case (load_wave_lane)
+                    4'd0: b_wave0[load_wave_addr][7:0] <= load_data; 4'd1: b_wave0[load_wave_addr][15:8] <= load_data;
+                    4'd2: b_wave0[load_wave_addr][23:16] <= load_data; 4'd3: b_wave0[load_wave_addr][31:24] <= load_data;
+                    4'd4: b_wave1[load_wave_addr][7:0] <= load_data; 4'd5: b_wave1[load_wave_addr][15:8] <= load_data;
+                    4'd6: b_wave1[load_wave_addr][23:16] <= load_data; 4'd7: b_wave1[load_wave_addr][31:24] <= load_data;
+                    4'd8: b_wave2[load_wave_addr][7:0] <= load_data; 4'd9: b_wave2[load_wave_addr][15:8] <= load_data;
+                    4'd10: b_wave2[load_wave_addr][23:16] <= load_data; 4'd11: b_wave2[load_wave_addr][31:24] <= load_data;
+                    4'd12: b_wave3[load_wave_addr][7:0] <= load_data; 4'd13: b_wave3[load_wave_addr][15:8] <= load_data;
+                    4'd14: b_wave3[load_wave_addr][23:16] <= load_data; default: b_wave3[load_wave_addr][31:24] <= load_data;
+                endcase
+            end
+        end
+
+        if (!rst_n) begin
+            a_wave_read_data <= '0; b_wave_read_data <= '0;
+        end else if (state == STATE_COMPUTE && compute_cycle <= 6'd30) begin
+            a_wave_read_data <= {a_wave3[compute_cycle], a_wave2[compute_cycle], a_wave1[compute_cycle], a_wave0[compute_cycle]};
+            b_wave_read_data <= {b_wave3[compute_cycle], b_wave2[compute_cycle], b_wave1[compute_cycle], b_wave0[compute_cycle]};
+        end else begin
+            a_wave_read_data <= '0; b_wave_read_data <= '0;
+        end
+    end
 
     systolic_array_16x16 array (
         .clk(clk),
@@ -61,11 +98,13 @@ module gemm_16x16_core (
 
         if (state == STATE_COMPUTE) begin
             for (int r = 0; r < 16; r++) begin
-                a_west_flat[r*8 +: 8] = a_read_data[r];
+                if (compute_cycle > r && compute_cycle - 1'b1 - r < 16)
+                    a_west_flat[r*8 +: 8] = a_wave_read_data[r*8 +: 8];
             end
 
             for (int c = 0; c < 16; c++) begin
-                b_north_flat[c*8 +: 8] = b_read_data[c];
+                if (compute_cycle > c && compute_cycle - 1'b1 - c < 16)
+                    b_north_flat[c*8 +: 8] = b_wave_read_data[c*8 +: 8];
             end
         end
     end
@@ -79,38 +118,6 @@ module gemm_16x16_core (
             compute_cycle <= '0;
         end else begin
             done <= 1'b0;
-
-            if (load_valid && !busy) begin
-                if (load_matrix) begin
-                    b_bank[load_addr[3:0]][load_addr[7:4]] <= load_data;
-                end else begin
-                    a_bank[load_addr[7:4]][load_addr[3:0]] <= load_data;
-                end
-            end
-
-            // Registered tile-memory reads form the one-cycle memory stage.
-            // Invalid wavefront positions inject zeroes for array flushing.
-            if (state == STATE_COMPUTE) begin
-                for (int r = 0; r < 16; r++) begin
-                    if (compute_cycle >= r && compute_cycle - r < 16) begin
-                        a_read_data[r] <= a_bank[r][compute_cycle - r];
-                    end else begin
-                        a_read_data[r] <= '0;
-                    end
-                end
-                for (int c = 0; c < 16; c++) begin
-                    if (compute_cycle >= c && compute_cycle - c < 16) begin
-                        b_read_data[c] <= b_bank[c][compute_cycle - c];
-                    end else begin
-                        b_read_data[c] <= '0;
-                    end
-                end
-            end else begin
-                for (int lane = 0; lane < 16; lane++) begin
-                    a_read_data[lane] <= '0;
-                    b_read_data[lane] <= '0;
-                end
-            end
 
             unique case (state)
                 STATE_IDLE: begin

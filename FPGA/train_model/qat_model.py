@@ -59,6 +59,35 @@ def select_quant_backend():
     )
 
 
+def budgetcuda_qat_qconfig() -> tq.QConfig:
+    """PyTorch eager-QAT profile matching BudgetCUDA's signed PL arithmetic.
+
+    The deployed accelerator has one requantization scale per tensor and its
+    activation units interpret zero as the real zero.  Therefore this profile
+    deliberately uses signed, per-tensor symmetric fake quantization for both
+    activations and weights.  It is built entirely from torch.ao primitives.
+    """
+    fake_quant = tq.FakeQuantize.with_args(
+        observer=tq.MovingAverageMinMaxObserver,
+        dtype=torch.qint8,
+        qscheme=torch.per_tensor_symmetric,
+        quant_min=-127,
+        quant_max=127,
+        reduce_range=False,
+    )
+    return tq.QConfig(activation=fake_quant, weight=fake_quant)
+
+
+def prepare_budgetcuda_qat(model: nn.Module) -> nn.Module:
+    """Fuse and prepare a QAT model using the deployable signed profile."""
+    model.eval()
+    if hasattr(model, "fuse_model"):
+        model.fuse_model()
+    model.train()
+    model.qconfig = budgetcuda_qat_qconfig()
+    return tq.prepare_qat(model, inplace=False)
+
+
 # ============================================================
 # Dataset
 # ============================================================

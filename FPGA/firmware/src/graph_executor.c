@@ -507,7 +507,9 @@ static int bcuda_execute_pool_layer(BcudaGraphRuntime *runtime, const BcudaBuffe
         return BC_STATUS_SHAPE_MISMATCH;
     }
     if (runtime != 0 && runtime->dma != 0 && runtime->dma->register_base != 0) {
-        status = bcuda_axi_dma_submit_maxpool(runtime->dma, layer, input, output);
+        status = (layer->flags & BCUDA_POOL_AVERAGE) != 0u
+            ? bcuda_axi_dma_submit_avgpool(runtime->dma, layer, input, output)
+            : bcuda_axi_dma_submit_maxpool(runtime->dma, layer, input, output);
         return status == BC_STATUS_OK ? bcuda_axi_dma_poll_done(runtime->dma) : status;
     }
 
@@ -517,6 +519,8 @@ static int bcuda_execute_pool_layer(BcudaGraphRuntime *runtime, const BcudaBuffe
         for (uint32_t c = 0; c < layer->c; c++) {
             for (uint32_t oh = 0; oh < layer->out_h; oh++) {
                 for (uint32_t ow = 0; ow < layer->out_w; ow++) {
+                    int32_t sum = 0;
+                    uint32_t count = 0;
                     int8_t best = -128;
                     for (uint32_t kh = 0; kh < layer->kernel_h; kh++) {
                         int32_t ih = (int32_t)(oh * layer->stride_h + kh) - (int32_t)layer->pad_h;
@@ -529,13 +533,17 @@ static int bcuda_execute_pool_layer(BcudaGraphRuntime *runtime, const BcudaBuffe
                                 continue;
                             }
                             uint64_t src_idx = (((uint64_t)n * layer->c + c) * layer->h + (uint32_t)ih) * layer->w + (uint32_t)iw;
+                            sum += src[src_idx];
+                            count++;
                             if (src[src_idx] > best) {
                                 best = src[src_idx];
                             }
                         }
                     }
                     uint64_t dst_idx = (((uint64_t)n * layer->c + c) * layer->out_h + oh) * layer->out_w + ow;
-                    dst[dst_idx] = best;
+                    dst[dst_idx] = (layer->flags & BCUDA_POOL_AVERAGE) != 0u
+                        ? (int8_t)(sum < 0 ? -((-sum) / (int32_t)count) : sum / (int32_t)count)
+                        : best;
                 }
             }
         }

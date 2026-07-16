@@ -6,7 +6,11 @@ set hw_dir [file normalize [file join $script_dir ".."]]
 set rtl_files [glob [file join $hw_dir "rtl" "*.sv"]]
 set sim_files [glob [file join $hw_dir "sim" "*.sv"]]
 
-set sim_work [file join $hw_dir "xsim_golden"]
+if {[info exists ::env(BCUDA_XSIM_WORK)]} {
+    set sim_work [file normalize $::env(BCUDA_XSIM_WORK)]
+} else {
+    set sim_work [file join $hw_dir "xsim_golden"]
+}
 file mkdir $sim_work
 cd $sim_work
 
@@ -38,6 +42,7 @@ set test_tops {
     tb_gemm_array_cluster_8
     tb_activation_unfold_parallel
     tb_cnn_tensor_ops_ddr
+    tb_avgpool_ddr
     tb_requantize_ddr
     tb_memory_io_driver_burst
     tb_memory_io_axi_bridge_burst

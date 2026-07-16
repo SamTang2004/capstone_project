@@ -24,10 +24,10 @@ module accumulator_buffer #(
 
     localparam int ENTRY_COUNT = TILE_SIZE * TILE_SIZE;
 
-    // The writer consumes sparse reads.  Keep the read port asynchronous so
-    // the request address and returned value cannot become separated by an
-    // inferred memory/output pipeline in the implemented design.
-    (* ram_style = "distributed" *) logic signed [31:0] mem [0:ENTRY_COUNT-1];
+    // Port A performs the serialized accumulation/bias read-modify-write.
+    // Port B is the registered TileWriter read port. This synchronous
+    // two-port template maps one accumulator tile into a RAMB18.
+    (* ram_style = "block", ram_decomp = "power" *) logic signed [31:0] mem [0:ENTRY_COUNT-1];
     logic                    op_pending;
     logic                    pending_clear;
     logic [7:0]              pending_addr;
@@ -40,14 +40,11 @@ module accumulator_buffer #(
 
     assign op_ready = !op_pending;
     // Used by Conv2D bias preload while the regular accumulator port is idle.
-    assign seed_ready = 1'b1;
+    assign seed_ready = !op_pending;
     assign pending_result = pending_clear ? pending_data : pending_old_value + pending_data;
     assign port_a_write = op_pending || seed_valid;
     assign port_a_addr = op_pending ? pending_addr : seed_addr;
     assign port_a_data = op_pending ? pending_result : seed_data;
-    assign read_valid = read_req;
-    assign read_data = mem[read_addr];
-
     always_ff @(posedge clk) begin
         if (!rst_n) begin
             op_pending <= 1'b0;
@@ -56,7 +53,15 @@ module accumulator_buffer #(
             pending_data <= '0;
             pending_old_value <= '0;
             op_result <= '0;
+            read_valid <= 1'b0;
+            read_data <= '0;
         end else begin
+            // Synchronous BRAM port B.
+            read_valid <= read_req;
+            if (read_req) begin
+                read_data <= mem[read_addr];
+            end
+
             if (port_a_write) begin
                 mem[port_a_addr] <= port_a_data;
             end

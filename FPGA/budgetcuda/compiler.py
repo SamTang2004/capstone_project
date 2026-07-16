@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import struct
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Iterable
 
 from .dtypes import BufferUsage, DType, Layout, OpType, dtype_size, normalize_dtype, normalize_layout
@@ -220,6 +220,9 @@ class GraphBuilder:
             )
         )
 
+    def gemm(self, input_idx: int, weight_idx: int, output_idx: int, *, m: int, n: int, k: int) -> None:
+        self.layers.append(Layer(OpType.GEMM, input0=input_idx, weight=weight_idx, output=output_idx, n=m, out_c=n, c=k))
+
     def relu(self, input_idx: int, output_idx: int) -> None:
         self.layers.append(Layer(OpType.ACTIVATION, input0=input_idx, output=output_idx))
 
@@ -273,6 +276,13 @@ class GraphBuilder:
                 pad_w=pad_w,
             )
         )
+
+    def avgpool2d(self, input_idx: int, output_idx: int, **kwargs) -> None:
+        self.maxpool2d(input_idx, output_idx, **kwargs)
+        self.layers[-1] = replace(self.layers[-1], flags=self.layers[-1].flags | 1)
+
+    def global_avgpool2d(self, input_idx: int, output_idx: int, *, n: int, c: int, h: int, w: int) -> None:
+        self.avgpool2d(input_idx, output_idx, n=n, c=c, h=h, w=w, out_h=1, out_w=1, kernel_h=h, kernel_w=w, stride_h=1, stride_w=1)
 
     def upsample(self, input_idx: int, output_idx: int, *, n: int, c: int, h: int, w: int, out_h: int, out_w: int) -> None:
         self.layers.append(Layer(OpType.UPSAMPLE, input0=input_idx, output=output_idx, n=n, c=c, h=h, w=w, out_h=out_h, out_w=out_w))

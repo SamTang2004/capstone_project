@@ -28,16 +28,16 @@ set ps7 [create_bd_cell -type ip -vlnv xilinx.com:ip:processing_system7:5.5 proc
 apply_bd_automation -rule xilinx.com:bd_rule:processing_system7 \
     -config {make_external "FIXED_IO, DDR" apply_board_preset "1"} $ps7
 
-# The routed accelerator currently has a 12.448 ns worst-case path. Keep the
-# board integration below that limit until the controller path is pipelined.
+# The major runtime address generators are explicitly pipelined; use the
+# production 100 MHz target to expose any remaining integrated timing limits.
 set_property -dict [list \
     CONFIG.PCW_USE_M_AXI_GP0 {1} \
     CONFIG.PCW_USE_S_AXI_HP0 {1} \
     CONFIG.PCW_M_AXI_GP0_ENABLE_STATIC_REMAP {0} \
-    CONFIG.PCW_FPGA0_PERIPHERAL_FREQMHZ {50.0} \
+    CONFIG.PCW_FPGA0_PERIPHERAL_FREQMHZ {100.0} \
 ] $ps7
 
-set reset [create_bd_cell -type ip -vlnv xilinx.com:ip:proc_sys_reset:5.0 rst_ps7_0_50M]
+set reset [create_bd_cell -type ip -vlnv xilinx.com:ip:proc_sys_reset:5.0 rst_ps7_0_100M]
 set interconnect [create_bd_cell -type ip -vlnv xilinx.com:ip:axi_interconnect:2.1 axi_gp0_interconnect]
 set_property -dict [list CONFIG.NUM_SI {1} CONFIG.NUM_MI {1}] $interconnect
 set accelerator [create_bd_cell -type module -reference bcuda_tiled_systolic_ddr_ip bcuda_accelerator_0]
@@ -61,14 +61,14 @@ connect_bd_net [get_bd_pins processing_system7_0/FCLK_CLK0] \
     [get_bd_pins axi_hp0_interconnect/S00_ACLK] \
     [get_bd_pins axi_hp0_interconnect/M00_ACLK] \
     [get_bd_pins ddr_bridge_0/aclk] \
-    [get_bd_pins rst_ps7_0_50M/slowest_sync_clk]
-connect_bd_net [get_bd_pins processing_system7_0/FCLK_RESET0_N] [get_bd_pins rst_ps7_0_50M/ext_reset_in]
-connect_bd_net [get_bd_pins rst_ps7_0_50M/peripheral_aresetn] \
+    [get_bd_pins rst_ps7_0_100M/slowest_sync_clk]
+connect_bd_net [get_bd_pins processing_system7_0/FCLK_RESET0_N] [get_bd_pins rst_ps7_0_100M/ext_reset_in]
+connect_bd_net [get_bd_pins rst_ps7_0_100M/peripheral_aresetn] \
     [get_bd_pins axi_gp0_interconnect/ARESETN] \
     [get_bd_pins axi_gp0_interconnect/S00_ARESETN] \
     [get_bd_pins axi_gp0_interconnect/M00_ARESETN] \
     [get_bd_pins bcuda_accelerator_0/aresetn]
-connect_bd_net [get_bd_pins rst_ps7_0_50M/peripheral_aresetn] \
+connect_bd_net [get_bd_pins rst_ps7_0_100M/peripheral_aresetn] \
     [get_bd_pins axi_hp0_interconnect/ARESETN] \
     [get_bd_pins axi_hp0_interconnect/S00_ARESETN] \
     [get_bd_pins axi_hp0_interconnect/M00_ARESETN] \

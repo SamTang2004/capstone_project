@@ -224,7 +224,7 @@ class MockBackend:
         dst[:] = src
 
     def _execute_graph_pool(self, table, layer) -> None:
-        _, input0, _, _, output, _, _, _, n, c, h, w, _, out_h, out_w, kernel_h, kernel_w, stride_h, stride_w, pad_h, pad_w, *_ = layer
+        _, input0, _, _, output, _, _, _, n, c, h, w, _, out_h, out_w, kernel_h, kernel_w, stride_h, stride_w, pad_h, pad_w, _, flags, _ = layer
         src = self._get_buffer(table[input0][0])
         dst = self._get_buffer(table[output][0])
         for batch in range(n):
@@ -232,6 +232,8 @@ class MockBackend:
                 for oh in range(out_h):
                     for ow in range(out_w):
                         best = -128
+                        total = 0
+                        count = 0
                         for kh in range(kernel_h):
                             ih = oh * stride_h + kh - pad_h
                             if ih < 0 or ih >= h:
@@ -243,8 +245,11 @@ class MockBackend:
                                 idx = ((batch * c + channel) * h + ih) * w + iw
                                 value = src[idx] if src[idx] < 128 else src[idx] - 256
                                 best = max(best, value)
+                                total += value
+                                count += 1
                         out_idx = ((batch * c + channel) * out_h + oh) * out_w + ow
-                        dst[out_idx] = best & 0xFF
+                        result = (-((-total) // count) if total < 0 else total // count) if flags & 1 else best
+                        dst[out_idx] = result & 0xFF
 
     def _execute_graph_upsample(self, table, layer) -> None:
         _, input0, _, _, output, _, _, _, n, c, h, w, _, out_h, out_w, *_ = layer

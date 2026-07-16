@@ -70,12 +70,18 @@ module tb_bcuda_tiled_systolic_ddr_top;
     integer read_cmd_count;
     integer write_cmd_count;
     integer nonzero_write_count;
+    integer loader_request_cycle;
+    integer loader_launch_cycle;
+    integer command_request_cycle;
+    integer command_dispatch_cycle;
+    integer writer_request_cycle;
+    integer writer_launch_cycle;
 
     always #5 clk = ~clk;
 
     initial begin
         repeat (40000) @(posedge clk);
-        $fatal(1, "Tiled DDR top timeout state=%0d rq_busy=%0b read_pending=%0b count=%0d flush=%0b send=%0b inflight=%0b", dut.requantizer.state, dut.rq_busy, dut.memio.read_pending, dut.memio.write_count, dut.memio.write_flush_pending, dut.memio.write_send_active, dut.memio.write_inflight);
+        $fatal(1, "Tiled DDR top timeout op=%0d loader=%0d rq=%0d act=%0d tensor=%0d avg=%0d owner_valid=%0b owner=%0d response=%0b ready=%0b read_pending=%0b count=%0d flush=%0b send=%0b inflight=%0b", dut.op_state, dut.loader.state, dut.requantizer.state, dut.activation.state, dut.tensor_ops.state, dut.avgpool_ops.state, dut.read_owner_valid, dut.read_owner, dut.memio.read_response_valid, dut.memio_read_data_ready, dut.memio.read_pending, dut.memio.write_count, dut.memio.write_flush_pending, dut.memio.write_send_active, dut.memio.write_inflight);
     end
 
     bcuda_tiled_systolic_ddr_top dut (
@@ -166,6 +172,35 @@ module tb_bcuda_tiled_systolic_ddr_top;
     endtask
 
     always @(posedge clk) begin
+        if (!rst_n) begin
+            loader_request_cycle <= -1;
+            loader_launch_cycle <= -1;
+            command_request_cycle <= -1;
+            command_dispatch_cycle <= -1;
+            writer_request_cycle <= -1;
+            writer_launch_cycle <= -1;
+        end else begin
+            if (dut.start_pulse) command_request_cycle <= 0;
+            else if (command_request_cycle >= 0) command_request_cycle <= command_request_cycle + 1;
+            if (dut.dispatch_pulse) begin
+                command_dispatch_cycle <= command_request_cycle;
+                if (command_request_cycle != 2)
+                    $fatal(1, "MMIO command dispatch latency was %0d cycles, expected 2 registered pipeline intervals", command_request_cycle);
+            end
+            if (dut.writer_start_request) writer_request_cycle <= 0;
+            else if (writer_request_cycle >= 0) writer_request_cycle <= writer_request_cycle + 1;
+            if (dut.writer_start) begin
+                writer_launch_cycle <= writer_request_cycle;
+                if (writer_request_cycle != 4)
+                    $fatal(1, "TileWriter launch pipeline latency was %0d cycles, expected 4", writer_request_cycle);
+            end
+            if (dut.loader_start_request) loader_request_cycle <= 0;
+            else if (loader_request_cycle >= 0) loader_request_cycle <= loader_request_cycle + 1;
+            if (dut.loader_start) begin
+                loader_launch_cycle <= loader_request_cycle;
+                if (loader_request_cycle < 4) $fatal(1, "TileLoader launch pipeline latency was %0d cycles, expected at least 4", loader_request_cycle);
+            end
+        end
         if (!rst_n) begin
             mem_cmd_ready <= 1'b0;
             mem_write_ready <= 1'b0;
@@ -264,7 +299,7 @@ module tb_bcuda_tiled_systolic_ddr_top;
 
         repeat (5000) begin
             axi_read(6'h04, status);
-            if (status[1]) begin
+            if (status[1] && !status[0]) begin
                 break;
             end
         end
@@ -305,7 +340,7 @@ module tb_bcuda_tiled_systolic_ddr_top;
         axi_write(6'h00, 32'h1);
         repeat (5000) begin
             axi_read(6'h04, status);
-            if (status[1]) begin
+            if (status[1] && !status[0]) begin
                 break;
             end
         end
@@ -339,7 +374,7 @@ module tb_bcuda_tiled_systolic_ddr_top;
         axi_write(6'h00, 32'h3);
         repeat (300) begin
             axi_read(6'h04, status);
-            if (status[1]) break;
+            if (status[1] && !status[0]) break;
         end
         if (!status[1] || status[2]) begin
             $error("Tiled DDR requantize command did not complete cleanly, status=0x%08h", status);
@@ -376,7 +411,7 @@ module tb_bcuda_tiled_systolic_ddr_top;
         axi_write(6'h00, 32'h5);       // START | CONV2D
         repeat (5000) begin
             axi_read(6'h04, status);
-            if (status[1]) break;
+            if (status[1] && !status[0]) break;
         end
         if (!status[1] || status[2] || $signed(load_word_le(CONV_C_BASE)) != -4 ||
             $signed(load_word_le(CONV_C_BASE + 4)) != -2 || $signed(load_word_le(CONV_C_BASE + 8)) != 2 ||
@@ -399,14 +434,14 @@ module tb_bcuda_tiled_systolic_ddr_top;
         axi_write(6'h38, 32'd0);
         axi_write(6'h3C, 32'd0);
         axi_write(6'h00, 32'h3);       // START | REQUANTIZE
-        repeat (300) begin axi_read(6'h04, status); if (status[1]) break; end
+        repeat (5000) begin axi_read(6'h04, status); if (status[1] && !status[0]) break; end
         axi_write(6'h00, 32'h0);
         axi_write(6'h08, CONV_RQ_BASE);
         axi_write(6'h10, CONV_RELU_BASE);
         axi_write(6'h20, 32'd4);
         axi_write(6'h38, 32'd0);
         axi_write(6'h00, 32'h9);       // START | ACTIVATION (ReLU)
-        repeat (300) begin axi_read(6'h04, status); if (status[1]) break; end
+        repeat (5000) begin axi_read(6'h04, status); if (status[1] && !status[0]) break; end
         if (!status[1] || status[2] || $signed(ddr[CONV_RELU_BASE]) != 0 || $signed(ddr[CONV_RELU_BASE + 1]) != 0 ||
             $signed(ddr[CONV_RELU_BASE + 2]) != 2 || $signed(ddr[CONV_RELU_BASE + 3]) != 4) begin
             $error("PL Conv2D requantize/ReLU chain mismatch status=0x%08h", status);
@@ -420,17 +455,49 @@ module tb_bcuda_tiled_systolic_ddr_top;
         axi_write(6'h00, 0); axi_write(6'h08, TENSOR0_BASE); axi_write(6'h10, TENSOR_OUT_BASE);
         axi_write(6'h14, 1); axi_write(6'h18, 1); axi_write(6'h1C, 3); axi_write(6'h20, 3); axi_write(6'h24, 2); axi_write(6'h28, 2);
         axi_write(6'h2C, 2); axi_write(6'h30, 2); axi_write(6'h34, 32'h00000101); axi_write(6'h38, 0); axi_write(6'h00, 32'h21);
-        repeat (5000) begin axi_read(6'h04, status); if (status[1]) break; end
+        repeat (20000) begin axi_read(6'h04, status); if (status[1] && !status[0]) break; end
         if (!status[1] || status[2] || $signed(ddr[TENSOR_OUT_BASE]) != 5 || $signed(ddr[TENSOR_OUT_BASE + 1]) != 5 ||
             $signed(ddr[TENSOR_OUT_BASE + 2]) != 8 || $signed(ddr[TENSOR_OUT_BASE + 3]) != 9) begin
             $error("PL MaxPool mismatch status=0x%08h", status); errors++;
+        end
+
+        /* AveragePool uses the distinct PL command; GlobalAveragePool is its 3x3, 1x1 configuration. */
+        ddr[TENSOR0_BASE] = -7; ddr[TENSOR0_BASE + 1] = -2; ddr[TENSOR0_BASE + 2] = 3;
+        ddr[TENSOR0_BASE + 3] = 8; ddr[TENSOR0_BASE + 4] = 4; ddr[TENSOR0_BASE + 5] = -5;
+        ddr[TENSOR0_BASE + 6] = 6; ddr[TENSOR0_BASE + 7] = 9; ddr[TENSOR0_BASE + 8] = -1;
+        axi_write(6'h00, 0); axi_write(6'h08, TENSOR0_BASE); axi_write(6'h10, TENSOR_OUT_BASE);
+        axi_write(6'h14, 1); axi_write(6'h18, 1); axi_write(6'h1C, 3); axi_write(6'h20, 3); axi_write(6'h24, 2); axi_write(6'h28, 2);
+        axi_write(6'h2C, 2); axi_write(6'h30, 2); axi_write(6'h34, 32'h00000101); axi_write(6'h38, 0); axi_write(6'h00, 32'h201);
+        repeat (20000) begin axi_read(6'h04, status); if (status[1] && !status[0]) break; end
+        if (!status[1] || status[2] || $signed(ddr[TENSOR_OUT_BASE]) != 0 || $signed(ddr[TENSOR_OUT_BASE + 1]) != 0 ||
+            $signed(ddr[TENSOR_OUT_BASE + 2]) != 6 || $signed(ddr[TENSOR_OUT_BASE + 3]) != 1) begin
+            $error("PL AveragePool mismatch status=0x%08h", status); errors++;
+        end
+        axi_write(6'h00, 0); axi_write(6'h24, 1); axi_write(6'h28, 1); axi_write(6'h2C, 3); axi_write(6'h30, 3);
+        axi_write(6'h00, 32'h201);
+        repeat (20000) begin axi_read(6'h04, status); if (status[1] && !status[0]) break; end
+        if (!status[1] || status[2] || $signed(ddr[TENSOR_OUT_BASE]) != 1) begin
+            $error("PL GlobalAveragePool mismatch status=0x%08h", status); errors++;
+        end
+
+        // Two-channel GlobalAveragePool is the classifier-prelude shape.
+        for (int idx = 0; idx < 9; idx++) begin
+            ddr[TENSOR0_BASE + idx] = 3;
+            ddr[TENSOR0_BASE + 9 + idx] = 18;
+        end
+        axi_write(6'h00, 0); axi_write(6'h08, TENSOR0_BASE); axi_write(6'h10, TENSOR_OUT_BASE);
+        axi_write(6'h14, 1); axi_write(6'h18, 2); axi_write(6'h1C, 3); axi_write(6'h20, 3); axi_write(6'h24, 1); axi_write(6'h28, 1);
+        axi_write(6'h2C, 3); axi_write(6'h30, 3); axi_write(6'h34, 32'h00000101); axi_write(6'h38, 0); axi_write(6'h00, 32'h201);
+        repeat (20000) begin axi_read(6'h04, status); if (status[1] && !status[0]) break; end
+        if (!status[1] || status[2] || $signed(ddr[TENSOR_OUT_BASE]) != 3 || $signed(ddr[TENSOR_OUT_BASE + 1]) != 18) begin
+            $error("PL two-channel GlobalAveragePool mismatch status=0x%08h", status); errors++;
         end
 
         ddr[TENSOR0_BASE] = 1; ddr[TENSOR0_BASE + 1] = 2; ddr[TENSOR0_BASE + 2] = 3; ddr[TENSOR0_BASE + 3] = 4;
         axi_write(6'h00, 0); axi_write(6'h08, TENSOR0_BASE); axi_write(6'h10, TENSOR_OUT_BASE);
         axi_write(6'h14, 1); axi_write(6'h18, 1); axi_write(6'h1C, 2); axi_write(6'h20, 2); axi_write(6'h24, 4); axi_write(6'h28, 4);
         axi_write(6'h34, 32'h00000202); axi_write(6'h00, 32'h41);
-        repeat (5000) begin axi_read(6'h04, status); if (status[1]) break; end
+        repeat (5000) begin axi_read(6'h04, status); if (status[1] && !status[0]) break; end
         if (!status[1] || status[2] || $signed(ddr[TENSOR_OUT_BASE]) != 1 || $signed(ddr[TENSOR_OUT_BASE + 2]) != 2 ||
             $signed(ddr[TENSOR_OUT_BASE + 8]) != 3 || $signed(ddr[TENSOR_OUT_BASE + 10]) != 4) begin
             $error("PL upsample mismatch status=0x%08h", status); errors++;
@@ -440,7 +507,7 @@ module tb_bcuda_tiled_systolic_ddr_top;
         axi_write(6'h00, 0); axi_write(6'h08, TENSOR0_BASE); axi_write(6'h0C, TENSOR1_BASE); axi_write(6'h10, TENSOR_OUT_BASE); axi_write(6'h3C, TENSOR2_BASE);
         axi_write(6'h14, 1); axi_write(6'h18, 1); axi_write(6'h1C, 1); axi_write(6'h20, 2); axi_write(6'h24, 1); axi_write(6'h28, 2);
         axi_write(6'h34, 1); axi_write(6'h38, 1); axi_write(6'h00, 32'h81);
-        repeat (5000) begin axi_read(6'h04, status); if (status[1]) break; end
+        repeat (5000) begin axi_read(6'h04, status); if (status[1] && !status[0]) break; end
         if (!status[1] || status[2] || $signed(ddr[TENSOR_OUT_BASE]) != 1 || $signed(ddr[TENSOR_OUT_BASE + 1]) != 2 ||
             $signed(ddr[TENSOR_OUT_BASE + 2]) != 3 || $signed(ddr[TENSOR_OUT_BASE + 3]) != 4 || $signed(ddr[TENSOR_OUT_BASE + 4]) != 5 || $signed(ddr[TENSOR_OUT_BASE + 5]) != 6) begin
             $error("PL concat mismatch status=0x%08h", status); errors++;
