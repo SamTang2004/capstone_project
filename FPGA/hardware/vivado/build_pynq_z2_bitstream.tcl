@@ -22,6 +22,12 @@ report_utilization -file [file join $hw_dir "pynq_z2_utilization_synth.rpt"]
 launch_runs impl_1 -to_step write_bitstream -jobs 8
 wait_on_run impl_1
 open_run impl_1
+set routed_wns [get_property SLACK [get_timing_paths -delay_type max -max_paths 1]]
+if {$routed_wns < 0.0} {
+    puts "Routed WNS is $routed_wns ns; running post-route physical optimization."
+    phys_opt_design -directive AggressiveExplore
+    write_checkpoint -force [file join $project_dir "budgetcuda_board.runs" "impl_1" "bcuda_ps_pl_wrapper_physopt.dcp"]
+}
 report_utilization -file [file join $hw_dir "pynq_z2_utilization_impl.rpt"]
 report_timing_summary -file [file join $hw_dir "pynq_z2_timing_impl.rpt"]
 write_bitstream -force [file join $hw_dir "bcuda_pynq_z2.bit"]

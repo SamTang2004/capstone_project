@@ -1,0 +1,2347 @@
+{
+  "rows": 32,
+  "cols": 32,
+  "tile": 16,
+  "c_base": 227,
+  "c_row_stride": 32,
+  "writes": [
+    {
+      "cycle": 0,
+      "row": 0,
+      "col": 0,
+      "ddr_addr": 227,
+      "tile_addr": 0,
+      "data": 2211
+    },
+    {
+      "cycle": 1,
+      "row": 0,
+      "col": 1,
+      "ddr_addr": 228,
+      "tile_addr": 1,
+      "data": -2180
+    },
+    {
+      "cycle": 2,
+      "row": 0,
+      "col": 2,
+      "ddr_addr": 229,
+      "tile_addr": 2,
+      "data": -2149
+    },
+    {
+      "cycle": 3,
+      "row": 0,
+      "col": 3,
+      "ddr_addr": 230,
+      "tile_addr": 3,
+      "data": 2118
+    },
+    {
+      "cycle": 4,
+      "row": 0,
+      "col": 4,
+      "ddr_addr": 231,
+      "tile_addr": 4,
+      "data": -2087
+    },
+    {
+      "cycle": 5,
+      "row": 0,
+      "col": 5,
+      "ddr_addr": 232,
+      "tile_addr": 5,
+      "data": -2056
+    },
+    {
+      "cycle": 6,
+      "row": 0,
+      "col": 6,
+      "ddr_addr": 233,
+      "tile_addr": 6,
+      "data": 2025
+    },
+    {
+      "cycle": 7,
+      "row": 0,
+      "col": 7,
+      "ddr_addr": 234,
+      "tile_addr": 7,
+      "data": -1994
+    },
+    {
+      "cycle": 8,
+      "row": 0,
+      "col": 8,
+      "ddr_addr": 235,
+      "tile_addr": 8,
+      "data": -1963
+    },
+    {
+      "cycle": 9,
+      "row": 0,
+      "col": 9,
+      "ddr_addr": 236,
+      "tile_addr": 9,
+      "data": 1932
+    },
+    {
+      "cycle": 10,
+      "row": 0,
+      "col": 10,
+      "ddr_addr": 237,
+      "tile_addr": 10,
+      "data": -1901
+    },
+    {
+      "cycle": 11,
+      "row": 0,
+      "col": 11,
+      "ddr_addr": 238,
+      "tile_addr": 11,
+      "data": -1870
+    },
+    {
+      "cycle": 12,
+      "row": 0,
+      "col": 12,
+      "ddr_addr": 239,
+      "tile_addr": 12,
+      "data": 1839
+    },
+    {
+      "cycle": 13,
+      "row": 0,
+      "col": 13,
+      "ddr_addr": 240,
+      "tile_addr": 13,
+      "data": -1808
+    },
+    {
+      "cycle": 14,
+      "row": 0,
+      "col": 14,
+      "ddr_addr": 241,
+      "tile_addr": 14,
+      "data": -1777
+    },
+    {
+      "cycle": 15,
+      "row": 0,
+      "col": 15,
+      "ddr_addr": 242,
+      "tile_addr": 15,
+      "data": 1746
+    },
+    {
+      "cycle": 16,
+      "row": 1,
+      "col": 0,
+      "ddr_addr": 259,
+      "tile_addr": 16,
+      "data": -1954
+    },
+    {
+      "cycle": 17,
+      "row": 1,
+      "col": 1,
+      "ddr_addr": 260,
+      "tile_addr": 17,
+      "data": -1923
+    },
+    {
+      "cycle": 18,
+      "row": 1,
+      "col": 2,
+      "ddr_addr": 261,
+      "tile_addr": 18,
+      "data": 1892
+    },
+    {
+      "cycle": 19,
+      "row": 1,
+      "col": 3,
+      "ddr_addr": 262,
+      "tile_addr": 19,
+      "data": -1861
+    },
+    {
+      "cycle": 20,
+      "row": 1,
+      "col": 4,
+      "ddr_addr": 263,
+      "tile_addr": 20,
+      "data": -1830
+    },
+    {
+      "cycle": 21,
+      "row": 1,
+      "col": 5,
+      "ddr_addr": 264,
+      "tile_addr": 21,
+      "data": 1799
+    },
+    {
+      "cycle": 22,
+      "row": 1,
+      "col": 6,
+      "ddr_addr": 265,
+      "tile_addr": 22,
+      "data": -1768
+    },
+    {
+      "cycle": 23,
+      "row": 1,
+      "col": 7,
+      "ddr_addr": 266,
+      "tile_addr": 23,
+      "data": -1737
+    },
+    {
+      "cycle": 24,
+      "row": 1,
+      "col": 8,
+      "ddr_addr": 267,
+      "tile_addr": 24,
+      "data": 1706
+    },
+    {
+      "cycle": 25,
+      "row": 1,
+      "col": 9,
+      "ddr_addr": 268,
+      "tile_addr": 25,
+      "data": -1675
+    },
+    {
+      "cycle": 26,
+      "row": 1,
+      "col": 10,
+      "ddr_addr": 269,
+      "tile_addr": 26,
+      "data": -1644
+    },
+    {
+      "cycle": 27,
+      "row": 1,
+      "col": 11,
+      "ddr_addr": 270,
+      "tile_addr": 27,
+      "data": 1613
+    },
+    {
+      "cycle": 28,
+      "row": 1,
+      "col": 12,
+      "ddr_addr": 271,
+      "tile_addr": 28,
+      "data": -1582
+    },
+    {
+      "cycle": 29,
+      "row": 1,
+      "col": 13,
+      "ddr_addr": 272,
+      "tile_addr": 29,
+      "data": -1551
+    },
+    {
+      "cycle": 30,
+      "row": 1,
+      "col": 14,
+      "ddr_addr": 273,
+      "tile_addr": 30,
+      "data": 1520
+    },
+    {
+      "cycle": 31,
+      "row": 1,
+      "col": 15,
+      "ddr_addr": 274,
+      "tile_addr": 31,
+      "data": -1489
+    },
+    {
+      "cycle": 32,
+      "row": 2,
+      "col": 0,
+      "ddr_addr": 291,
+      "tile_addr": 32,
+      "data": -1697
+    },
+    {
+      "cycle": 33,
+      "row": 2,
+      "col": 1,
+      "ddr_addr": 292,
+      "tile_addr": 33,
+      "data": 1666
+    },
+    {
+      "cycle": 34,
+      "row": 2,
+      "col": 2,
+      "ddr_addr": 293,
+      "tile_addr": 34,
+      "data": -1635
+    },
+    {
+      "cycle": 35,
+      "row": 2,
+      "col": 3,
+      "ddr_addr": 294,
+      "tile_addr": 35,
+      "data": -1604
+    },
+    {
+      "cycle": 36,
+      "row": 2,
+      "col": 4,
+      "ddr_addr": 295,
+      "tile_addr": 36,
+      "data": 1573
+    },
+    {
+      "cycle": 37,
+      "row": 2,
+      "col": 5,
+      "ddr_addr": 296,
+      "tile_addr": 37,
+      "data": -1542
+    },
+    {
+      "cycle": 38,
+      "row": 2,
+      "col": 6,
+      "ddr_addr": 297,
+      "tile_addr": 38,
+      "data": -1511
+    },
+    {
+      "cycle": 39,
+      "row": 2,
+      "col": 7,
+      "ddr_addr": 298,
+      "tile_addr": 39,
+      "data": 1480
+    },
+    {
+      "cycle": 40,
+      "row": 2,
+      "col": 8,
+      "ddr_addr": 299,
+      "tile_addr": 40,
+      "data": -1449
+    },
+    {
+      "cycle": 41,
+      "row": 2,
+      "col": 9,
+      "ddr_addr": 300,
+      "tile_addr": 41,
+      "data": -1418
+    },
+    {
+      "cycle": 42,
+      "row": 2,
+      "col": 10,
+      "ddr_addr": 301,
+      "tile_addr": 42,
+      "data": 1387
+    },
+    {
+      "cycle": 43,
+      "row": 2,
+      "col": 11,
+      "ddr_addr": 302,
+      "tile_addr": 43,
+      "data": -1356
+    },
+    {
+      "cycle": 44,
+      "row": 2,
+      "col": 12,
+      "ddr_addr": 303,
+      "tile_addr": 44,
+      "data": -1325
+    },
+    {
+      "cycle": 45,
+      "row": 2,
+      "col": 13,
+      "ddr_addr": 304,
+      "tile_addr": 45,
+      "data": 1294
+    },
+    {
+      "cycle": 46,
+      "row": 2,
+      "col": 14,
+      "ddr_addr": 305,
+      "tile_addr": 46,
+      "data": -1263
+    },
+    {
+      "cycle": 47,
+      "row": 2,
+      "col": 15,
+      "ddr_addr": 306,
+      "tile_addr": 47,
+      "data": -1232
+    },
+    {
+      "cycle": 48,
+      "row": 3,
+      "col": 0,
+      "ddr_addr": 323,
+      "tile_addr": 48,
+      "data": 1440
+    },
+    {
+      "cycle": 49,
+      "row": 3,
+      "col": 1,
+      "ddr_addr": 324,
+      "tile_addr": 49,
+      "data": -1409
+    },
+    {
+      "cycle": 50,
+      "row": 3,
+      "col": 2,
+      "ddr_addr": 325,
+      "tile_addr": 50,
+      "data": -1378
+    },
+    {
+      "cycle": 51,
+      "row": 3,
+      "col": 3,
+      "ddr_addr": 326,
+      "tile_addr": 51,
+      "data": 1347
+    },
+    {
+      "cycle": 52,
+      "row": 3,
+      "col": 4,
+      "ddr_addr": 327,
+      "tile_addr": 52,
+      "data": -1316
+    },
+    {
+      "cycle": 53,
+      "row": 3,
+      "col": 5,
+      "ddr_addr": 328,
+      "tile_addr": 53,
+      "data": -1285
+    },
+    {
+      "cycle": 54,
+      "row": 3,
+      "col": 6,
+      "ddr_addr": 329,
+      "tile_addr": 54,
+      "data": 1254
+    },
+    {
+      "cycle": 55,
+      "row": 3,
+      "col": 7,
+      "ddr_addr": 330,
+      "tile_addr": 55,
+      "data": -1223
+    },
+    {
+      "cycle": 56,
+      "row": 3,
+      "col": 8,
+      "ddr_addr": 331,
+      "tile_addr": 56,
+      "data": -1192
+    },
+    {
+      "cycle": 57,
+      "row": 3,
+      "col": 9,
+      "ddr_addr": 332,
+      "tile_addr": 57,
+      "data": 1161
+    },
+    {
+      "cycle": 58,
+      "row": 3,
+      "col": 10,
+      "ddr_addr": 333,
+      "tile_addr": 58,
+      "data": -1130
+    },
+    {
+      "cycle": 59,
+      "row": 3,
+      "col": 11,
+      "ddr_addr": 334,
+      "tile_addr": 59,
+      "data": -1099
+    },
+    {
+      "cycle": 60,
+      "row": 3,
+      "col": 12,
+      "ddr_addr": 335,
+      "tile_addr": 60,
+      "data": 1068
+    },
+    {
+      "cycle": 61,
+      "row": 3,
+      "col": 13,
+      "ddr_addr": 336,
+      "tile_addr": 61,
+      "data": -1037
+    },
+    {
+      "cycle": 62,
+      "row": 3,
+      "col": 14,
+      "ddr_addr": 337,
+      "tile_addr": 62,
+      "data": -1006
+    },
+    {
+      "cycle": 63,
+      "row": 3,
+      "col": 15,
+      "ddr_addr": 338,
+      "tile_addr": 63,
+      "data": 975
+    },
+    {
+      "cycle": 64,
+      "row": 4,
+      "col": 0,
+      "ddr_addr": 355,
+      "tile_addr": 64,
+      "data": -1183
+    },
+    {
+      "cycle": 65,
+      "row": 4,
+      "col": 1,
+      "ddr_addr": 356,
+      "tile_addr": 65,
+      "data": -1152
+    },
+    {
+      "cycle": 66,
+      "row": 4,
+      "col": 2,
+      "ddr_addr": 357,
+      "tile_addr": 66,
+      "data": 1121
+    },
+    {
+      "cycle": 67,
+      "row": 4,
+      "col": 3,
+      "ddr_addr": 358,
+      "tile_addr": 67,
+      "data": -1090
+    },
+    {
+      "cycle": 68,
+      "row": 4,
+      "col": 4,
+      "ddr_addr": 359,
+      "tile_addr": 68,
+      "data": -1059
+    },
+    {
+      "cycle": 69,
+      "row": 4,
+      "col": 5,
+      "ddr_addr": 360,
+      "tile_addr": 69,
+      "data": 1028
+    },
+    {
+      "cycle": 70,
+      "row": 4,
+      "col": 6,
+      "ddr_addr": 361,
+      "tile_addr": 70,
+      "data": -997
+    },
+    {
+      "cycle": 71,
+      "row": 4,
+      "col": 7,
+      "ddr_addr": 362,
+      "tile_addr": 71,
+      "data": -966
+    },
+    {
+      "cycle": 72,
+      "row": 4,
+      "col": 8,
+      "ddr_addr": 363,
+      "tile_addr": 72,
+      "data": 935
+    },
+    {
+      "cycle": 73,
+      "row": 4,
+      "col": 9,
+      "ddr_addr": 364,
+      "tile_addr": 73,
+      "data": -904
+    },
+    {
+      "cycle": 74,
+      "row": 4,
+      "col": 10,
+      "ddr_addr": 365,
+      "tile_addr": 74,
+      "data": -873
+    },
+    {
+      "cycle": 75,
+      "row": 4,
+      "col": 11,
+      "ddr_addr": 366,
+      "tile_addr": 75,
+      "data": 842
+    },
+    {
+      "cycle": 76,
+      "row": 4,
+      "col": 12,
+      "ddr_addr": 367,
+      "tile_addr": 76,
+      "data": -811
+    },
+    {
+      "cycle": 77,
+      "row": 4,
+      "col": 13,
+      "ddr_addr": 368,
+      "tile_addr": 77,
+      "data": -780
+    },
+    {
+      "cycle": 78,
+      "row": 4,
+      "col": 14,
+      "ddr_addr": 369,
+      "tile_addr": 78,
+      "data": 749
+    },
+    {
+      "cycle": 79,
+      "row": 4,
+      "col": 15,
+      "ddr_addr": 370,
+      "tile_addr": 79,
+      "data": -718
+    },
+    {
+      "cycle": 80,
+      "row": 5,
+      "col": 0,
+      "ddr_addr": 387,
+      "tile_addr": 80,
+      "data": -926
+    },
+    {
+      "cycle": 81,
+      "row": 5,
+      "col": 1,
+      "ddr_addr": 388,
+      "tile_addr": 81,
+      "data": 895
+    },
+    {
+      "cycle": 82,
+      "row": 5,
+      "col": 2,
+      "ddr_addr": 389,
+      "tile_addr": 82,
+      "data": -864
+    },
+    {
+      "cycle": 83,
+      "row": 5,
+      "col": 3,
+      "ddr_addr": 390,
+      "tile_addr": 83,
+      "data": -833
+    },
+    {
+      "cycle": 84,
+      "row": 5,
+      "col": 4,
+      "ddr_addr": 391,
+      "tile_addr": 84,
+      "data": 802
+    },
+    {
+      "cycle": 85,
+      "row": 5,
+      "col": 5,
+      "ddr_addr": 392,
+      "tile_addr": 85,
+      "data": -771
+    },
+    {
+      "cycle": 86,
+      "row": 5,
+      "col": 6,
+      "ddr_addr": 393,
+      "tile_addr": 86,
+      "data": -740
+    },
+    {
+      "cycle": 87,
+      "row": 5,
+      "col": 7,
+      "ddr_addr": 394,
+      "tile_addr": 87,
+      "data": 709
+    },
+    {
+      "cycle": 88,
+      "row": 5,
+      "col": 8,
+      "ddr_addr": 395,
+      "tile_addr": 88,
+      "data": -678
+    },
+    {
+      "cycle": 89,
+      "row": 5,
+      "col": 9,
+      "ddr_addr": 396,
+      "tile_addr": 89,
+      "data": -647
+    },
+    {
+      "cycle": 90,
+      "row": 5,
+      "col": 10,
+      "ddr_addr": 397,
+      "tile_addr": 90,
+      "data": 616
+    },
+    {
+      "cycle": 91,
+      "row": 5,
+      "col": 11,
+      "ddr_addr": 398,
+      "tile_addr": 91,
+      "data": -585
+    },
+    {
+      "cycle": 92,
+      "row": 5,
+      "col": 12,
+      "ddr_addr": 399,
+      "tile_addr": 92,
+      "data": -554
+    },
+    {
+      "cycle": 93,
+      "row": 5,
+      "col": 13,
+      "ddr_addr": 400,
+      "tile_addr": 93,
+      "data": 523
+    },
+    {
+      "cycle": 94,
+      "row": 5,
+      "col": 14,
+      "ddr_addr": 401,
+      "tile_addr": 94,
+      "data": -492
+    },
+    {
+      "cycle": 95,
+      "row": 5,
+      "col": 15,
+      "ddr_addr": 402,
+      "tile_addr": 95,
+      "data": -461
+    },
+    {
+      "cycle": 96,
+      "row": 6,
+      "col": 0,
+      "ddr_addr": 419,
+      "tile_addr": 96,
+      "data": 669
+    },
+    {
+      "cycle": 97,
+      "row": 6,
+      "col": 1,
+      "ddr_addr": 420,
+      "tile_addr": 97,
+      "data": -638
+    },
+    {
+      "cycle": 98,
+      "row": 6,
+      "col": 2,
+      "ddr_addr": 421,
+      "tile_addr": 98,
+      "data": -607
+    },
+    {
+      "cycle": 99,
+      "row": 6,
+      "col": 3,
+      "ddr_addr": 422,
+      "tile_addr": 99,
+      "data": 576
+    },
+    {
+      "cycle": 100,
+      "row": 6,
+      "col": 4,
+      "ddr_addr": 423,
+      "tile_addr": 100,
+      "data": -545
+    },
+    {
+      "cycle": 101,
+      "row": 6,
+      "col": 5,
+      "ddr_addr": 424,
+      "tile_addr": 101,
+      "data": -514
+    },
+    {
+      "cycle": 102,
+      "row": 6,
+      "col": 6,
+      "ddr_addr": 425,
+      "tile_addr": 102,
+      "data": 483
+    },
+    {
+      "cycle": 103,
+      "row": 6,
+      "col": 7,
+      "ddr_addr": 426,
+      "tile_addr": 103,
+      "data": -452
+    },
+    {
+      "cycle": 104,
+      "row": 6,
+      "col": 8,
+      "ddr_addr": 427,
+      "tile_addr": 104,
+      "data": -421
+    },
+    {
+      "cycle": 105,
+      "row": 6,
+      "col": 9,
+      "ddr_addr": 428,
+      "tile_addr": 105,
+      "data": 390
+    },
+    {
+      "cycle": 106,
+      "row": 6,
+      "col": 10,
+      "ddr_addr": 429,
+      "tile_addr": 106,
+      "data": -359
+    },
+    {
+      "cycle": 107,
+      "row": 6,
+      "col": 11,
+      "ddr_addr": 430,
+      "tile_addr": 107,
+      "data": -328
+    },
+    {
+      "cycle": 108,
+      "row": 6,
+      "col": 12,
+      "ddr_addr": 431,
+      "tile_addr": 108,
+      "data": 297
+    },
+    {
+      "cycle": 109,
+      "row": 6,
+      "col": 13,
+      "ddr_addr": 432,
+      "tile_addr": 109,
+      "data": -266
+    },
+    {
+      "cycle": 110,
+      "row": 6,
+      "col": 14,
+      "ddr_addr": 433,
+      "tile_addr": 110,
+      "data": -235
+    },
+    {
+      "cycle": 111,
+      "row": 6,
+      "col": 15,
+      "ddr_addr": 434,
+      "tile_addr": 111,
+      "data": 204
+    },
+    {
+      "cycle": 112,
+      "row": 7,
+      "col": 0,
+      "ddr_addr": 451,
+      "tile_addr": 112,
+      "data": -412
+    },
+    {
+      "cycle": 113,
+      "row": 7,
+      "col": 1,
+      "ddr_addr": 452,
+      "tile_addr": 113,
+      "data": -381
+    },
+    {
+      "cycle": 114,
+      "row": 7,
+      "col": 2,
+      "ddr_addr": 453,
+      "tile_addr": 114,
+      "data": 350
+    },
+    {
+      "cycle": 115,
+      "row": 7,
+      "col": 3,
+      "ddr_addr": 454,
+      "tile_addr": 115,
+      "data": -319
+    },
+    {
+      "cycle": 116,
+      "row": 7,
+      "col": 4,
+      "ddr_addr": 455,
+      "tile_addr": 116,
+      "data": -288
+    },
+    {
+      "cycle": 117,
+      "row": 7,
+      "col": 5,
+      "ddr_addr": 456,
+      "tile_addr": 117,
+      "data": 257
+    },
+    {
+      "cycle": 118,
+      "row": 7,
+      "col": 6,
+      "ddr_addr": 457,
+      "tile_addr": 118,
+      "data": -226
+    },
+    {
+      "cycle": 119,
+      "row": 7,
+      "col": 7,
+      "ddr_addr": 458,
+      "tile_addr": 119,
+      "data": -195
+    },
+    {
+      "cycle": 120,
+      "row": 7,
+      "col": 8,
+      "ddr_addr": 459,
+      "tile_addr": 120,
+      "data": 164
+    },
+    {
+      "cycle": 121,
+      "row": 7,
+      "col": 9,
+      "ddr_addr": 460,
+      "tile_addr": 121,
+      "data": -133
+    },
+    {
+      "cycle": 122,
+      "row": 7,
+      "col": 10,
+      "ddr_addr": 461,
+      "tile_addr": 122,
+      "data": -102
+    },
+    {
+      "cycle": 123,
+      "row": 7,
+      "col": 11,
+      "ddr_addr": 462,
+      "tile_addr": 123,
+      "data": 71
+    },
+    {
+      "cycle": 124,
+      "row": 7,
+      "col": 12,
+      "ddr_addr": 463,
+      "tile_addr": 124,
+      "data": -40
+    },
+    {
+      "cycle": 125,
+      "row": 7,
+      "col": 13,
+      "ddr_addr": 464,
+      "tile_addr": 125,
+      "data": -9
+    },
+    {
+      "cycle": 126,
+      "row": 7,
+      "col": 14,
+      "ddr_addr": 465,
+      "tile_addr": 126,
+      "data": -22
+    },
+    {
+      "cycle": 127,
+      "row": 7,
+      "col": 15,
+      "ddr_addr": 466,
+      "tile_addr": 127,
+      "data": 53
+    },
+    {
+      "cycle": 128,
+      "row": 8,
+      "col": 0,
+      "ddr_addr": 483,
+      "tile_addr": 128,
+      "data": -155
+    },
+    {
+      "cycle": 129,
+      "row": 8,
+      "col": 1,
+      "ddr_addr": 484,
+      "tile_addr": 129,
+      "data": 124
+    },
+    {
+      "cycle": 130,
+      "row": 8,
+      "col": 2,
+      "ddr_addr": 485,
+      "tile_addr": 130,
+      "data": -93
+    },
+    {
+      "cycle": 131,
+      "row": 8,
+      "col": 3,
+      "ddr_addr": 486,
+      "tile_addr": 131,
+      "data": -62
+    },
+    {
+      "cycle": 132,
+      "row": 8,
+      "col": 4,
+      "ddr_addr": 487,
+      "tile_addr": 132,
+      "data": 31
+    },
+    {
+      "cycle": 133,
+      "row": 8,
+      "col": 5,
+      "ddr_addr": 488,
+      "tile_addr": 133,
+      "data": 0
+    },
+    {
+      "cycle": 134,
+      "row": 8,
+      "col": 6,
+      "ddr_addr": 489,
+      "tile_addr": 134,
+      "data": 31
+    },
+    {
+      "cycle": 135,
+      "row": 8,
+      "col": 7,
+      "ddr_addr": 490,
+      "tile_addr": 135,
+      "data": -62
+    },
+    {
+      "cycle": 136,
+      "row": 8,
+      "col": 8,
+      "ddr_addr": 491,
+      "tile_addr": 136,
+      "data": 93
+    },
+    {
+      "cycle": 137,
+      "row": 8,
+      "col": 9,
+      "ddr_addr": 492,
+      "tile_addr": 137,
+      "data": 124
+    },
+    {
+      "cycle": 138,
+      "row": 8,
+      "col": 10,
+      "ddr_addr": 493,
+      "tile_addr": 138,
+      "data": -155
+    },
+    {
+      "cycle": 139,
+      "row": 8,
+      "col": 11,
+      "ddr_addr": 494,
+      "tile_addr": 139,
+      "data": 186
+    },
+    {
+      "cycle": 140,
+      "row": 8,
+      "col": 12,
+      "ddr_addr": 495,
+      "tile_addr": 140,
+      "data": 217
+    },
+    {
+      "cycle": 141,
+      "row": 8,
+      "col": 13,
+      "ddr_addr": 496,
+      "tile_addr": 141,
+      "data": -248
+    },
+    {
+      "cycle": 142,
+      "row": 8,
+      "col": 14,
+      "ddr_addr": 497,
+      "tile_addr": 142,
+      "data": 279
+    },
+    {
+      "cycle": 143,
+      "row": 8,
+      "col": 15,
+      "ddr_addr": 498,
+      "tile_addr": 143,
+      "data": 310
+    },
+    {
+      "cycle": 144,
+      "row": 9,
+      "col": 0,
+      "ddr_addr": 515,
+      "tile_addr": 144,
+      "data": -102
+    },
+    {
+      "cycle": 145,
+      "row": 9,
+      "col": 1,
+      "ddr_addr": 516,
+      "tile_addr": 145,
+      "data": 133
+    },
+    {
+      "cycle": 146,
+      "row": 9,
+      "col": 2,
+      "ddr_addr": 517,
+      "tile_addr": 146,
+      "data": 164
+    },
+    {
+      "cycle": 147,
+      "row": 9,
+      "col": 3,
+      "ddr_addr": 518,
+      "tile_addr": 147,
+      "data": -195
+    },
+    {
+      "cycle": 148,
+      "row": 9,
+      "col": 4,
+      "ddr_addr": 519,
+      "tile_addr": 148,
+      "data": 226
+    },
+    {
+      "cycle": 149,
+      "row": 9,
+      "col": 5,
+      "ddr_addr": 520,
+      "tile_addr": 149,
+      "data": 257
+    },
+    {
+      "cycle": 150,
+      "row": 9,
+      "col": 6,
+      "ddr_addr": 521,
+      "tile_addr": 150,
+      "data": -288
+    },
+    {
+      "cycle": 151,
+      "row": 9,
+      "col": 7,
+      "ddr_addr": 522,
+      "tile_addr": 151,
+      "data": 319
+    },
+    {
+      "cycle": 152,
+      "row": 9,
+      "col": 8,
+      "ddr_addr": 523,
+      "tile_addr": 152,
+      "data": 350
+    },
+    {
+      "cycle": 153,
+      "row": 9,
+      "col": 9,
+      "ddr_addr": 524,
+      "tile_addr": 153,
+      "data": -381
+    },
+    {
+      "cycle": 154,
+      "row": 9,
+      "col": 10,
+      "ddr_addr": 525,
+      "tile_addr": 154,
+      "data": 412
+    },
+    {
+      "cycle": 155,
+      "row": 9,
+      "col": 11,
+      "ddr_addr": 526,
+      "tile_addr": 155,
+      "data": 443
+    },
+    {
+      "cycle": 156,
+      "row": 9,
+      "col": 12,
+      "ddr_addr": 527,
+      "tile_addr": 156,
+      "data": -474
+    },
+    {
+      "cycle": 157,
+      "row": 9,
+      "col": 13,
+      "ddr_addr": 528,
+      "tile_addr": 157,
+      "data": 505
+    },
+    {
+      "cycle": 158,
+      "row": 9,
+      "col": 14,
+      "ddr_addr": 529,
+      "tile_addr": 158,
+      "data": 536
+    },
+    {
+      "cycle": 159,
+      "row": 9,
+      "col": 15,
+      "ddr_addr": 530,
+      "tile_addr": 159,
+      "data": -567
+    },
+    {
+      "cycle": 160,
+      "row": 10,
+      "col": 0,
+      "ddr_addr": 547,
+      "tile_addr": 160,
+      "data": 359
+    },
+    {
+      "cycle": 161,
+      "row": 10,
+      "col": 1,
+      "ddr_addr": 548,
+      "tile_addr": 161,
+      "data": 390
+    },
+    {
+      "cycle": 162,
+      "row": 10,
+      "col": 2,
+      "ddr_addr": 549,
+      "tile_addr": 162,
+      "data": -421
+    },
+    {
+      "cycle": 163,
+      "row": 10,
+      "col": 3,
+      "ddr_addr": 550,
+      "tile_addr": 163,
+      "data": 452
+    },
+    {
+      "cycle": 164,
+      "row": 10,
+      "col": 4,
+      "ddr_addr": 551,
+      "tile_addr": 164,
+      "data": 483
+    },
+    {
+      "cycle": 165,
+      "row": 10,
+      "col": 5,
+      "ddr_addr": 552,
+      "tile_addr": 165,
+      "data": -514
+    },
+    {
+      "cycle": 166,
+      "row": 10,
+      "col": 6,
+      "ddr_addr": 553,
+      "tile_addr": 166,
+      "data": 545
+    },
+    {
+      "cycle": 167,
+      "row": 10,
+      "col": 7,
+      "ddr_addr": 554,
+      "tile_addr": 167,
+      "data": 576
+    },
+    {
+      "cycle": 168,
+      "row": 10,
+      "col": 8,
+      "ddr_addr": 555,
+      "tile_addr": 168,
+      "data": -607
+    },
+    {
+      "cycle": 169,
+      "row": 10,
+      "col": 9,
+      "ddr_addr": 556,
+      "tile_addr": 169,
+      "data": 638
+    },
+    {
+      "cycle": 170,
+      "row": 10,
+      "col": 10,
+      "ddr_addr": 557,
+      "tile_addr": 170,
+      "data": 669
+    },
+    {
+      "cycle": 171,
+      "row": 10,
+      "col": 11,
+      "ddr_addr": 558,
+      "tile_addr": 171,
+      "data": -700
+    },
+    {
+      "cycle": 172,
+      "row": 10,
+      "col": 12,
+      "ddr_addr": 559,
+      "tile_addr": 172,
+      "data": 731
+    },
+    {
+      "cycle": 173,
+      "row": 10,
+      "col": 13,
+      "ddr_addr": 560,
+      "tile_addr": 173,
+      "data": 762
+    },
+    {
+      "cycle": 174,
+      "row": 10,
+      "col": 14,
+      "ddr_addr": 561,
+      "tile_addr": 174,
+      "data": -793
+    },
+    {
+      "cycle": 175,
+      "row": 10,
+      "col": 15,
+      "ddr_addr": 562,
+      "tile_addr": 175,
+      "data": 824
+    },
+    {
+      "cycle": 176,
+      "row": 11,
+      "col": 0,
+      "ddr_addr": 579,
+      "tile_addr": 176,
+      "data": 616
+    },
+    {
+      "cycle": 177,
+      "row": 11,
+      "col": 1,
+      "ddr_addr": 580,
+      "tile_addr": 177,
+      "data": -647
+    },
+    {
+      "cycle": 178,
+      "row": 11,
+      "col": 2,
+      "ddr_addr": 581,
+      "tile_addr": 178,
+      "data": 678
+    },
+    {
+      "cycle": 179,
+      "row": 11,
+      "col": 3,
+      "ddr_addr": 582,
+      "tile_addr": 179,
+      "data": 709
+    },
+    {
+      "cycle": 180,
+      "row": 11,
+      "col": 4,
+      "ddr_addr": 583,
+      "tile_addr": 180,
+      "data": -740
+    },
+    {
+      "cycle": 181,
+      "row": 11,
+      "col": 5,
+      "ddr_addr": 584,
+      "tile_addr": 181,
+      "data": 771
+    },
+    {
+      "cycle": 182,
+      "row": 11,
+      "col": 6,
+      "ddr_addr": 585,
+      "tile_addr": 182,
+      "data": 802
+    },
+    {
+      "cycle": 183,
+      "row": 11,
+      "col": 7,
+      "ddr_addr": 586,
+      "tile_addr": 183,
+      "data": -833
+    },
+    {
+      "cycle": 184,
+      "row": 11,
+      "col": 8,
+      "ddr_addr": 587,
+      "tile_addr": 184,
+      "data": 864
+    },
+    {
+      "cycle": 185,
+      "row": 11,
+      "col": 9,
+      "ddr_addr": 588,
+      "tile_addr": 185,
+      "data": 895
+    },
+    {
+      "cycle": 186,
+      "row": 11,
+      "col": 10,
+      "ddr_addr": 589,
+      "tile_addr": 186,
+      "data": -926
+    },
+    {
+      "cycle": 187,
+      "row": 11,
+      "col": 11,
+      "ddr_addr": 590,
+      "tile_addr": 187,
+      "data": 957
+    },
+    {
+      "cycle": 188,
+      "row": 11,
+      "col": 12,
+      "ddr_addr": 591,
+      "tile_addr": 188,
+      "data": 988
+    },
+    {
+      "cycle": 189,
+      "row": 11,
+      "col": 13,
+      "ddr_addr": 592,
+      "tile_addr": 189,
+      "data": -1019
+    },
+    {
+      "cycle": 190,
+      "row": 11,
+      "col": 14,
+      "ddr_addr": 593,
+      "tile_addr": 190,
+      "data": 1050
+    },
+    {
+      "cycle": 191,
+      "row": 11,
+      "col": 15,
+      "ddr_addr": 594,
+      "tile_addr": 191,
+      "data": 1081
+    },
+    {
+      "cycle": 192,
+      "row": 12,
+      "col": 0,
+      "ddr_addr": 611,
+      "tile_addr": 192,
+      "data": -873
+    },
+    {
+      "cycle": 193,
+      "row": 12,
+      "col": 1,
+      "ddr_addr": 612,
+      "tile_addr": 193,
+      "data": 904
+    },
+    {
+      "cycle": 194,
+      "row": 12,
+      "col": 2,
+      "ddr_addr": 613,
+      "tile_addr": 194,
+      "data": 935
+    },
+    {
+      "cycle": 195,
+      "row": 12,
+      "col": 3,
+      "ddr_addr": 614,
+      "tile_addr": 195,
+      "data": -966
+    },
+    {
+      "cycle": 196,
+      "row": 12,
+      "col": 4,
+      "ddr_addr": 615,
+      "tile_addr": 196,
+      "data": 997
+    },
+    {
+      "cycle": 197,
+      "row": 12,
+      "col": 5,
+      "ddr_addr": 616,
+      "tile_addr": 197,
+      "data": 1028
+    },
+    {
+      "cycle": 198,
+      "row": 12,
+      "col": 6,
+      "ddr_addr": 617,
+      "tile_addr": 198,
+      "data": -1059
+    },
+    {
+      "cycle": 199,
+      "row": 12,
+      "col": 7,
+      "ddr_addr": 618,
+      "tile_addr": 199,
+      "data": 1090
+    },
+    {
+      "cycle": 200,
+      "row": 12,
+      "col": 8,
+      "ddr_addr": 619,
+      "tile_addr": 200,
+      "data": 1121
+    },
+    {
+      "cycle": 201,
+      "row": 12,
+      "col": 9,
+      "ddr_addr": 620,
+      "tile_addr": 201,
+      "data": -1152
+    },
+    {
+      "cycle": 202,
+      "row": 12,
+      "col": 10,
+      "ddr_addr": 621,
+      "tile_addr": 202,
+      "data": 1183
+    },
+    {
+      "cycle": 203,
+      "row": 12,
+      "col": 11,
+      "ddr_addr": 622,
+      "tile_addr": 203,
+      "data": 1214
+    },
+    {
+      "cycle": 204,
+      "row": 12,
+      "col": 12,
+      "ddr_addr": 623,
+      "tile_addr": 204,
+      "data": -1245
+    },
+    {
+      "cycle": 205,
+      "row": 12,
+      "col": 13,
+      "ddr_addr": 624,
+      "tile_addr": 205,
+      "data": 1276
+    },
+    {
+      "cycle": 206,
+      "row": 12,
+      "col": 14,
+      "ddr_addr": 625,
+      "tile_addr": 206,
+      "data": 1307
+    },
+    {
+      "cycle": 207,
+      "row": 12,
+      "col": 15,
+      "ddr_addr": 626,
+      "tile_addr": 207,
+      "data": -1338
+    },
+    {
+      "cycle": 208,
+      "row": 13,
+      "col": 0,
+      "ddr_addr": 643,
+      "tile_addr": 208,
+      "data": 1130
+    },
+    {
+      "cycle": 209,
+      "row": 13,
+      "col": 1,
+      "ddr_addr": 644,
+      "tile_addr": 209,
+      "data": 1161
+    },
+    {
+      "cycle": 210,
+      "row": 13,
+      "col": 2,
+      "ddr_addr": 645,
+      "tile_addr": 210,
+      "data": -1192
+    },
+    {
+      "cycle": 211,
+      "row": 13,
+      "col": 3,
+      "ddr_addr": 646,
+      "tile_addr": 211,
+      "data": 1223
+    },
+    {
+      "cycle": 212,
+      "row": 13,
+      "col": 4,
+      "ddr_addr": 647,
+      "tile_addr": 212,
+      "data": 1254
+    },
+    {
+      "cycle": 213,
+      "row": 13,
+      "col": 5,
+      "ddr_addr": 648,
+      "tile_addr": 213,
+      "data": -1285
+    },
+    {
+      "cycle": 214,
+      "row": 13,
+      "col": 6,
+      "ddr_addr": 649,
+      "tile_addr": 214,
+      "data": 1316
+    },
+    {
+      "cycle": 215,
+      "row": 13,
+      "col": 7,
+      "ddr_addr": 650,
+      "tile_addr": 215,
+      "data": 1347
+    },
+    {
+      "cycle": 216,
+      "row": 13,
+      "col": 8,
+      "ddr_addr": 651,
+      "tile_addr": 216,
+      "data": -1378
+    },
+    {
+      "cycle": 217,
+      "row": 13,
+      "col": 9,
+      "ddr_addr": 652,
+      "tile_addr": 217,
+      "data": 1409
+    },
+    {
+      "cycle": 218,
+      "row": 13,
+      "col": 10,
+      "ddr_addr": 653,
+      "tile_addr": 218,
+      "data": 1440
+    },
+    {
+      "cycle": 219,
+      "row": 13,
+      "col": 11,
+      "ddr_addr": 654,
+      "tile_addr": 219,
+      "data": -1471
+    },
+    {
+      "cycle": 220,
+      "row": 13,
+      "col": 12,
+      "ddr_addr": 655,
+      "tile_addr": 220,
+      "data": 1502
+    },
+    {
+      "cycle": 221,
+      "row": 13,
+      "col": 13,
+      "ddr_addr": 656,
+      "tile_addr": 221,
+      "data": 1533
+    },
+    {
+      "cycle": 222,
+      "row": 13,
+      "col": 14,
+      "ddr_addr": 657,
+      "tile_addr": 222,
+      "data": -1564
+    },
+    {
+      "cycle": 223,
+      "row": 13,
+      "col": 15,
+      "ddr_addr": 658,
+      "tile_addr": 223,
+      "data": 1595
+    },
+    {
+      "cycle": 224,
+      "row": 14,
+      "col": 0,
+      "ddr_addr": 675,
+      "tile_addr": 224,
+      "data": 1387
+    },
+    {
+      "cycle": 225,
+      "row": 14,
+      "col": 1,
+      "ddr_addr": 676,
+      "tile_addr": 225,
+      "data": -1418
+    },
+    {
+      "cycle": 226,
+      "row": 14,
+      "col": 2,
+      "ddr_addr": 677,
+      "tile_addr": 226,
+      "data": 1449
+    },
+    {
+      "cycle": 227,
+      "row": 14,
+      "col": 3,
+      "ddr_addr": 678,
+      "tile_addr": 227,
+      "data": 1480
+    },
+    {
+      "cycle": 228,
+      "row": 14,
+      "col": 4,
+      "ddr_addr": 679,
+      "tile_addr": 228,
+      "data": -1511
+    },
+    {
+      "cycle": 229,
+      "row": 14,
+      "col": 5,
+      "ddr_addr": 680,
+      "tile_addr": 229,
+      "data": 1542
+    },
+    {
+      "cycle": 230,
+      "row": 14,
+      "col": 6,
+      "ddr_addr": 681,
+      "tile_addr": 230,
+      "data": 1573
+    },
+    {
+      "cycle": 231,
+      "row": 14,
+      "col": 7,
+      "ddr_addr": 682,
+      "tile_addr": 231,
+      "data": -1604
+    },
+    {
+      "cycle": 232,
+      "row": 14,
+      "col": 8,
+      "ddr_addr": 683,
+      "tile_addr": 232,
+      "data": 1635
+    },
+    {
+      "cycle": 233,
+      "row": 14,
+      "col": 9,
+      "ddr_addr": 684,
+      "tile_addr": 233,
+      "data": 1666
+    },
+    {
+      "cycle": 234,
+      "row": 14,
+      "col": 10,
+      "ddr_addr": 685,
+      "tile_addr": 234,
+      "data": -1697
+    },
+    {
+      "cycle": 235,
+      "row": 14,
+      "col": 11,
+      "ddr_addr": 686,
+      "tile_addr": 235,
+      "data": 1728
+    },
+    {
+      "cycle": 236,
+      "row": 14,
+      "col": 12,
+      "ddr_addr": 687,
+      "tile_addr": 236,
+      "data": 1759
+    },
+    {
+      "cycle": 237,
+      "row": 14,
+      "col": 13,
+      "ddr_addr": 688,
+      "tile_addr": 237,
+      "data": -1790
+    },
+    {
+      "cycle": 238,
+      "row": 14,
+      "col": 14,
+      "ddr_addr": 689,
+      "tile_addr": 238,
+      "data": 1821
+    },
+    {
+      "cycle": 239,
+      "row": 14,
+      "col": 15,
+      "ddr_addr": 690,
+      "tile_addr": 239,
+      "data": 1852
+    },
+    {
+      "cycle": 240,
+      "row": 15,
+      "col": 0,
+      "ddr_addr": 707,
+      "tile_addr": 240,
+      "data": -1644
+    },
+    {
+      "cycle": 241,
+      "row": 15,
+      "col": 1,
+      "ddr_addr": 708,
+      "tile_addr": 241,
+      "data": 1675
+    },
+    {
+      "cycle": 242,
+      "row": 15,
+      "col": 2,
+      "ddr_addr": 709,
+      "tile_addr": 242,
+      "data": 1706
+    },
+    {
+      "cycle": 243,
+      "row": 15,
+      "col": 3,
+      "ddr_addr": 710,
+      "tile_addr": 243,
+      "data": -1737
+    },
+    {
+      "cycle": 244,
+      "row": 15,
+      "col": 4,
+      "ddr_addr": 711,
+      "tile_addr": 244,
+      "data": 1768
+    },
+    {
+      "cycle": 245,
+      "row": 15,
+      "col": 5,
+      "ddr_addr": 712,
+      "tile_addr": 245,
+      "data": 1799
+    },
+    {
+      "cycle": 246,
+      "row": 15,
+      "col": 6,
+      "ddr_addr": 713,
+      "tile_addr": 246,
+      "data": -1830
+    },
+    {
+      "cycle": 247,
+      "row": 15,
+      "col": 7,
+      "ddr_addr": 714,
+      "tile_addr": 247,
+      "data": 1861
+    },
+    {
+      "cycle": 248,
+      "row": 15,
+      "col": 8,
+      "ddr_addr": 715,
+      "tile_addr": 248,
+      "data": 1892
+    },
+    {
+      "cycle": 249,
+      "row": 15,
+      "col": 9,
+      "ddr_addr": 716,
+      "tile_addr": 249,
+      "data": -1923
+    },
+    {
+      "cycle": 250,
+      "row": 15,
+      "col": 10,
+      "ddr_addr": 717,
+      "tile_addr": 250,
+      "data": 1954
+    },
+    {
+      "cycle": 251,
+      "row": 15,
+      "col": 11,
+      "ddr_addr": 718,
+      "tile_addr": 251,
+      "data": 1985
+    },
+    {
+      "cycle": 252,
+      "row": 15,
+      "col": 12,
+      "ddr_addr": 719,
+      "tile_addr": 252,
+      "data": -2016
+    },
+    {
+      "cycle": 253,
+      "row": 15,
+      "col": 13,
+      "ddr_addr": 720,
+      "tile_addr": 253,
+      "data": 2047
+    },
+    {
+      "cycle": 254,
+      "row": 15,
+      "col": 14,
+      "ddr_addr": 721,
+      "tile_addr": 254,
+      "data": 2078
+    },
+    {
+      "cycle": 255,
+      "row": 15,
+      "col": 15,
+      "ddr_addr": 722,
+      "tile_addr": 255,
+      "data": -2109
+    }
+  ],
+  "C_tile": [
+    [
+      2211,
+      -2180,
+      -2149,
+      2118,
+      -2087,
+      -2056,
+      2025,
+      -1994,
+      -1963,
+      1932,
+      -1901,
+      -1870,
+      1839,
+      -1808,
+      -1777,
+      1746
+    ],
+    [
+      -1954,
+      -1923,
+      1892,
+      -1861,
+      -1830,
+      1799,
+      -1768,
+      -1737,
+      1706,
+      -1675,
+      -1644,
+      1613,
+      -1582,
+      -1551,
+      1520,
+      -1489
+    ],
+    [
+      -1697,
+      1666,
+      -1635,
+      -1604,
+      1573,
+      -1542,
+      -1511,
+      1480,
+      -1449,
+      -1418,
+      1387,
+      -1356,
+      -1325,
+      1294,
+      -1263,
+      -1232
+    ],
+    [
+      1440,
+      -1409,
+      -1378,
+      1347,
+      -1316,
+      -1285,
+      1254,
+      -1223,
+      -1192,
+      1161,
+      -1130,
+      -1099,
+      1068,
+      -1037,
+      -1006,
+      975
+    ],
+    [
+      -1183,
+      -1152,
+      1121,
+      -1090,
+      -1059,
+      1028,
+      -997,
+      -966,
+      935,
+      -904,
+      -873,
+      842,
+      -811,
+      -780,
+      749,
+      -718
+    ],
+    [
+      -926,
+      895,
+      -864,
+      -833,
+      802,
+      -771,
+      -740,
+      709,
+      -678,
+      -647,
+      616,
+      -585,
+      -554,
+      523,
+      -492,
+      -461
+    ],
+    [
+      669,
+      -638,
+      -607,
+      576,
+      -545,
+      -514,
+      483,
+      -452,
+      -421,
+      390,
+      -359,
+      -328,
+      297,
+      -266,
+      -235,
+      204
+    ],
+    [
+      -412,
+      -381,
+      350,
+      -319,
+      -288,
+      257,
+      -226,
+      -195,
+      164,
+      -133,
+      -102,
+      71,
+      -40,
+      -9,
+      -22,
+      53
+    ],
+    [
+      -155,
+      124,
+      -93,
+      -62,
+      31,
+      0,
+      31,
+      -62,
+      93,
+      124,
+      -155,
+      186,
+      217,
+      -248,
+      279,
+      310
+    ],
+    [
+      -102,
+      133,
+      164,
+      -195,
+      226,
+      257,
+      -288,
+      319,
+      350,
+      -381,
+      412,
+      443,
+      -474,
+      505,
+      536,
+      -567
+    ],
+    [
+      359,
+      390,
+      -421,
+      452,
+      483,
+      -514,
+      545,
+      576,
+      -607,
+      638,
+      669,
+      -700,
+      731,
+      762,
+      -793,
+      824
+    ],
+    [
+      616,
+      -647,
+      678,
+      709,
+      -740,
+      771,
+      802,
+      -833,
+      864,
+      895,
+      -926,
+      957,
+      988,
+      -1019,
+      1050,
+      1081
+    ],
+    [
+      -873,
+      904,
+      935,
+      -966,
+      997,
+      1028,
+      -1059,
+      1090,
+      1121,
+      -1152,
+      1183,
+      1214,
+      -1245,
+      1276,
+      1307,
+      -1338
+    ],
+    [
+      1130,
+      1161,
+      -1192,
+      1223,
+      1254,
+      -1285,
+      1316,
+      1347,
+      -1378,
+      1409,
+      1440,
+      -1471,
+      1502,
+      1533,
+      -1564,
+      1595
+    ],
+    [
+      1387,
+      -1418,
+      1449,
+      1480,
+      -1511,
+      1542,
+      1573,
+      -1604,
+      1635,
+      1666,
+      -1697,
+      1728,
+      1759,
+      -1790,
+      1821,
+      1852
+    ],
+    [
+      -1644,
+      1675,
+      1706,
+      -1737,
+      1768,
+      1799,
+      -1830,
+      1861,
+      1892,
+      -1923,
+      1954,
+      1985,
+      -2016,
+      2047,
+      2078,
+      -2109
+    ]
+  ]
+}

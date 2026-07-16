@@ -1,0 +1,166 @@
+{
+  "tile_bytes": 256,
+  "tiles": 6,
+  "load_latency": 4,
+  "compute_latency": 7,
+  "write_latency": 3,
+  "end_cycle": 49,
+  "events": [
+    {
+      "tile": 0,
+      "stage": "load",
+      "buffer": 0,
+      "start": 0,
+      "done": 4,
+      "checksum": 324508639
+    },
+    {
+      "tile": 1,
+      "stage": "load",
+      "buffer": 1,
+      "start": 4,
+      "done": 8,
+      "checksum": 341417699
+    },
+    {
+      "tile": 0,
+      "stage": "compute",
+      "buffer": 0,
+      "start": 4,
+      "done": 11,
+      "checksum": 324508639
+    },
+    {
+      "tile": 1,
+      "stage": "compute",
+      "buffer": 1,
+      "start": 11,
+      "done": 18,
+      "checksum": 341417699
+    },
+    {
+      "tile": 0,
+      "stage": "write",
+      "buffer": 0,
+      "start": 11,
+      "done": 14,
+      "checksum": 324508639
+    },
+    {
+      "tile": 2,
+      "stage": "load",
+      "buffer": 0,
+      "start": 14,
+      "done": 18,
+      "checksum": 358326759
+    },
+    {
+      "tile": 2,
+      "stage": "compute",
+      "buffer": 0,
+      "start": 18,
+      "done": 25,
+      "checksum": 358326759
+    },
+    {
+      "tile": 1,
+      "stage": "write",
+      "buffer": 1,
+      "start": 18,
+      "done": 21,
+      "checksum": 341417699
+    },
+    {
+      "tile": 3,
+      "stage": "load",
+      "buffer": 1,
+      "start": 21,
+      "done": 25,
+      "checksum": 375235819
+    },
+    {
+      "tile": 3,
+      "stage": "compute",
+      "buffer": 1,
+      "start": 25,
+      "done": 32,
+      "checksum": 375235819
+    },
+    {
+      "tile": 2,
+      "stage": "write",
+      "buffer": 0,
+      "start": 25,
+      "done": 28,
+      "checksum": 358326759
+    },
+    {
+      "tile": 4,
+      "stage": "load",
+      "buffer": 0,
+      "start": 28,
+      "done": 32,
+      "checksum": 392144879
+    },
+    {
+      "tile": 4,
+      "stage": "compute",
+      "buffer": 0,
+      "start": 32,
+      "done": 39,
+      "checksum": 392144879
+    },
+    {
+      "tile": 3,
+      "stage": "write",
+      "buffer": 1,
+      "start": 32,
+      "done": 35,
+      "checksum": 375235819
+    },
+    {
+      "tile": 5,
+      "stage": "load",
+      "buffer": 1,
+      "start": 35,
+      "done": 39,
+      "checksum": 409053939
+    },
+    {
+      "tile": 5,
+      "stage": "compute",
+      "buffer": 1,
+      "start": 39,
+      "done": 46,
+      "checksum": 409053939
+    },
+    {
+      "tile": 4,
+      "stage": "write",
+      "buffer": 0,
+      "start": 39,
+      "done": 42,
+      "checksum": 392144879
+    },
+    {
+      "tile": 5,
+      "stage": "write",
+      "buffer": 1,
+      "start": 46,
+      "done": 49,
+      "checksum": 409053939
+    }
+  ],
+  "final_buffers": [
+    {
+      "valid": false,
+      "tile": 4,
+      "checksum": 392144879
+    },
+    {
+      "valid": false,
+      "tile": 5,
+      "checksum": 409053939
+    }
+  ]
+}

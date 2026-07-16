@@ -1,0 +1,2 @@
+# Optional host-side dependencies for model import and deployment.
+onnx>=1.14,<1.18
