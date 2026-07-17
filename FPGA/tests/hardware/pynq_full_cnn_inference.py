@@ -8,15 +8,13 @@ import sys
 import time
 
 import numpy as np
-import onnx
 import onnxruntime as ort
-from onnx import numpy_helper
 
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from budgetcuda import Device
+from budgetcuda import Device, onnx_qdq_params
 from budgetcuda.compiler import ModelPackage
 from budgetcuda.onnx_import import import_onnx_model
 
@@ -28,22 +26,6 @@ DEFAULT_MODEL = (
     / "fruit3_budgetcuda_qat_smoke"
     / "fruit3_budgetcuda_int8.onnx"
 )
-
-
-def output_quantization(model_path: Path) -> tuple[float, int]:
-    model = onnx.load(str(model_path))
-    producers = {output: node for node in model.graph.node for output in node.output}
-    initializers = {value.name: numpy_helper.to_array(value) for value in model.graph.initializer}
-    output_name = model.graph.output[0].name
-    node = producers.get(output_name)
-    if node is None or node.op_type != "DequantizeLinear" or len(node.input) < 3:
-        raise RuntimeError("model output must be produced by DequantizeLinear")
-    try:
-        scale = float(initializers[node.input[1]].reshape(-1)[0])
-        zero_point = int(initializers[node.input[2]].reshape(-1)[0])
-    except (KeyError, IndexError) as exc:
-        raise RuntimeError("output quantization parameters must be scalar initializers") from exc
-    return scale, zero_point
 
 
 def run_package(device: Device, package: ModelPackage, input_values: np.ndarray) -> np.ndarray:
@@ -130,7 +112,8 @@ def main() -> None:
             f"FPGA/software-device mismatch: FPGA={actual.reshape(-1).tolist()} "
             f"mock={mock_result.reshape(-1).tolist()}"
         )
-    output_scale, output_zero_point = output_quantization(args.model)
+    output_params = onnx_qdq_params(args.model).output
+    output_scale, output_zero_point = output_params.scale, output_params.zero_point
     actual_float = (actual.astype(np.float32) - output_zero_point) * output_scale
     max_error = float(np.max(np.abs(actual_float - reference)))
     # The deployed datapath truncates in each fixed-point requantizer and in

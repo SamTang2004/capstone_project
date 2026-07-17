@@ -1,5 +1,119 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+import math
+from pathlib import Path
+
+
+@dataclass(frozen=True)
+class QuantizationParams:
+    """Scalar signed-INT8 affine quantization parameters for one tensor."""
+
+    scale: float
+    zero_point: int = 0
+
+    def __post_init__(self):
+        if not math.isfinite(float(self.scale)) or float(self.scale) <= 0.0:
+            raise ValueError("Quantization scale must be positive and finite")
+        if int(self.zero_point) < -128 or int(self.zero_point) > 127:
+            raise ValueError("Signed INT8 zero point must be in -128..127")
+
+    def quantize(self, values):
+        return quantize_int8(values, self.scale, self.zero_point)
+
+    def dequantize(self, values):
+        return dequantize_int8(values, self.scale, self.zero_point)
+
+
+@dataclass(frozen=True)
+class ModelQDQParams:
+    """Input and output Q/DQ metadata extracted from a deployable ONNX model."""
+
+    input: QuantizationParams
+    output: QuantizationParams
+    input_name: str
+    output_name: str
+
+
+def onnx_qdq_params(source) -> ModelQDQParams:
+    """Extract scalar input/output Q/DQ parameters from an ONNX model.
+
+    ``source`` may be a path or an ``onnx.ModelProto``. The model must expose
+    one runtime input feeding ``DequantizeLinear`` and one graph output produced
+    by ``DequantizeLinear``. Per-channel parameters are rejected because the
+    deployed BudgetCUDA datapath uses per-tensor quantization.
+    """
+
+    try:
+        import onnx
+        from onnx import numpy_helper
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "ONNX Q/DQ inspection requires the optional dependency 'onnx'. "
+            "Install it with: python -m pip install onnx"
+        ) from exc
+
+    model = onnx.load(str(source)) if isinstance(source, (str, Path)) else source
+    graph = model.graph
+    initializers = {value.name: numpy_helper.to_array(value) for value in graph.initializer}
+    runtime_inputs = [value for value in graph.input if value.name not in initializers]
+    if len(runtime_inputs) != 1 or len(graph.output) != 1:
+        raise ValueError("BudgetCUDA Q/DQ inspection requires one runtime input and one output")
+
+    input_name = runtime_inputs[0].name
+    input_dq = next(
+        (
+            node
+            for node in graph.node
+            if node.op_type == "DequantizeLinear" and node.input and node.input[0] == input_name
+        ),
+        None,
+    )
+    if input_dq is None:
+        raise ValueError(f"ONNX input {input_name!r} must feed DequantizeLinear")
+
+    producers = {name: node for node in graph.node for name in node.output}
+    output_name = graph.output[0].name
+    output_dq = producers.get(output_name)
+    if output_dq is None or output_dq.op_type != "DequantizeLinear":
+        raise ValueError(f"ONNX output {output_name!r} must be produced by DequantizeLinear")
+
+    return ModelQDQParams(
+        input=_params_from_dq(input_dq, initializers, f"input {input_name!r}"),
+        output=_params_from_dq(output_dq, initializers, f"output {output_name!r}"),
+        input_name=input_name,
+        output_name=output_name,
+    )
+
+
+def quantize_int8(values, scale: float, zero_point: int = 0):
+    """Quantize values to signed INT8 while preserving NumPy array shape."""
+
+    params = QuantizationParams(scale, zero_point)
+    try:
+        import numpy as np
+
+        values_array = np.asarray(values, dtype=np.float32)
+        quantized = np.rint(values_array / params.scale + params.zero_point)
+        return np.clip(quantized, -128, 127).astype(np.int8)
+    except ModuleNotFoundError:
+        return [
+            max(-128, min(127, int(round(float(value) / params.scale + params.zero_point))))
+            for value in _flatten(values)
+        ]
+
+
+def dequantize_int8(values, scale: float, zero_point: int = 0):
+    """Dequantize signed INT8 values while preserving NumPy array shape."""
+
+    params = QuantizationParams(scale, zero_point)
+    try:
+        import numpy as np
+
+        return (np.asarray(values, dtype=np.float32) - params.zero_point) * params.scale
+    except ModuleNotFoundError:
+        return [(int(value) - params.zero_point) * params.scale for value in _flatten(values)]
+
 
 def quantize_symmetric_int8(values, scale: float | None = None):
     flat = _flatten(values)
@@ -38,3 +152,19 @@ def _maybe_numpy_array(values, dtype):
         return np.asarray(values, dtype=dtype)
     except ModuleNotFoundError:
         return values
+
+
+def _params_from_dq(node, initializers, label: str) -> QuantizationParams:
+    if len(node.input) < 3:
+        raise ValueError(f"ONNX DequantizeLinear for {label} requires scale and zero point")
+    try:
+        scale_array = initializers[node.input[1]]
+        zero_point_array = initializers[node.input[2]]
+    except KeyError as exc:
+        raise ValueError(f"ONNX Q/DQ parameters for {label} must be constant initializers") from exc
+    if scale_array.size != 1 or zero_point_array.size != 1:
+        raise ValueError(f"ONNX Q/DQ parameters for {label} must be scalar per-tensor values")
+    return QuantizationParams(
+        float(scale_array.reshape(-1)[0]),
+        int(zero_point_array.reshape(-1)[0]),
+    )

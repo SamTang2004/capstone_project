@@ -344,7 +344,114 @@ unless a new image and boot configuration are validated separately.
 
 ## 13. Run an End-to-End Model
 
-The normal application lifecycle is:
+This section is the practical host-side path from an exported ONNX file to a
+prediction returned by the FPGA. The normal application lifecycle is:
+
+```text
+prepare board -> import ONNX -> inspect package -> create Device
+-> upload model once -> quantize/write each input -> execute cached graph
+-> read/dequantize output -> repeat -> close model
+```
+
+### 13.1 Make the Host Package Importable
+
+`budgetcuda` currently lives directly below `FPGA/`; it is not installed as a
+wheel. From the repository root, add `FPGA` to `PYTHONPATH` for the current
+PowerShell session:
+
+```powershell
+& .\.venv\Scripts\Activate.ps1
+$env:PYTHONPATH = "$PWD\FPGA"
+python -c "from budgetcuda import Device, import_onnx_model; print('BudgetCUDA host ready')"
+```
+
+Applications outside this repository should add the absolute `FPGA` directory
+to their environment or package the module before deployment. Do not add
+`FPGA/budgetcuda` itself: Python needs the directory that contains the package.
+
+The host endpoint can be explicit in code or configured through environment
+variables:
+
+```powershell
+$env:BCUDA_BOARD_IP = "192.168.2.99"
+$env:BCUDA_BOARD_PORT = "9000"
+$env:BCUDA_SOCKET_TIMEOUT = "300"
+```
+
+`BUDGETCUDA_BOARD_IP` and `BUDGETCUDA_BOARD_PORT` are accepted as compatibility
+aliases. Explicit `Device(address, port, timeout)` arguments take precedence.
+The default timeout is only 5 seconds, which is too short for some full CNN
+operations, so applications should select a measured upper bound.
+
+### 13.2 Check Board Readiness
+
+Before allocating model buffers, separate network, service, PL, and clock
+checks. From Windows:
+
+```powershell
+Test-Connection 192.168.2.99 -Count 2
+Test-NetConnection 192.168.2.99 -Port 9000
+```
+
+On the board:
+
+```sh
+cat /sys/class/fpga_manager/fpga0/state
+systemctl is-active budgetcuda.service
+systemctl status budgetcuda.service --no-pager
+ss -ltn | grep ':9000'
+```
+
+The expected FPGA manager state is `operating`, the service is `active`, and
+port 9000 is listening. Constructing `Device()` does **not** establish a TCP
+connection. Connectivity is first exercised by an operation such as `ALLOC`,
+normally during `load_model()`.
+
+### 13.3 Import and Inspect the Model Package
+
+Importing is entirely local. It validates ONNX and lowers it into buffers and
+layer descriptors; it does not contact or allocate anything on the board.
+
+```python
+from pathlib import Path
+from budgetcuda import import_onnx_model
+
+model_path = Path("FPGA/train_model/models/fruit3_budgetcuda_qat_smoke/fruit3_budgetcuda_int8.onnx")
+package = import_onnx_model(model_path)
+
+input_spec = package.buffers[package.input_index]
+output_spec = package.buffers[package.output_index]
+descriptor_bytes = len(package.serialize_descriptor())
+buffer_bytes = sum(buffer.size_bytes for buffer in package.buffers)
+
+print(f"layers: {len(package.layers)}")
+print(f"buffers: {len(package.buffers)}")
+print(f"input: {input_spec.name} {input_spec.shape} {input_spec.dtype.name} {input_spec.layout.name}")
+print(f"output: {output_spec.name} {output_spec.shape} {output_spec.dtype.name} {output_spec.layout.name}")
+print(f"logical buffer bytes: {buffer_bytes}")
+print(f"descriptor bytes: {descriptor_bytes}")
+
+for index, layer in enumerate(package.layers):
+    print(index, layer.op_type.name, "input", layer.input0, "output", layer.output)
+```
+
+Inspect this before board upload. In particular:
+
+- the runtime input must be INT8 and have the expected static shape;
+- buffer memory plus descriptors and allocator alignment must fit the 64 MiB
+  daemon arena;
+- every layer's `OpType` must be supported by the deployed daemon and PL image;
+- the output is the quantized tensor immediately before a terminal ONNX
+  `DequantizeLinear`, not necessarily the ONNX graph's floating dtype; and
+- one imported package currently has exactly one runtime input and one output.
+
+`buffer_bytes` is a useful lower bound, not an exact arena-consumption figure.
+Each remote allocation is aligned, and the daemon also owns allocation
+metadata.
+
+### 13.4 Understand What `load_model()` Does
+
+Create the network device and upload the package:
 
 ```python
 from budgetcuda import Device
@@ -352,19 +459,274 @@ from budgetcuda.onnx_import import import_onnx_model
 
 package = import_onnx_model("model_int8.onnx")
 device = Device("192.168.2.99", 9000, timeout=300.0)
-model = device.load_model(package)       # allocate and upload once
+model = device.load_model(package)
 try:
-    output0 = model.run(input0_int8)     # write input, execute cached IL, read
+    output0 = model.run(input0_int8)
     output1 = model.run(input1_int8)
 finally:
-    model.close()                        # free all remote buffers
+    model.close()
 ```
 
-Model weights are not reloaded for each inference. `load_model` allocates the
-planned buffers, uploads constants and the descriptor, and returns persistent
-handles. `run` transfers the input, submits `GRAPH`, and reads the quantized
-output. `close` releases descriptor and model buffers even after a partial
-failure.
+`load_model()` performs the following protocol sequence:
+
+1. send `ALLOC` for every package buffer;
+2. send `WRITE` for each constant weight, bias, or scale buffer;
+3. serialize the model descriptor using the returned board buffer IDs;
+4. allocate a descriptor buffer and upload the IL; and
+5. return a `Model` containing persistent remote handles.
+
+If upload fails partway through, `upload_model()` attempts to release everything
+it already allocated. Model weights are not reloaded for each inference. Keep
+the returned `Model` alive for the entire inference interval or application
+session.
+
+The current socket transport opens one TCP connection per command. Persistent
+model state lives in the board service's buffer arena, not in a persistent TCP
+socket. Therefore a transient connection can be retried at the application
+level, but an interrupted `EXECUTE` must not be blindly replayed until the board
+status and output ownership are known.
+
+### 13.5 Prepare the INT8 Input
+
+BudgetCUDA does not automatically resize images, normalize channels, or quantize
+floating inputs. Preprocessing must match training exactly, and the final host
+array must match the imported input shape, order, and dtype.
+
+For an ONNX Q/DQ model, the input quantization equation is:
+
+```text
+q = clamp(round(real_value / input_scale) + input_zero_point, -128, 127)
+```
+
+The deployed profile normally has `input_zero_point = 0`. BudgetCUDA reads the
+scalar parameters from the Q/DQ graph and exposes shape-preserving conversion
+methods:
+
+```python
+from budgetcuda import onnx_qdq_params
+
+qdq = onnx_qdq_params(model_path)
+print(qdq.input_name, qdq.input.scale, qdq.input.zero_point)
+input_int8 = qdq.input.quantize(input_float)
+```
+
+For the reference fruit classifier, training used RGB, resize to 64x64 with
+antialiasing, conversion to `[0, 1]`, then NCHW layout. The host helper performs
+those steps and derives the target dimensions from `input_spec.shape`:
+
+```python
+from budgetcuda import load_quantized_image
+
+input_int8 = load_quantized_image(
+    "apple.jpg",
+    input_spec.shape,
+    qdq.input,
+    layout=input_spec.layout,
+)
+```
+
+For models trained with channel normalization, supply the same parameters used
+during training, for example `mean=(0.485, 0.456, 0.406)` and
+`std=(0.229, 0.224, 0.225)`. The helper intentionally does not guess these
+values. Non-image inputs should call `qdq.input.quantize(values)` directly.
+
+Check before every run during integration:
+
+```python
+if input_int8.dtype != np.int8 or input_int8.shape != input_spec.shape:
+    raise ValueError(
+        f"expected {input_spec.shape} INT8 input, got {input_int8.shape} {input_int8.dtype}"
+    )
+```
+
+Passing float32 to `Model.run()` is not supported merely because NumPy can
+serialize it. `Device.write()` serializes the supplied array's native bytes; it
+does not cast them to the remote tensor dtype. A float array would therefore
+have the wrong byte count and representation.
+
+### 13.6 Execute Repeated Inference
+
+`Model.run(input)` is synchronous and performs exactly three high-level steps:
+
+1. `WRITE` the complete input tensor to its persistent board buffer;
+2. `EXECUTE GRAPH`, causing the PS to walk the cached IL and launch each layer;
+3. `READ` the complete output tensor and return a NumPy array.
+
+```python
+import time
+
+board_model = device.load_model(package)
+try:
+    latencies = []
+    for input_int8 in inference_inputs:
+        started = time.perf_counter()
+        output_int8 = board_model.run(input_int8)
+        latencies.append(time.perf_counter() - started)
+finally:
+    board_model.close()
+```
+
+The returned array is shaped according to the output `HostBuffer` and normally
+has dtype `numpy.int8`. End-to-end latency measured around `run()` includes
+input network transfer, PS dispatch, all PL layers, output transfer, and protocol
+overhead. It is not pure accelerator-kernel time.
+
+The current API is synchronous. Do not call the same loaded `Model` concurrently
+from multiple threads: its input, output, activation arenas, and workspace are
+shared mutable buffers. Use explicit application serialization. Multiple model
+instances also compete for the fixed arena and the single PL engine.
+
+### 13.7 Interpret and Dequantize the Output
+
+When the ONNX graph ends with `DequantizeLinear`, BudgetCUDA returns its INT8
+input. Recover the floating value with:
+
+```text
+real_value = (q - output_zero_point) * output_scale
+```
+
+```python
+qdq = onnx_qdq_params(model_path)
+output_float = qdq.output.dequantize(output_int8)
+predicted_index = int(np.argmax(output_int8.reshape(-1)))
+```
+
+For one common scale and zero point, `argmax` is identical before and after
+dequantization. Read class names from the exported adjacent JSON manifest
+instead of embedding an order that can drift from training:
+
+```python
+import json
+
+manifest = json.loads(model_path.with_suffix(".json").read_text(encoding="utf-8"))
+class_name = manifest["class_names"][predicted_index]
+```
+
+### 13.8 Complete Fruit-Classifier Application
+
+This example combines import, Q/DQ extraction, preprocessing, persistent model
+upload, execution, output conversion, and cleanup:
+
+```python
+from pathlib import Path
+import json
+
+import numpy as np
+
+from budgetcuda import (
+    Device,
+    import_onnx_model,
+    load_quantized_image,
+    onnx_qdq_params,
+)
+
+MODEL_PATH = Path(
+    "FPGA/train_model/models/fruit3_budgetcuda_qat_smoke/fruit3_budgetcuda_int8.onnx"
+)
+IMAGE_PATH = Path("apple.jpg")
+
+package = import_onnx_model(MODEL_PATH)
+input_spec = package.buffers[package.input_index]
+qdq = onnx_qdq_params(MODEL_PATH)
+input_int8 = load_quantized_image(
+    IMAGE_PATH,
+    input_spec.shape,
+    qdq.input,
+    layout=input_spec.layout,
+)
+
+if input_int8.shape != input_spec.shape:
+    raise RuntimeError(f"input shape {input_int8.shape} != model shape {input_spec.shape}")
+
+device = Device("192.168.2.99", 9000, timeout=300.0)
+model = device.load_model(package)
+try:
+    logits_int8 = model.run(input_int8)
+finally:
+    model.close()
+
+logits = qdq.output.dequantize(logits_int8)
+class_index = int(np.argmax(logits.reshape(-1)))
+manifest = json.loads(MODEL_PATH.with_suffix(".json").read_text(encoding="utf-8"))
+print({
+    "class_index": class_index,
+    "class_name": manifest["class_names"][class_index],
+    "int8_logits": logits_int8.reshape(-1).tolist(),
+    "float_logits": logits.reshape(-1).tolist(),
+})
+```
+
+For interval-based production inference, move everything through
+`device.load_model(package)` outside the periodic loop. Only preprocessing and
+`model.run()` belong in each interval. Reload after a daemon restart, board
+reboot, bitstream reprogramming that restarts the service, or any event that
+invalidates remote buffer handles.
+
+### 13.9 Compare FPGA, Mock, and ONNX Runtime
+
+Use three references for different questions:
+
+- `Device.mock()` checks exact BudgetCUDA integer semantics.
+- The FPGA must match `Device.mock()` bit for bit.
+- ONNX Runtime checks the exported graph's external semantics. Small value
+  differences can occur because BudgetCUDA truncates fixed-point stages while
+  ONNX `QuantizeLinear` rounds; classification and a documented LSB tolerance
+  are used in addition to exact FPGA/mock equality.
+
+```python
+mock_model = Device.mock().load_model(package)
+board_model = device.load_model(package)
+try:
+    expected = mock_model.run(input_int8)
+    actual = board_model.run(input_int8)
+    np.testing.assert_array_equal(actual, expected)
+finally:
+    board_model.close()
+    mock_model.close()
+```
+
+For a first deployment, use the maintained diagnostic rather than writing this
+comparison from scratch:
+
+```powershell
+python FPGA\tests\hardware\pynq_full_cnn_inference.py `
+  --model FPGA\train_model\models\fruit3_budgetcuda_qat_smoke\fruit3_budgetcuda_int8.onnx `
+  --address 192.168.2.99 --port 9000 --timeout 300 --diagnose-layers
+```
+
+Layer-prefix diagnosis repeatedly uploads graph prefixes and is intentionally
+slow. It is for locating the first incorrect layer, not measuring production
+latency.
+
+### 13.10 Cleanup and Failure Handling
+
+Always put `model.close()` in `finally`. It sends `FREE` for the descriptor and
+all model buffers. The `Device` itself currently owns no persistent socket and
+has no required close operation.
+
+Important failure cases:
+
+- `OnnxImportError`: the model is outside the supported static INT8 profile;
+  fix export/lowering rather than attempting board execution.
+- `ProtocolError: Cannot reach`: check IP, port, Ethernet, service, and timeout.
+- Protocol status `OUT_OF_MEMORY`: close unused models, confirm the 64 MiB arena,
+  and inspect package size and alignment overhead.
+- Protocol status `EXECUTION_FAILED`: inspect service logs, PL status, register
+  packing, and the first failing graph prefix.
+- Lost connection during upload: `upload_model()` cleans up when it receives an
+  exception, but a board or daemon failure can prevent the cleanup commands.
+  Restarting the daemon recreates its arena state; reload the entire model.
+- Lost connection after a successful upload: handles are meaningful only to the
+  same running daemon instance. Never persist them across service or board
+  restarts.
+- Shape/dtype mismatch: validate the NumPy array before `run()`; the current
+  byte serializer does not perform semantic casting.
+
+After an unexpected exception, do not reuse a model whose execution state is
+unknown. Close it if the service is reachable; otherwise restore the daemon and
+upload a fresh package.
+
+### 13.11 Maintained Board Commands
 
 Use these progressively stronger checks:
 
@@ -382,6 +744,79 @@ The layer diagnostic executes every graph prefix and compares it exactly with
 The ONNX Runtime comparison may allow a small LSB tolerance because BudgetCUDA
 intentionally truncates while general runtimes may round.
 
+### 13.12 Host API Reference and Low-Level Use
+
+Most applications need only `import_onnx_model`, `Device.load_model`,
+`Model.run`, and `Model.close`. The lower-level methods are useful for operator
+bring-up and diagnostics:
+
+| API | Host action | Board protocol action |
+| --- | --- | --- |
+| `Device(address, port, timeout)` | Configure an endpoint | None until first command |
+| `Device.mock()` | Construct an in-process semantic reference | No network or FPGA |
+| `device.alloc(shape, dtype, layout, usage)` | Create a `Tensor` handle | `ALLOC` |
+| `device.write(tensor, values, offset_bytes)` | Serialize C-order bytes | `WRITE` |
+| `device.read(tensor, offset_bytes, nbytes)` | Return shaped NumPy data for a full read | `READ` |
+| `device.execute_gemm(A, B, C, M, N, K)` | Pack a standalone GEMM descriptor | `EXECUTE GEMM` |
+| `device.execute_graph(desc, input, output)` | Pack a graph execution descriptor | `EXECUTE GRAPH` |
+| `device.free(tensor)` | Invalidate an application-owned remote allocation | `FREE` |
+| `device.load_model(package)` | Allocate and upload an entire package | Multiple commands |
+| `model.run(input)` | Synchronous input-to-output inference | `WRITE`, `EXECUTE`, `READ` |
+| `model.close()` | Release package allocations | One `FREE` per allocation |
+
+`Tensor` is metadata: buffer ID, shape, dtype, layout, byte size, and owning
+device. It does not contain a host-side copy of board memory. A full
+`device.read()` returns a shaped NumPy array; a partial byte-range read returns
+an unsigned byte array because it may not represent a complete typed tensor.
+
+The following standalone GEMM bypasses ONNX and graph IL. It is useful for
+checking the host protocol, PS buffer manager, register driver, HP0 memory path,
+and systolic array in one small test:
+
+```python
+import numpy as np
+from budgetcuda import Device
+
+M, N, K = 19, 23, 17  # intentionally not divisible by the 16x16 tile size
+rng = np.random.default_rng(2026)
+a_values = rng.integers(-8, 9, size=(M, K), dtype=np.int8)
+b_values = rng.integers(-8, 9, size=(K, N), dtype=np.int8)
+expected = a_values.astype(np.int32) @ b_values.astype(np.int32)
+
+device = Device("192.168.2.99", 9000, timeout=60.0)
+a = device.alloc((M, K), "int8", layout="row_major", usage="activation")
+b = device.alloc((K, N), "int8", layout="row_major", usage="weight")
+c = device.alloc((M, N), "int32", layout="row_major", usage="output")
+try:
+    device.write(a, a_values)
+    device.write(b, b_values)
+    response = device.execute_gemm(a, b, c, M, N, K)
+    actual = device.read(c)
+    np.testing.assert_array_equal(actual, expected)
+    print("GEMM passed", response.fields)
+finally:
+    for tensor in (c, b, a):
+        try:
+            device.free(tensor)
+        except Exception:
+            pass
+```
+
+Irregular dimensions deliberately exercise partial tiles and zero padding.
+The application allocates the logical M-by-K, K-by-N, and M-by-N extents; the
+controller is responsible for treating out-of-range tile lanes as zero and for
+writing only valid output elements.
+
+Low-level ownership rules are strict:
+
+- free each allocation exactly once;
+- do not use a `Tensor` after `free`;
+- do not mix tensors from different `Device` or daemon instances;
+- preserve row-major or NCHW layout expected by the selected operation;
+- use NumPy arrays whose dtype matches the remote tensor;
+- keep offsets and lengths within `Tensor.size_bytes`; and
+- wait for synchronous `execute` completion before reading or freeing operands.
+
 ## Part II: Architectural Guide
 
 ## 14. Host Architecture
@@ -397,6 +832,8 @@ The host package separates concerns as follows:
 - `model.py`: persistent loaded-model lifecycle.
 - `onnx_import.py`: shape inference and ONNX-to-IL lowering.
 - `quantization.py`: fixed-point scale conversion and quantized helpers.
+- `preprocessing.py`: explicit image resize, normalization, layout conversion,
+  and INT8 input quantization.
 - `mock.py`: software execution with device semantics.
 - `pynq.py`: direct local PYNQ MMIO/CMA diagnostics, separate from the normal
   remote Ethernet client.

@@ -14,9 +14,9 @@ import onnxruntime as ort
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from budgetcuda import Device
+from budgetcuda import Device, onnx_qdq_params
 from budgetcuda.onnx_import import import_onnx_model
-from pynq_full_cnn_inference import DEFAULT_MODEL, output_quantization
+from pynq_full_cnn_inference import DEFAULT_MODEL
 
 
 def percentile(values: list[float], quantile: float) -> float:
@@ -41,7 +41,8 @@ def main() -> None:
     input_buffer = package.buffers[package.input_index]
     session = ort.InferenceSession(str(args.model), providers=["CPUExecutionProvider"])
     input_name = session.get_inputs()[0].name
-    output_scale, output_zero_point = output_quantization(args.model)
+    output_params = onnx_qdq_params(args.model).output
+    output_scale, output_zero_point = output_params.scale, output_params.zero_point
     tolerance = output_scale * args.ort_tolerance_lsb + 1e-6
     rng = np.random.default_rng(args.seed)
 
