@@ -34,24 +34,33 @@ def build_trace():
         {"clear": 1, "enable": 1, "a": 2, "b": 2},
         {"clear": 0, "enable": 1, "a": 2, "b": 2},
         {"clear": 0, "enable": 0, "a": 0, "b": 0},
+        {"clear": 0, "enable": 0, "a": 0, "b": 0},
     ]
     acc = 0
+    operand_a = 0
+    operand_b = 0
+    operand_valid = False
     product = 0
     product_valid = False
     trace = []
     for cycle, vector in enumerate(vectors):
         if vector["clear"]:
             acc = 0
+            operand_a = 0
+            operand_b = 0
+            operand_valid = False
             product = 0
             product_valid = False
         else:
             if product_valid:
                 acc = to_int32(acc + product)
+            if operand_valid:
+                product = operand_a * operand_b
+            product_valid = operand_valid
             if vector["enable"]:
-                product = to_int8(vector["a"]) * to_int8(vector["b"])
-                product_valid = True
-            else:
-                product_valid = False
+                operand_a = to_int8(vector["a"])
+                operand_b = to_int8(vector["b"])
+            operand_valid = bool(vector["enable"])
         trace.append({**vector, "cycle": cycle, "expected_acc": acc})
     return trace
 

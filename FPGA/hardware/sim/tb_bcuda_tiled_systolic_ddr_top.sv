@@ -81,7 +81,7 @@ module tb_bcuda_tiled_systolic_ddr_top;
 
     initial begin
         repeat (40000) @(posedge clk);
-        $fatal(1, "Tiled DDR top timeout op=%0d loader=%0d rq=%0d act=%0d tensor=%0d avg=%0d owner_valid=%0b owner=%0d response=%0b ready=%0b read_pending=%0b count=%0d flush=%0b send=%0b inflight=%0b", dut.op_state, dut.loader.state, dut.requantizer.state, dut.activation.state, dut.tensor_ops.state, dut.avgpool_ops.state, dut.read_owner_valid, dut.read_owner, dut.memio.read_response_valid, dut.memio_read_data_ready, dut.memio.read_pending, dut.memio.write_count, dut.memio.write_flush_pending, dut.memio.write_send_active, dut.memio.write_inflight);
+        $fatal(1, "Tiled DDR top timeout op=%0d loader=%0d rq=%0d act=%0d tensor=%0d avg=%0d owner_valid=%0b owner=%0d response=%0b ready=%0b read_pending=%0b count=%0d flush=%0b send=%0b inflight=%0b", dut.op_state, dut.loader.state, dut.requantizer.state, dut.activation.state, dut.tensor_ops.state, dut.avgpool_ops.state, dut.read_owner_valid, dut.read_owner, dut.memio.deliver_active, dut.memio_read_data_ready, dut.memio.read_pending, dut.memio.write_count, dut.memio.write_flush_pending, dut.memio.write_send_active, dut.memio.write_inflight);
     end
 
     bcuda_tiled_systolic_ddr_top dut (

@@ -1,7 +1,18 @@
 from __future__ import annotations
 
 import struct
+import time
 
+from .diagnostics import (
+    DIAG_MEMORY,
+    DIAG_OPERATIONS,
+    DIAG_TIMING,
+    DIAG_UTILIZATION,
+    DIAGNOSTICS_HEADER_STRUCT,
+    DIAGNOSTICS_MAGIC,
+    DIAGNOSTICS_RECORD_STRUCT,
+    DIAGNOSTICS_VERSION,
+)
 from .dtypes import Command, DType, OpType, Status
 from .protocol import build_ok_response
 from .serializer import (
@@ -118,7 +129,7 @@ class MockBackend:
         self._get_buffer(desc["C_buffer"])[: len(out)] = out
 
     def _execute_graph(self, descriptor: bytes) -> None:
-        model_buffer, input_buffer, output_buffer, _, _ = GRAPH_EXEC_DESC_STRUCT.unpack_from(descriptor)
+        model_buffer, input_buffer, output_buffer, diagnostics_flags, diagnostics_buffer = GRAPH_EXEC_DESC_STRUCT.unpack_from(descriptor)
         raw_model = self._get_buffer(model_buffer)
         model = MODEL_DESC_STRUCT.unpack_from(raw_model)
         magic, version, num_layers, layer_offset, num_buffers, buffer_offset, model_input, model_output, *_ = model
@@ -130,9 +141,12 @@ class MockBackend:
         ]
         if table[model_input][0] != input_buffer or table[model_output][0] != output_buffer:
             raise ValueError("Graph execute buffers do not match model descriptor")
+        diagnostics = self._diagnostics_begin(diagnostics_buffer, diagnostics_flags, num_layers)
+        total_started = time.perf_counter_ns()
         for idx in range(num_layers):
             layer = LAYER_DESC_STRUCT.unpack_from(raw_model, layer_offset + idx * LAYER_DESC_STRUCT.size)
             op_type = layer[0]
+            layer_started = time.perf_counter_ns()
             if op_type == OpType.GEMM:
                 self._execute_graph_gemm(table, layer)
             elif op_type == OpType.CONV2D_GEMM:
@@ -151,6 +165,113 @@ class MockBackend:
                 self._execute_graph_reshape(table, layer)
             else:
                 raise ValueError(f"Unsupported graph op: {op_type}")
+            if diagnostics is not None:
+                self._diagnostics_record(diagnostics, idx, layer, table, time.perf_counter_ns() - layer_started)
+        if diagnostics is not None:
+            self._diagnostics_finish(diagnostics, time.perf_counter_ns() - total_started, num_layers)
+
+    def _diagnostics_begin(self, buffer_id: int, flags: int, num_layers: int):
+        if flags == 0:
+            if buffer_id != 0:
+                raise ValueError("Diagnostics buffer supplied without diagnostics flags")
+            return None
+        raw = self._get_buffer(buffer_id)
+        if len(raw) < DIAGNOSTICS_HEADER_STRUCT.size:
+            raise ValueError("Diagnostics buffer is too small")
+        header = list(DIAGNOSTICS_HEADER_STRUCT.unpack_from(raw))
+        if (
+            header[0] != DIAGNOSTICS_MAGIC
+            or header[1] != DIAGNOSTICS_VERSION
+            or header[2] != flags
+            or header[3] < num_layers
+            or header[5] != DIAGNOSTICS_RECORD_STRUCT.size
+        ):
+            raise ValueError("Invalid diagnostics buffer header")
+        required = DIAGNOSTICS_HEADER_STRUCT.size + num_layers * DIAGNOSTICS_RECORD_STRUCT.size
+        if required > len(raw):
+            raise ValueError("Diagnostics records exceed their buffer")
+        header[4] = 0
+        header[8] = 0
+        header[9] = 0
+        DIAGNOSTICS_HEADER_STRUCT.pack_into(raw, 0, *header)
+        return raw, header
+
+    def _diagnostics_record(self, diagnostics, index, layer, table, measured_ns: int) -> None:
+        raw, header = diagnostics
+        flags, clock_hz, peak_ops = header[2], header[6], header[7]
+        op_type = int(layer[0])
+        input_bytes, output_bytes, weight_bytes = self._layer_buffer_bytes(layer, table)
+        operations = self._layer_operations(layer, table)
+        elapsed_ns = measured_ns if flags & DIAG_TIMING else 0
+        cycles = elapsed_ns * clock_hz // 1_000_000_000 if flags & DIAG_TIMING else 0
+        if not flags & DIAG_MEMORY:
+            input_bytes = output_bytes = weight_bytes = 0
+        if not flags & DIAG_OPERATIONS:
+            operations = 0
+        throughput = operations * 1_000_000_000 // elapsed_ns if elapsed_ns and operations else 0
+        utilization_ppm = min(1_000_000, operations * 1_000_000 // (cycles * peak_ops)) if cycles and operations and flags & DIAG_UTILIZATION else 0
+        offset = DIAGNOSTICS_HEADER_STRUCT.size + index * DIAGNOSTICS_RECORD_STRUCT.size
+        DIAGNOSTICS_RECORD_STRUCT.pack_into(
+            raw,
+            offset,
+            index,
+            op_type,
+            0,
+            0,
+            elapsed_ns,
+            cycles,
+            input_bytes,
+            output_bytes,
+            weight_bytes,
+            operations,
+            throughput,
+            utilization_ppm,
+            0,
+        )
+        header[4] = index + 1
+        DIAGNOSTICS_HEADER_STRUCT.pack_into(raw, 0, *header)
+
+    def _diagnostics_finish(self, diagnostics, total_ns: int, layer_count: int) -> None:
+        raw, header = diagnostics
+        header[4] = layer_count
+        header[8] = total_ns if header[2] & DIAG_TIMING else 0
+        header[9] = sum(len(buffer) for buffer in self.buffers.values())
+        DIAGNOSTICS_HEADER_STRUCT.pack_into(raw, 0, *header)
+
+    @staticmethod
+    def _layer_buffer_bytes(layer, table):
+        op_type = layer[0]
+        input_bytes = table[layer[1]][4]
+        output_bytes = table[layer[4]][4]
+        weight_bytes = 0
+        if op_type == OpType.CONCAT:
+            input_bytes += table[layer[2]][4]
+            if layer[3] != 0:
+                input_bytes += table[layer[3]][4]
+        if op_type in (OpType.GEMM, OpType.CONV2D_GEMM):
+            weight_bytes += table[layer[5]][4]
+            if layer[6] != 0:
+                weight_bytes += table[layer[6]][4]
+        if op_type == OpType.REQUANTIZE:
+            weight_bytes += table[layer[7]][4]
+        return input_bytes, output_bytes, weight_bytes
+
+    @staticmethod
+    def _layer_operations(layer, table):
+        op_type = layer[0]
+        n, c, h, w, out_c, out_h, out_w, kernel_h, kernel_w = layer[8:17]
+        output_entry = table[layer[4]]
+        dtype_bytes = {int(DType.INT8): 1, int(DType.INT16): 2, int(DType.INT32): 4}.get(output_entry[1], 1)
+        output_elements = output_entry[4] // dtype_bytes
+        if op_type == OpType.GEMM:
+            return 2 * n * out_c * c
+        if op_type == OpType.CONV2D_GEMM:
+            return 2 * n * out_h * out_w * out_c * c * kernel_h * kernel_w
+        if op_type == OpType.POOL:
+            return output_elements * kernel_h * kernel_w
+        if op_type == OpType.REQUANTIZE:
+            return output_elements * 2
+        return output_elements
 
     def _execute_graph_gemm(self, table, layer) -> None:
         _, input0, _, _, output, weight, _, _, n, c, _, _, out_c, *_ = layer

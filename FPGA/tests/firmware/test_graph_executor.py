@@ -12,6 +12,9 @@ from common import (
     BC_OP_RESHAPE,
     BC_OP_REQUANTIZE,
     BC_OP_UPSAMPLE,
+    BCUDA_DIAG_ALL,
+    BCUDA_DIAGNOSTICS_MAGIC,
+    BCUDA_DIAGNOSTICS_VERSION,
     BCUDA_MODEL_MAGIC,
     BCUDA_MODEL_VERSION,
     BC_DTYPE_INT8,
@@ -22,6 +25,8 @@ from common import (
     BC_USAGE_DESCRIPTOR,
     BC_USAGE_OUTPUT,
     BcudaAxiDma,
+    BcudaDiagnosticsHeader,
+    BcudaDiagnosticsRecord,
     BcudaGemmDesc,
     BcudaGraphExecDesc,
     BcudaGraphRuntime,
@@ -242,6 +247,45 @@ class FirmwareGraphExecutorTest(unittest.TestCase):
         self.assertNotEqual(self.dma.last_control_word, 0)
         self.assertEqual(self.dma.last_tile_size, 16)
         self.assertEqual(self.dma.last_array_count, 1)
+
+    def test_bcuda_execute_graph_records_layer_diagnostics(self):
+        A = alloc_buffer(self.lib, 256, tensor_desc(BC_DTYPE_INT8, 2, 16, 16))
+        B = alloc_buffer(self.lib, 256, tensor_desc(BC_DTYPE_INT8, 2, 16, 16))
+        C = alloc_buffer(self.lib, 1024, tensor_desc(BC_DTYPE_INT32, 2, 16, 16), usage=BC_USAGE_OUTPUT)
+        descriptor = build_single_gemm_model_descriptor(A, B, C)
+        model = alloc_buffer(self.lib, len(descriptor), tensor_desc(BC_DTYPE_INT8, 1, len(descriptor)), usage=BC_USAGE_DESCRIPTOR)
+        write_buffer(self.lib, model, descriptor)
+
+        report_header = BcudaDiagnosticsHeader(
+            BCUDA_DIAGNOSTICS_MAGIC,
+            BCUDA_DIAGNOSTICS_VERSION,
+            BCUDA_DIAG_ALL,
+            1,
+            0,
+            ctypes.sizeof(BcudaDiagnosticsRecord),
+            100_000_000,
+            512,
+            0,
+            0,
+        )
+        report_data = bytes(report_header) + bytes(ctypes.sizeof(BcudaDiagnosticsRecord))
+        report = alloc_buffer(self.lib, len(report_data), tensor_desc(BC_DTYPE_INT8, 1, len(report_data)))
+        write_buffer(self.lib, report, report_data)
+        desc = BcudaGraphExecDesc(model, A, C, BCUDA_DIAG_ALL, report)
+
+        self.assertEqual(ctypes.sizeof(BcudaDiagnosticsHeader), 48)
+        self.assertEqual(ctypes.sizeof(BcudaDiagnosticsRecord), 80)
+        self.assertEqual(self.lib.bcuda_execute_graph(ctypes.byref(self.runtime), ctypes.byref(desc)), BC_STATUS_OK)
+        raw_report = read_buffer(self.lib, report, len(report_data))
+        parsed_header = BcudaDiagnosticsHeader.from_buffer_copy(raw_report)
+        parsed_record = BcudaDiagnosticsRecord.from_buffer_copy(raw_report, ctypes.sizeof(BcudaDiagnosticsHeader))
+        self.assertEqual(parsed_header.layer_count, 1)
+        self.assertEqual(parsed_record.op_type, BC_OP_GEMM)
+        self.assertEqual(parsed_record.input_bytes, 256)
+        self.assertEqual(parsed_record.output_bytes, 1024)
+        self.assertEqual(parsed_record.weight_bytes, 256)
+        self.assertEqual(parsed_record.operations, 8192)
+        self.assertGreaterEqual(parsed_header.total_elapsed_ns, parsed_record.elapsed_ns)
 
     def test_bcuda_execute_graph_rejects_unsupported_layer_op(self):
         A = alloc_buffer(self.lib, 256, tensor_desc(BC_DTYPE_INT8, 2, 16))

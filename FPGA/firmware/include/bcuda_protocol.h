@@ -12,6 +12,13 @@
 #define BCUDA_ACTIVATION_LEAKY_SHIFT_SHIFT 8u
 #define BCUDA_ACTIVATION_LEAKY_SHIFT_MASK 0x00000700u
 #define BCUDA_POOL_AVERAGE 0x00000001u
+#define BCUDA_DIAGNOSTICS_MAGIC 0x47444342u
+#define BCUDA_DIAGNOSTICS_VERSION 1u
+#define BCUDA_DIAG_TIMING 0x00000001u
+#define BCUDA_DIAG_MEMORY 0x00000002u
+#define BCUDA_DIAG_OPERATIONS 0x00000004u
+#define BCUDA_DIAG_UTILIZATION 0x00000008u
+#define BCUDA_DIAG_ALL 0x0000000fu
 
 enum {
     BC_CMD_ALLOC = 1,
@@ -229,11 +236,40 @@ typedef struct {
 } BcudaMemoryIoConfig;
 
 typedef struct {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t flags;
+    uint32_t layer_capacity;
+    uint32_t layer_count;
+    uint32_t record_bytes;
+    uint32_t clock_hz;
+    uint32_t peak_operations_per_cycle;
+    uint64_t total_elapsed_ns;
+    uint64_t arena_bytes_used;
+} BcudaDiagnosticsHeader;
+
+typedef struct {
+    uint32_t layer_index;
+    uint32_t op_type;
+    uint32_t status;
+    uint32_t reserved0;
+    uint64_t elapsed_ns;
+    uint64_t cycles;
+    uint64_t input_bytes;
+    uint64_t output_bytes;
+    uint64_t weight_bytes;
+    uint64_t operations;
+    uint64_t throughput_ops_per_second;
+    uint32_t utilization_ppm;
+    uint32_t reserved1;
+} BcudaDiagnosticsRecord;
+
+typedef struct {
     uint32_t model_desc_buffer;
     uint32_t input_buffer;
     uint32_t output_buffer;
     uint32_t flags;
-    uint32_t reserved;
+    uint32_t diagnostics_buffer;
 } BcudaGraphExecDesc;
 
 typedef struct {

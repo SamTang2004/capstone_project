@@ -1,5 +1,6 @@
 // Direct DDR im2col tile loader. Coordinate decode is sequential: no / or %
-// operators are present on the DDR request path.
+// operators are present on the DDR request path. Contiguous activation kernel
+// rows and weight K-runs stream from cache-line AXI bursts.
 module conv2d_tile_loader_ddr #(
     parameter int TILE_SIZE = 16
 ) (
@@ -13,7 +14,9 @@ module conv2d_tile_loader_ddr #(
     input logic [4:0] tile_rows, input logic [4:0] tile_cols,
     output logic busy, output logic done, output logic error,
     output logic read_req_valid, input logic read_req_ready, output logic [31:0] read_req_addr,
+    output logic [4:0] read_req_len,
     input logic read_data_valid, output logic read_data_ready, input logic [7:0] read_data,
+    input logic read_data_last,
     output logic cache_we, output logic cache_matrix, output logic [7:0] cache_addr, output logic [7:0] cache_wdata
 );
     typedef enum logic [5:0] {
@@ -25,8 +28,8 @@ module conv2d_tile_loader_ddr #(
         ADDR_MUL1_MUL2, ADDR_MUL1_MUL3, ADDR_MUL1_ADD23, ADDR_MUL1_COMBINE, ADDR_ADD1,
         ADDR_MUL2_PREP, ADDR_MUL2_MUL0, ADDR_MUL2_MUL1, ADDR_MUL2_ADD01,
         ADDR_MUL2_MUL2, ADDR_MUL2_MUL3, ADDR_MUL2_ADD23, ADDR_MUL2_COMBINE,
-        ADDR_ADD2, ADDR_BASE,
-        REQUEST, RECEIVE, FINISH, FAIL
+        ADDR_ADD2, ADDR_BASE, BURST_CALC, BURST_PREP,
+        REQUEST, RECEIVE, ADVANCE, FINISH, FAIL
     } state_t;
     state_t state;
     logic matrix_r, conv_r, pad_r;
@@ -52,19 +55,41 @@ module conv2d_tile_loader_ddr #(
     logic signed [16:0] addr_ih_r, addr_iw_r;
     logic addr_weight_r;
     logic [15:0] addr_oc_r;
+    logic [4:0] burst_len_calc_r, run_len_r, run_remaining_r;
+    logic final_row_r, final_col_r;
     (* use_dsp = "yes" *) logic [31:0] coord_h_product_r, coord_w_product_r;
 
     assign busy = state != IDLE && state != FINISH && state != FAIL;
     assign read_req_valid = state == REQUEST;
     assign read_req_addr = request_addr_r;
-    // A cached response can remain asserted while the FSM has already
-    // returned to REQUEST. Drain that held byte before issuing another
-    // request, otherwise the producer and consumer can wait on each other.
-    assign read_data_ready = state == RECEIVE || (state == REQUEST && read_data_valid);
+    assign read_req_len = run_len_r;
+    assign read_data_ready = state == RECEIVE && !pad_r;
     assign cache_we = state == RECEIVE && (pad_r || read_data_valid);
     assign cache_matrix = matrix_r;
     assign cache_addr = row_r * TILE_SIZE + col_r;
     assign cache_wdata = pad_r ? 8'h00 : read_data;
+
+    function automatic logic [4:0] min_run_len(
+        input logic [16:0] first,
+        input logic [16:0] second,
+        input logic [16:0] third,
+        input logic [16:0] fourth
+    );
+        logic [16:0] value;
+        begin
+            value = first > TILE_SIZE ? TILE_SIZE : first;
+            if (second < value) value = second;
+            if (third < value) value = third;
+            if (fourth < value) value = fourth;
+            min_run_len = value[4:0];
+        end
+    endfunction
+
+    wire [16:0] burst_tile_left = matrix_r ? rows_r - row_r : cols_r - col_r;
+    wire [16:0] burst_kernel_left = matrix_r ? TILE_SIZE : kw_size_r - k_kw_r;
+    wire [16:0] burst_input_left = matrix_r ? TILE_SIZE : in_w_r - addr_iw_r;
+    wire [16:0] burst_line_left = 17'd64 - {11'd0, request_addr_r[5:0]};
+    wire [4:0] burst_len = min_run_len(burst_tile_left, burst_kernel_left, burst_input_left, burst_line_left);
 
     task automatic increment_k;
         begin
@@ -81,20 +106,6 @@ module conv2d_tile_loader_ddr #(
             else row_ow_r <= row_ow_r + 1'b1;
         end
     endtask
-    task automatic advance_element;
-        begin
-            if (row_r == rows_r - 1'b1 && col_r == cols_r - 1'b1) state <= FINISH;
-            else if (!matrix_r && col_r == cols_r - 1'b1) begin
-                col_r <= '0; row_r <= row_r + 1'b1;
-                row_oh_r <= row_oh_r; row_ow_r <= row_ow_r; increment_spatial();
-                k_ic_r <= base_ic_r; k_kh_r <= base_kh_r; k_kw_r <= base_kw_r; state <= BUILD;
-            end else if (matrix_r) begin
-                if (col_r == cols_r - 1'b1) begin col_r <= '0; row_r <= row_r + 1'b1; increment_k(); end
-                else col_r <= col_r + 1'b1;
-                state <= BUILD;
-            end else begin col_r <= col_r + 1'b1; increment_k(); state <= BUILD; end
-        end
-    endtask
 
     always_ff @(posedge clk) begin
         integer ih, iw, oc;
@@ -105,6 +116,7 @@ module conv2d_tile_loader_ddr #(
             normal_mul_r <= 0; normal_base_sum_r <= 0; seed_product_r <= 0; addr_add0_r <= 0; addr_mul1_r <= 0; addr_add1_r <= 0; addr_mul2_r <= 0; addr_add2_r <= 0;
             addr_mul1_rhs_r <= 0; addr_mul1_chunk0_r <= 0; addr_mul1_chunk1_r <= 0; addr_mul1_pair_low_r <= 0; addr_mul1_pair_high_r <= 0;
             addr_seed_lhs_r <= 0; addr_seed_rhs_r <= 0; addr_ih_r <= 0; addr_iw_r <= 0; addr_weight_r <= 0; addr_oc_r <= 0; coord_h_product_r <= 0; coord_w_product_r <= 0;
+            burst_len_calc_r <= 5'd1; run_len_r <= 5'd1; run_remaining_r <= 5'd1; final_row_r <= 1'b0; final_col_r <= 1'b0;
         end else begin
             done <= 0;
             case (state)
@@ -153,6 +165,8 @@ module conv2d_tile_loader_ddr #(
                 end
                 NORMAL_FINAL: begin
                     request_addr_r <= normal_base_sum_r + col_r;
+                    run_len_r <= 5'd1;
+                    run_remaining_r <= 5'd1;
                     state <= REQUEST;
                 end
                 COORD_MUL: begin
@@ -168,6 +182,7 @@ module conv2d_tile_loader_ddr #(
                 COORD_CHECK: begin
                     if (k_ic_r >= in_c_r || addr_ih_r < 0 || addr_ih_r >= $signed({1'b0, in_h_r}) || addr_iw_r < 0 || addr_iw_r >= $signed({1'b0, in_w_r})) begin
                         pad_r <= 1'b1;
+                        run_remaining_r <= 5'd1;
                         state <= RECEIVE;
                     end else begin
                         state <= ADDR_SEED;
@@ -176,6 +191,7 @@ module conv2d_tile_loader_ddr #(
                 ADDR_SEED: begin
                     if (addr_weight_r && (k_ic_r >= in_c_r || addr_oc_r >= out_c_r)) begin
                         pad_r <= 1'b1;
+                        run_remaining_r <= 5'd1;
                         state <= RECEIVE;
                     end else begin
                         if (addr_weight_r) begin
@@ -236,13 +252,86 @@ module conv2d_tile_loader_ddr #(
                 end
                 ADDR_BASE: begin
                     request_addr_r <= (addr_weight_r ? weight_base_r : input_base_r) + (addr_weight_r ? addr_add2_r : addr_add1_r);
-                    state <= REQUEST;
+                    state <= BURST_CALC;
+                end
+                BURST_CALC: begin
+                    // Isolate coordinate/line limit arithmetic from the FSM,
+                    // error flag, and duplicated run counters.
+                    burst_len_calc_r <= burst_len;
+                    state <= BURST_PREP;
+                end
+                BURST_PREP: begin
+                    run_len_r <= burst_len_calc_r;
+                    run_remaining_r <= burst_len_calc_r;
+                    if (burst_len_calc_r == 0) begin
+                        error <= 1'b1;
+                        state <= FAIL;
+                    end else begin
+                        state <= REQUEST;
+                    end
                 end
                 REQUEST: begin
-                    if (read_data_valid) state <= REQUEST;
-                    else if (read_req_ready) state<=RECEIVE;
+                    if (read_req_ready) state <= RECEIVE;
                 end
-                RECEIVE: if (pad_r || read_data_valid) advance_element();
+                RECEIVE: begin
+                    if (pad_r || read_data_valid) begin
+                        // Stream all interior burst beats without bubbles. On
+                        // the final beat, register boundary comparisons so the
+                        // coordinate counters cannot feed the FSM state cone.
+                        if (!pad_r && (read_data_last != (run_remaining_r == 1))) begin
+                            error <= 1'b1;
+                            state <= FAIL;
+                        end else if (conv_r && run_remaining_r > 1) begin
+                            run_remaining_r <= run_remaining_r - 1'b1;
+                            increment_k();
+                            if (matrix_r) row_r <= row_r + 1'b1;
+                            else col_r <= col_r + 1'b1;
+                        end else begin
+                            final_row_r <= row_r == rows_r - 1'b1;
+                            final_col_r <= col_r == cols_r - 1'b1;
+                            state <= ADVANCE;
+                        end
+                    end
+                end
+                ADVANCE: begin
+                    if (final_row_r && final_col_r) begin
+                        state <= FINISH;
+                    end else if (!conv_r) begin
+                        if (final_col_r) begin
+                            col_r <= '0;
+                            row_r <= row_r + 1'b1;
+                            if (matrix_r) increment_k();
+                        end else begin
+                            col_r <= col_r + 1'b1;
+                            if (matrix_r) increment_k();
+                        end
+                        state <= BUILD;
+                    end else if (!matrix_r) begin
+                        if (final_col_r) begin
+                            col_r <= '0;
+                            row_r <= row_r + 1'b1;
+                            increment_spatial();
+                            k_ic_r <= base_ic_r;
+                            k_kh_r <= base_kh_r;
+                            k_kw_r <= base_kw_r;
+                        end else begin
+                            col_r <= col_r + 1'b1;
+                            increment_k();
+                        end
+                        state <= BUILD;
+                    end else if (final_row_r) begin
+                        col_r <= col_r + 1'b1;
+                        row_r <= '0;
+                        k_ic_r <= base_ic_r;
+                        k_kh_r <= base_kh_r;
+                        k_kw_r <= base_kw_r;
+                        state <= BUILD;
+                    end else begin
+                        row_r <= row_r + 1'b1;
+                        increment_k();
+                        state <= BUILD;
+                    end
+                end
                 FINISH: begin done<=1; state<=IDLE; end
                 FAIL: begin done<=1; state<=IDLE; end
                 default: state<=IDLE;

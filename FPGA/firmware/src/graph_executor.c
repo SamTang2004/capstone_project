@@ -1,7 +1,9 @@
 #include "bcuda_graph.h"
 
+#include <limits.h>
 #include <stdint.h>
 #include <string.h>
+#include <time.h>
 
 #include "bcuda_status.h"
 
@@ -90,6 +92,152 @@ static uint32_t bcuda_dtype_bytes(uint32_t dtype) {
         default:
             return 0u;
     }
+}
+
+static uint64_t bcuda_now_ns(void) {
+    struct timespec value;
+    if (timespec_get(&value, TIME_UTC) != TIME_UTC) {
+        return 0;
+    }
+    return (uint64_t)value.tv_sec * 1000000000ull + (uint64_t)value.tv_nsec;
+}
+
+static uint64_t bcuda_diag_buffer_size(
+    const BcudaBuffer *model_buffer,
+    const BcudaModelDesc *model,
+    uint32_t index
+) {
+    BcudaModelBufferDesc entry;
+    if (bcuda_copy_model_buffer(model_buffer, model, index, &entry) != BC_STATUS_OK) {
+        return 0;
+    }
+    return entry.size_bytes;
+}
+
+static uint64_t bcuda_diag_output_elements(
+    const BcudaBuffer *model_buffer,
+    const BcudaModelDesc *model,
+    const BcudaLayerDesc *layer
+) {
+    BcudaModelBufferDesc output;
+    if (bcuda_copy_model_buffer(model_buffer, model, layer->output, &output) != BC_STATUS_OK) {
+        return 0;
+    }
+    uint32_t element_bytes = bcuda_dtype_bytes(output.dtype);
+    return element_bytes == 0 ? 0 : output.size_bytes / element_bytes;
+}
+
+static uint64_t bcuda_diag_operations(
+    const BcudaBuffer *model_buffer,
+    const BcudaModelDesc *model,
+    const BcudaLayerDesc *layer
+) {
+    uint64_t output_elements = bcuda_diag_output_elements(model_buffer, model, layer);
+    switch (layer->op_type) {
+        case BC_OP_GEMM:
+            return 2ull * layer->n * layer->out_c * layer->c;
+        case BC_OP_CONV2D_GEMM:
+            return 2ull * layer->n * layer->out_h * layer->out_w * layer->out_c *
+                layer->c * layer->kernel_h * layer->kernel_w;
+        case BC_OP_POOL:
+            return output_elements * layer->kernel_h * layer->kernel_w;
+        case BC_OP_REQUANTIZE:
+            return output_elements * 2ull;
+        default:
+            return output_elements;
+    }
+}
+
+static void bcuda_diag_resources(
+    const BcudaBuffer *model_buffer,
+    const BcudaModelDesc *model,
+    const BcudaLayerDesc *layer,
+    BcudaDiagnosticsRecord *record
+) {
+    record->input_bytes = bcuda_diag_buffer_size(model_buffer, model, layer->input0);
+    record->output_bytes = bcuda_diag_buffer_size(model_buffer, model, layer->output);
+    if (layer->op_type == BC_OP_CONCAT) {
+        record->input_bytes += bcuda_diag_buffer_size(model_buffer, model, layer->input1);
+        if (layer->input2 != 0) {
+            record->input_bytes += bcuda_diag_buffer_size(model_buffer, model, layer->input2);
+        }
+    }
+    if (layer->op_type == BC_OP_GEMM || layer->op_type == BC_OP_CONV2D_GEMM) {
+        record->weight_bytes = bcuda_diag_buffer_size(model_buffer, model, layer->weight);
+        if (layer->bias != 0) {
+            record->weight_bytes += bcuda_diag_buffer_size(model_buffer, model, layer->bias);
+        }
+    } else if (layer->op_type == BC_OP_REQUANTIZE) {
+        record->weight_bytes = bcuda_diag_buffer_size(model_buffer, model, layer->scale);
+    }
+}
+
+static int bcuda_diag_open(
+    const BcudaGraphExecDesc *desc,
+    uint32_t layer_count,
+    BcudaBuffer **buffer_out,
+    BcudaDiagnosticsHeader **header_out,
+    BcudaDiagnosticsRecord **records_out
+) {
+    *buffer_out = 0;
+    *header_out = 0;
+    *records_out = 0;
+    if (desc->flags == 0) {
+        return desc->diagnostics_buffer == 0 ? BC_STATUS_OK : BC_STATUS_SHAPE_MISMATCH;
+    }
+    if ((desc->flags & ~BCUDA_DIAG_ALL) != 0 || desc->diagnostics_buffer == 0) {
+        return BC_STATUS_SHAPE_MISMATCH;
+    }
+    BcudaBuffer *buffer = 0;
+    int status = bcuda_get_buffer(desc->diagnostics_buffer, &buffer);
+    if (status != BC_STATUS_OK) {
+        return status;
+    }
+    if (buffer->virtual_address == 0 || buffer->size_bytes < sizeof(BcudaDiagnosticsHeader)) {
+        return BC_STATUS_SHAPE_MISMATCH;
+    }
+    BcudaDiagnosticsHeader *header = (BcudaDiagnosticsHeader *)buffer->virtual_address;
+    uint64_t required = sizeof(*header) + (uint64_t)layer_count * sizeof(BcudaDiagnosticsRecord);
+    if (header->magic != BCUDA_DIAGNOSTICS_MAGIC || header->version != BCUDA_DIAGNOSTICS_VERSION ||
+        header->flags != desc->flags || header->layer_capacity < layer_count ||
+        header->record_bytes != sizeof(BcudaDiagnosticsRecord) || header->clock_hz == 0 ||
+        header->peak_operations_per_cycle == 0 || required > buffer->size_bytes) {
+        return BC_STATUS_SHAPE_MISMATCH;
+    }
+    if ((desc->flags & BCUDA_DIAG_UTILIZATION) != 0 &&
+        (desc->flags & (BCUDA_DIAG_TIMING | BCUDA_DIAG_OPERATIONS)) !=
+            (BCUDA_DIAG_TIMING | BCUDA_DIAG_OPERATIONS)) {
+        return BC_STATUS_SHAPE_MISMATCH;
+    }
+    header->layer_count = 0;
+    header->total_elapsed_ns = 0;
+    header->arena_bytes_used = 0;
+    BcudaDiagnosticsRecord *records = (BcudaDiagnosticsRecord *)((uint8_t *)buffer->virtual_address + sizeof(*header));
+    memset(records, 0, (size_t)layer_count * sizeof(*records));
+    *buffer_out = buffer;
+    *header_out = header;
+    *records_out = records;
+    return BC_STATUS_OK;
+}
+
+static uint64_t bcuda_diag_rate(uint64_t operations, uint64_t elapsed_ns) {
+    if (operations == 0 || elapsed_ns == 0) {
+        return 0;
+    }
+    long double value = (long double)operations * 1000000000.0L / (long double)elapsed_ns;
+    return value >= (long double)ULLONG_MAX ? ULLONG_MAX : (uint64_t)value;
+}
+
+static uint32_t bcuda_diag_utilization(uint64_t operations, uint64_t cycles, uint32_t peak_operations_per_cycle) {
+    if (operations == 0 || cycles == 0 || peak_operations_per_cycle == 0) {
+        return 0;
+    }
+    long double value = (long double)operations * 1000000.0L /
+        ((long double)cycles * peak_operations_per_cycle);
+    if (value >= 1000000.0L) {
+        return 1000000u;
+    }
+    return (uint32_t)value;
 }
 
 static uint32_t bcuda_round_up_tile(uint32_t value) {
@@ -713,12 +861,41 @@ int bcuda_execute_graph(BcudaGraphRuntime *runtime, const BcudaGraphExecDesc *de
         return BC_STATUS_INVALID_HANDLE;
     }
 
+    BcudaBuffer *diagnostics_buffer = 0;
+    BcudaDiagnosticsHeader *diagnostics_header = 0;
+    BcudaDiagnosticsRecord *diagnostics_records = 0;
+    status = bcuda_diag_open(
+        desc,
+        model_desc.num_layers,
+        &diagnostics_buffer,
+        &diagnostics_header,
+        &diagnostics_records
+    );
+    if (status != BC_STATUS_OK) {
+        return status;
+    }
+    (void)diagnostics_buffer;
+    uint64_t graph_started_ns = diagnostics_header == 0 ? 0 : bcuda_now_ns();
+
     for (uint32_t i = 0; i < model_desc.num_layers; i++) {
         BcudaLayerDesc layer;
         status = bcuda_copy_layer(model, &model_desc, i, &layer);
         if (status != BC_STATUS_OK) {
             return status;
         }
+        BcudaDiagnosticsRecord *record = diagnostics_header == 0 ? 0 : &diagnostics_records[i];
+        if (record != 0) {
+            memset(record, 0, sizeof(*record));
+            record->layer_index = i;
+            record->op_type = layer.op_type;
+            if ((desc->flags & BCUDA_DIAG_MEMORY) != 0) {
+                bcuda_diag_resources(model, &model_desc, &layer, record);
+            }
+            if ((desc->flags & BCUDA_DIAG_OPERATIONS) != 0) {
+                record->operations = bcuda_diag_operations(model, &model_desc, &layer);
+            }
+        }
+        uint64_t layer_started_ns = record == 0 ? 0 : bcuda_now_ns();
         switch (layer.op_type) {
             case BC_OP_GEMM:
                 status = bcuda_execute_gemm_layer(runtime, model, &model_desc, &layer);
@@ -748,9 +925,44 @@ int bcuda_execute_graph(BcudaGraphRuntime *runtime, const BcudaGraphExecDesc *de
                 status = BC_STATUS_INVALID_COMMAND;
                 break;
         }
+        if (record != 0) {
+            uint64_t finished_ns = bcuda_now_ns();
+            record->status = (uint32_t)status;
+            if ((desc->flags & BCUDA_DIAG_TIMING) != 0 && finished_ns >= layer_started_ns) {
+                record->elapsed_ns = finished_ns - layer_started_ns;
+                record->cycles = record->elapsed_ns * diagnostics_header->clock_hz / 1000000000ull;
+            }
+            if ((desc->flags & BCUDA_DIAG_OPERATIONS) != 0) {
+                record->throughput_ops_per_second = bcuda_diag_rate(record->operations, record->elapsed_ns);
+            }
+            if ((desc->flags & BCUDA_DIAG_UTILIZATION) != 0) {
+                record->utilization_ppm = bcuda_diag_utilization(
+                    record->operations,
+                    record->cycles,
+                    diagnostics_header->peak_operations_per_cycle
+                );
+            }
+            diagnostics_header->layer_count = i + 1;
+        }
         if (status != BC_STATUS_OK) {
+            if (diagnostics_header != 0) {
+                uint64_t finished_ns = bcuda_now_ns();
+                diagnostics_header->total_elapsed_ns =
+                    (desc->flags & BCUDA_DIAG_TIMING) != 0 && finished_ns >= graph_started_ns
+                    ? finished_ns - graph_started_ns : 0;
+                diagnostics_header->arena_bytes_used =
+                    (desc->flags & BCUDA_DIAG_MEMORY) != 0 ? bcuda_buffer_bytes_used() : 0;
+            }
             return status;
         }
+    }
+    if (diagnostics_header != 0) {
+        uint64_t finished_ns = bcuda_now_ns();
+        diagnostics_header->total_elapsed_ns =
+            (desc->flags & BCUDA_DIAG_TIMING) != 0 && finished_ns >= graph_started_ns
+            ? finished_ns - graph_started_ns : 0;
+        diagnostics_header->arena_bytes_used =
+            (desc->flags & BCUDA_DIAG_MEMORY) != 0 ? bcuda_buffer_bytes_used() : 0;
     }
     return BC_STATUS_OK;
 }

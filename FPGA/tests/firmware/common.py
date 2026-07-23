@@ -41,6 +41,13 @@ BC_OP_RESHAPE = 8
 BC_OP_DETECT_DECODE = 9
 BC_OP_NMS = 10
 BC_OP_REQUANTIZE = 11
+BCUDA_DIAGNOSTICS_MAGIC = 0x47444342
+BCUDA_DIAGNOSTICS_VERSION = 1
+BCUDA_DIAG_TIMING = 1
+BCUDA_DIAG_MEMORY = 2
+BCUDA_DIAG_OPERATIONS = 4
+BCUDA_DIAG_UTILIZATION = 8
+BCUDA_DIAG_ALL = 15
 
 
 class BcudaHeader(ctypes.Structure):
@@ -171,7 +178,42 @@ class BcudaGraphExecDesc(ctypes.Structure):
         ("input_buffer", ctypes.c_uint32),
         ("output_buffer", ctypes.c_uint32),
         ("flags", ctypes.c_uint32),
-        ("reserved", ctypes.c_uint32),
+        ("diagnostics_buffer", ctypes.c_uint32),
+    ]
+
+
+class BcudaDiagnosticsHeader(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [
+        ("magic", ctypes.c_uint32),
+        ("version", ctypes.c_uint32),
+        ("flags", ctypes.c_uint32),
+        ("layer_capacity", ctypes.c_uint32),
+        ("layer_count", ctypes.c_uint32),
+        ("record_bytes", ctypes.c_uint32),
+        ("clock_hz", ctypes.c_uint32),
+        ("peak_operations_per_cycle", ctypes.c_uint32),
+        ("total_elapsed_ns", ctypes.c_uint64),
+        ("arena_bytes_used", ctypes.c_uint64),
+    ]
+
+
+class BcudaDiagnosticsRecord(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [
+        ("layer_index", ctypes.c_uint32),
+        ("op_type", ctypes.c_uint32),
+        ("status", ctypes.c_uint32),
+        ("reserved0", ctypes.c_uint32),
+        ("elapsed_ns", ctypes.c_uint64),
+        ("cycles", ctypes.c_uint64),
+        ("input_bytes", ctypes.c_uint64),
+        ("output_bytes", ctypes.c_uint64),
+        ("weight_bytes", ctypes.c_uint64),
+        ("operations", ctypes.c_uint64),
+        ("throughput_ops_per_second", ctypes.c_uint64),
+        ("utilization_ppm", ctypes.c_uint32),
+        ("reserved1", ctypes.c_uint32),
     ]
 
 

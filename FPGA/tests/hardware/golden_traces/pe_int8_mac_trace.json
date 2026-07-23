@@ -21,7 +21,7 @@
     "a": -7,
     "b": 5,
     "cycle": 2,
-    "expected_acc": 12
+    "expected_acc": 0
   },
   {
     "clear": 0,
@@ -29,7 +29,7 @@
     "a": -8,
     "b": -9,
     "cycle": 3,
-    "expected_acc": -23
+    "expected_acc": 12
   },
   {
     "clear": 0,
@@ -37,7 +37,7 @@
     "a": 99,
     "b": 99,
     "cycle": 4,
-    "expected_acc": 49
+    "expected_acc": -23
   },
   {
     "clear": 0,
@@ -69,6 +69,14 @@
     "a": 0,
     "b": 0,
     "cycle": 8,
+    "expected_acc": 0
+  },
+  {
+    "clear": 0,
+    "enable": 0,
+    "a": 0,
+    "b": 0,
+    "cycle": 9,
     "expected_acc": 4
   }
 ]

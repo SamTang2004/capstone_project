@@ -218,14 +218,14 @@ def pack_graph_exec_desc(
     input_buffer: int,
     output_buffer: int,
     flags: int = 0,
-    reserved: int = 0,
+    diagnostics_buffer: int = 0,
 ) -> bytes:
     return GRAPH_EXEC_DESC_STRUCT.pack(
         model_desc_buffer,
         input_buffer,
         output_buffer,
         flags,
-        reserved,
+        diagnostics_buffer,
     )
 
 

@@ -29,6 +29,7 @@ class GraphExec:
     input_buffer: int
     output_buffer: int
     flags: int = 0
+    diagnostics_buffer: int = 0
 
     @property
     def op_type(self) -> OpType:
@@ -40,4 +41,5 @@ class GraphExec:
             self.input_buffer,
             self.output_buffer,
             self.flags,
+            self.diagnostics_buffer,
         )

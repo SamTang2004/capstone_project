@@ -12,22 +12,40 @@ module pe_int8_mac #(
     output logic signed [31:0] acc_out
 );
 
+    logic signed [7:0] operand_a_pipe, operand_b_pipe;
     logic signed [15:0] product_pipe;
-    logic product_valid;
+    logic operand_valid, product_valid;
+
+    // Isolate the multiplier from the systolic routing and BRAM output path.
+    // For DSP PEs these registers can be absorbed into the DSP48 A/B input
+    // stages; LUT PEs receive the same latency and a much shorter input path.
+    always_ff @(posedge clk) begin
+        if (!rst_n || clear) begin
+            operand_a_pipe <= '0;
+            operand_b_pipe <= '0;
+            operand_valid <= 1'b0;
+        end else begin
+            if (enable) begin
+                operand_a_pipe <= a_in;
+                operand_b_pipe <= b_in;
+            end
+            operand_valid <= enable;
+        end
+    end
 
     generate
         if (USE_DSP) begin : dsp_multiplier
             (* use_dsp = "yes" *) logic signed [15:0] product_dsp;
             always_ff @(posedge clk) begin
                 if (!rst_n || clear) product_dsp <= '0;
-                else if (enable) product_dsp <= a_in * b_in;
+                else if (operand_valid) product_dsp <= operand_a_pipe * operand_b_pipe;
             end
             assign product_pipe = product_dsp;
         end else begin : lut_multiplier
             (* use_dsp = "no" *) logic signed [15:0] product_lut;
             always_ff @(posedge clk) begin
                 if (!rst_n || clear) product_lut <= '0;
-                else if (enable) product_lut <= a_in * b_in;
+                else if (operand_valid) product_lut <= operand_a_pipe * operand_b_pipe;
             end
             assign product_pipe = product_lut;
         end
@@ -49,11 +67,7 @@ module pe_int8_mac #(
                 if (product_valid) begin
                     acc_out <= acc_out + {{16{product_pipe[15]}}, product_pipe};
                 end
-                if (enable) begin
-                    product_valid <= 1'b1;
-                end else begin
-                    product_valid <= 1'b0;
-                end
+                product_valid <= operand_valid;
             end
         end
     end

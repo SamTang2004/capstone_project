@@ -39,6 +39,7 @@ set test_tops {
     tb_pe_int8_mac
     tb_tile_loader_ddr
     tb_tile_writer_ddr
+    tb_conv2d_tile_loader_ddr
     tb_gemm_array_cluster_8
     tb_activation_unfold_parallel
     tb_cnn_tensor_ops_ddr

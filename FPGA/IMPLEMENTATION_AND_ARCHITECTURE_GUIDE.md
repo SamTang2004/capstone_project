@@ -817,6 +817,106 @@ Low-level ownership rules are strict:
 - keep offsets and lengths within `Tensor.size_bytes`; and
 - wait for synchronous `execute` completion before reading or freeing operands.
 
+### 13.13 Per-Layer Diagnostics
+
+`budgetcuda.diagnostics` instruments one graph execution without changing the
+result of ordinary `Model.run()` calls. Configure the requested reports, pass
+the settings object to `run`, and receive a `DiagnosticResult` containing both
+the model output and a parsed `RunDiagnostics` report:
+
+```python
+from budgetcuda import DiagnosticsSettings
+
+settings = DiagnosticsSettings(
+    timing=True,
+    memory=True,
+    operations=True,
+    utilization=True,
+    clock_hz=100_000_000,
+    peak_operations_per_cycle=512,
+)
+
+result = model.run(input_int8, diagnostics=settings)
+output_int8 = result.output
+report = result.diagnostics
+
+print(report.time_curve)
+print(report.memory_curve)
+print(report.usage_curve)
+print(report.operation_curve)
+print(report.utilization_curve)
+
+report.export("inference.csv")
+report.export("inference.md")
+report.export("inference.txt")
+```
+
+Normal calls remain unchanged and return only the output:
+
+```python
+output_int8 = model.run(input_int8)
+```
+
+Available settings are:
+
+| Setting | Reported values |
+| --- | --- |
+| `timing` | Per-layer elapsed nanoseconds and clock-equivalent cycles |
+| `memory` | Referenced input, output, weight, bias, and scale bytes plus arena high-water usage |
+| `operations` | Geometry-derived operation count and operations per second |
+| `utilization` | Estimated compute utilization against the configured peak |
+| `clock_hz` | PL frequency used to convert elapsed time to equivalent cycles |
+| `peak_operations_per_cycle` | Peak arithmetic model; 512 represents 256 MACs with multiply and add counted separately |
+
+Utilization requires both timing and operation counts. A memory-only report can
+be requested with:
+
+```python
+settings = DiagnosticsSettings(
+    timing=False,
+    memory=True,
+    operations=False,
+    utilization=False,
+)
+```
+
+The diagnostic execution path is:
+
+1. the host allocates a temporary report buffer in the board arena;
+2. the host initializes its versioned header with settings and layer capacity;
+3. the graph execution descriptor carries the report-buffer handle and flags;
+4. firmware timestamps each real layer dispatch and writes one fixed-size
+   record after completion or failure;
+5. the host reads the normal model output and report buffer;
+6. the host parses curves, adds network-phase timing, and frees the temporary
+   report buffer.
+
+Metric interpretation matters:
+
+- `elapsed_ns` is measured by the PS around layer dispatch. For PL operators it
+  includes register programming, PL execution, and firmware polling. For a
+  software fallback it includes the CPU implementation.
+- `cycles` is derived as `elapsed_ns * clock_hz / 1e9`; it is not yet a PL cycle
+  counter.
+- `operations` is estimated from layer geometry. A Conv2D or GEMM MAC counts as
+  two arithmetic operations.
+- `utilization_percent` is estimated operations divided by derived cycles and
+  configured peak operations per cycle. It is capped at 100 percent.
+- memory values are logical referenced buffer sizes, not measured AXI bytes or
+  cache-line traffic.
+- `host_write_ns`, `host_execute_ns`, and `host_read_ns` measure the Ethernet
+  protocol phases separately. `host_execute_ns` includes the complete graph
+  command round trip.
+- diagnostic allocation, initialization, report transfer, and timestamp calls
+  add overhead. Use normal runs for final production latency reporting.
+
+The report buffer ABI is defined in `firmware/include/bcuda_protocol.h` and
+mirrored by `budgetcuda/diagnostics.py`. A diagnostic host requires the matching
+PS daemon. No PL bitstream change is required for this first diagnostics level.
+Future PL performance counters should extend this report with actual AXI stall,
+burst, array-active, accumulator-stall, and operator-cycle measurements rather
+than replacing the existing host/firmware timing fields.
+
 ## Part II: Architectural Guide
 
 ## 14. Host Architecture
@@ -834,6 +934,8 @@ The host package separates concerns as follows:
 - `quantization.py`: fixed-point scale conversion and quantized helpers.
 - `preprocessing.py`: explicit image resize, normalization, layout conversion,
   and INT8 input quantization.
+- `diagnostics.py`: report settings, binary report parsing, per-layer curves,
+  and CSV/Markdown/text exporters.
 - `mock.py`: software execution with device semantics.
 - `pynq.py`: direct local PYNQ MMIO/CMA diagnostics, separate from the normal
   remote Ethernet client.

@@ -207,8 +207,10 @@ module bcuda_tiled_systolic_ddr_top #(
     logic loader_read_req_valid;
     logic loader_read_req_ready;
     logic [31:0] loader_read_req_addr;
+    logic [4:0] loader_read_req_len;
     logic loader_read_data_valid;
     logic loader_read_data_ready;
+    logic loader_read_data_last;
     logic [7:0] loader_read_data;
     logic loader_cache_we;
     logic loader_cache_matrix;
@@ -319,8 +321,10 @@ module bcuda_tiled_systolic_ddr_top #(
     logic memio_read_req_valid;
     logic memio_read_req_ready;
     logic [31:0] memio_read_req_addr;
+    logic [4:0] memio_read_req_len;
     logic memio_read_data_valid;
     logic memio_read_data_ready;
+    logic memio_read_data_last;
     logic [7:0] memio_read_data;
     logic memio_busy;
     logic memio_error;
@@ -560,6 +564,7 @@ module bcuda_tiled_systolic_ddr_top #(
     assign tensor_read_req_ready = !avgpool_busy && tensor_busy && memio_read_req_ready;
     assign avgpool_read_req_ready = avgpool_busy && memio_read_req_ready;
     assign memio_read_req_addr = avgpool_busy ? avgpool_read_req_addr : (tensor_busy ? tensor_read_req_addr : (bias_preload_busy ? bias_read_req_addr : (activation_busy ? activation_read_req_addr : (rq_busy ? rq_read_req_addr : loader_read_req_addr))));
+    assign memio_read_req_len = (!avgpool_busy && !tensor_busy && !bias_preload_busy && !activation_busy && !rq_busy) ? loader_read_req_len : 5'd1;
     assign loader_read_data_valid = read_owner_valid && read_owner == READ_OWNER_LOADER && memio_read_data_valid;
     assign rq_read_data_valid = read_owner_valid && read_owner == READ_OWNER_REQUANT && memio_read_data_valid;
     assign activation_read_data_valid = read_owner_valid && read_owner == READ_OWNER_ACTIVATION && memio_read_data_valid;
@@ -578,6 +583,7 @@ module bcuda_tiled_systolic_ddr_top #(
         if (!read_owner_valid) memio_read_data_ready = 1'b0;
     end
     assign loader_read_data = memio_read_data;
+    assign loader_read_data_last = memio_read_data_last;
     assign rq_read_data = memio_read_data;
     assign activation_read_data = memio_read_data;
     assign tensor_read_data = memio_read_data;
@@ -764,9 +770,11 @@ module bcuda_tiled_systolic_ddr_top #(
         .read_req_valid(memio_read_req_valid),
         .read_req_ready(memio_read_req_ready),
         .read_req_addr(memio_read_req_addr),
+        .read_req_len(memio_read_req_len),
         .read_data_valid(memio_read_data_valid),
         .read_data_ready(memio_read_data_ready),
         .read_data(memio_read_data),
+        .read_data_last(memio_read_data_last),
         .write_req_valid(avgpool_busy ? avgpool_write_req_valid : (tensor_busy ? tensor_write_req_valid : (activation_busy ? activation_write_req_valid : (rq_busy ? rq_write_req_valid : writer_write_req_valid)))),
         .write_req_ready(memio_write_req_ready),
         .write_req_addr(avgpool_busy ? avgpool_write_req_addr : (tensor_busy ? tensor_write_req_addr : (activation_busy ? activation_write_req_addr : (rq_busy ? rq_write_req_addr : writer_write_req_addr)))),
@@ -822,9 +830,11 @@ module bcuda_tiled_systolic_ddr_top #(
         .read_req_valid(loader_read_req_valid),
         .read_req_ready(loader_read_req_ready),
         .read_req_addr(loader_read_req_addr),
+        .read_req_len(loader_read_req_len),
         .read_data_valid(loader_read_data_valid),
         .read_data_ready(loader_read_data_ready),
         .read_data(loader_read_data),
+        .read_data_last(loader_read_data_last),
         .cache_we(loader_cache_we),
         .cache_matrix(loader_cache_matrix),
         .cache_addr(loader_cache_addr),
@@ -1002,7 +1012,7 @@ module bcuda_tiled_systolic_ddr_top #(
                 else read_owner <= READ_OWNER_LOADER;
                 read_owner_valid <= 1'b1;
             end
-            if (memio_read_data_valid && memio_read_data_ready) begin
+            if (memio_read_data_valid && memio_read_data_ready && memio_read_data_last) begin
                 read_owner_valid <= 1'b0;
             end
             if (op_state != OP_WRITE_C) begin

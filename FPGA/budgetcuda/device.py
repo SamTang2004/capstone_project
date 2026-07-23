@@ -68,12 +68,20 @@ class Device:
         )
         return self.protocol.execute(OpType.GEMM, descriptor)
 
-    def execute_graph(self, descriptor_tensor: Tensor, input_tensor: Tensor, output_tensor: Tensor, flags: int = 0):
+    def execute_graph(
+        self,
+        descriptor_tensor: Tensor,
+        input_tensor: Tensor,
+        output_tensor: Tensor,
+        flags: int = 0,
+        diagnostics_tensor: Tensor | None = None,
+    ):
         descriptor = pack_graph_exec_desc(
             descriptor_tensor.buffer_id,
             input_tensor.buffer_id,
             output_tensor.buffer_id,
             flags,
+            0 if diagnostics_tensor is None else diagnostics_tensor.buffer_id,
         )
         return self.protocol.execute(OpType.GRAPH, descriptor)
 

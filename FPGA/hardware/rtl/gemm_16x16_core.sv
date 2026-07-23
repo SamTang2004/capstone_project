@@ -138,9 +138,9 @@ module gemm_16x16_core (
                 end
 
                 STATE_COMPUTE: begin
-                    // One extra cycle drains the registered tile-memory
-                    // stage before the systolic wavefront has fully exited.
-                    if (compute_cycle == 6'd47) begin
+                    // Drain the registered tile-memory, PE operand, and PE
+                    // multiplier stages after the systolic wavefront exits.
+                    if (compute_cycle == 6'd48) begin
                         compute_cycle <= '0;
                         state <= STATE_DONE;
                     end else begin

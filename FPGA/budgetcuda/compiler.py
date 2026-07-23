@@ -337,6 +337,7 @@ def upload_model(device, package: ModelPackage) -> Model:
         tensors[package.output_index],
         weights=weights,
         tensors=tensors,
+        package=package,
     )
 
 

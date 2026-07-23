@@ -74,7 +74,7 @@ class SerializerTest(unittest.TestCase):
             unpack_gemm_desc(b"short")
 
     def test_pack_graph_exec_desc_uses_five_u32_fields(self):
-        packed = pack_graph_exec_desc(11, 12, 13, flags=3)
+        packed = pack_graph_exec_desc(11, 12, 13, flags=3, diagnostics_buffer=14)
         self.assertEqual(len(packed), 20)
         self.assertEqual(
             packed,
@@ -82,7 +82,7 @@ class SerializerTest(unittest.TestCase):
             + (12).to_bytes(4, "little")
             + (13).to_bytes(4, "little")
             + (3).to_bytes(4, "little")
-            + (0).to_bytes(4, "little"),
+            + (14).to_bytes(4, "little"),
         )
 
     def test_pack_execute_request_appends_descriptor_payload(self):
