@@ -1,0 +1,24 @@
+BudgetCUDA Run Diagnostics
+firmware_total_ns=502752663
+host_total_ns=537833300
+host_write_ns=11861400
+host_execute_ns=514967600
+host_read_ns=11000800
+arena_bytes_used=565568
+layer=0 op=CONV2D_GEMM status=0 elapsed_ns=91497594 cycles=9149759 input_bytes=12288 output_bytes=196608 weight_bytes=372 operations=2654208 throughput_ops_per_second=29008500 utilization_percent=0.057
+layer=1 op=REQUANTIZE status=0 elapsed_ns=12776529 cycles=1277652 input_bytes=196608 output_bytes=49152 weight_bytes=16 operations=98304 throughput_ops_per_second=7694108 utilization_percent=0.015
+layer=2 op=ACTIVATION status=0 elapsed_ns=5288031 cycles=528803 input_bytes=49152 output_bytes=49152 weight_bytes=0 operations=49152 throughput_ops_per_second=9294953 utilization_percent=0.018
+layer=3 op=POOL status=0 elapsed_ns=17879255 cycles=1787925 input_bytes=49152 output_bytes=12288 weight_bytes=0 operations=49152 throughput_ops_per_second=2749107 utilization_percent=0.005
+layer=4 op=CONV2D_GEMM status=0 elapsed_ns=189951267 cycles=18995126 input_bytes=12288 output_bytes=98304 weight_bytes=2688 operations=5308416 throughput_ops_per_second=27946199 utilization_percent=0.054
+layer=5 op=REQUANTIZE status=0 elapsed_ns=6400480 cycles=640048 input_bytes=98304 output_bytes=24576 weight_bytes=16 operations=49152 throughput_ops_per_second=7679424 utilization_percent=0.015
+layer=6 op=ACTIVATION status=0 elapsed_ns=2645883 cycles=264588 input_bytes=24576 output_bytes=24576 weight_bytes=0 operations=24576 throughput_ops_per_second=9288392 utilization_percent=0.018
+layer=7 op=POOL status=0 elapsed_ns=4582800 cycles=458280 input_bytes=24576 output_bytes=6144 weight_bytes=0 operations=24576 throughput_ops_per_second=5362660 utilization_percent=0.010
+layer=8 op=CONV2D_GEMM status=0 elapsed_ns=163691120 cycles=16369112 input_bytes=6144 output_bytes=49152 weight_bytes=10560 operations=5308416 throughput_ops_per_second=32429468 utilization_percent=0.063
+layer=9 op=REQUANTIZE status=0 elapsed_ns=3199120 cycles=319912 input_bytes=49152 output_bytes=12288 weight_bytes=16 operations=24576 throughput_ops_per_second=7682112 utilization_percent=0.015
+layer=10 op=ACTIVATION status=0 elapsed_ns=1325243 cycles=132524 input_bytes=12288 output_bytes=12288 weight_bytes=0 operations=12288 throughput_ops_per_second=9272261 utilization_percent=0.018
+layer=11 op=POOL status=0 elapsed_ns=3164277 cycles=316427 input_bytes=12288 output_bytes=48 weight_bytes=0 operations=12288 throughput_ops_per_second=3883351 utilization_percent=0.007
+layer=12 op=RESHAPE status=0 elapsed_ns=4659 cycles=465 input_bytes=48 output_bytes=48 weight_bytes=0 operations=48 throughput_ops_per_second=10302640 utilization_percent=0.020
+layer=13 op=RESHAPE status=0 elapsed_ns=3631 cycles=363 input_bytes=48 output_bytes=48 weight_bytes=0 operations=48 throughput_ops_per_second=13219498 utilization_percent=0.026
+layer=14 op=CONV2D_GEMM status=0 elapsed_ns=135089 cycles=13508 input_bytes=48 output_bytes=12 weight_bytes=156 operations=288 throughput_ops_per_second=2131927 utilization_percent=0.004
+layer=15 op=REQUANTIZE status=0 elapsed_ns=6591 cycles=659 input_bytes=12 output_bytes=3 weight_bytes=16 operations=6 throughput_ops_per_second=910332 utilization_percent=0.002
+layer=16 op=RESHAPE status=0 elapsed_ns=2696 cycles=269 input_bytes=3 output_bytes=3 weight_bytes=0 operations=3 throughput_ops_per_second=1112759 utilization_percent=0.002
