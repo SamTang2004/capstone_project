@@ -1,5 +1,6 @@
 /FPGA/dataset/
 /FPGA/train_model/models/
+/.venv*/
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -17,7 +18,6 @@ FPGA/hardware/vivado_board_project/*.hw/
 FPGA/hardware/vivado_board_project/*.runs/
 FPGA/hardware/vivado_board_project/*.srcs/
 FPGA/hardware/vivado_project/
-FPGA/hardware/board_files/
 FPGA/hardware/bcuda_pynq_z2.bin
 FPGA/hardware/bcuda_pynq_z2.prm
 FPGA/hardware/bcuda_pynq_z2.xsa

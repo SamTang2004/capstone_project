@@ -1,0 +1,13 @@
+[Unit]
+Description=Program the BudgetCUDA PYNQ-Z2 FPGA image
+Wants=network-online.target
+After=local-fs.target network-online.target
+Before=budgetcuda.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/budgetcuda-fpga-setup
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

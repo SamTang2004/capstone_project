@@ -20,9 +20,12 @@ sys.path.insert(0, str(TRAIN_MODEL))
 
 from budgetcuda import Device, load_quantized_image, onnx_qdq_params
 from budgetcuda.onnx_import import import_onnx_model
-from paths import TEST_DATA_DIR, TRAINING_DATA_DIR
+from paths import DATASET_ROOT
 from qat_model import CLASS_NAMES, IMAGE_SIZE, GroupedFruitDataset
 from pynq_full_cnn_inference import DEFAULT_MODEL
+
+DEMO_DATASET_ROOT = ROOT / "demo" / "dataset" / "fruits-360-100x100"
+DEFAULT_DATASET_ROOT = DEMO_DATASET_ROOT if DEMO_DATASET_ROOT.exists() else DATASET_ROOT
 
 
 def preprocess(path: Path, input_shape, input_params) -> np.ndarray:
@@ -74,6 +77,7 @@ def main() -> None:
     parser.add_argument("--address", default="192.168.2.99")
     parser.add_argument("--port", type=int, default=9000)
     parser.add_argument("--timeout", type=float, default=300.0)
+    parser.add_argument("--dataset-root", type=Path, default=DEFAULT_DATASET_ROOT)
     parser.add_argument("--board-per-class", type=int, default=100)
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--skip-train", action="store_true")
@@ -81,8 +85,7 @@ def main() -> None:
     if args.board_per_class <= 0:
         raise ValueError("board-per-class must be positive")
 
-    train_dataset = GroupedFruitDataset(TRAINING_DATA_DIR)
-    test_dataset = GroupedFruitDataset(TEST_DATA_DIR)
+    test_dataset = GroupedFruitDataset(args.dataset_root / "Test")
     input_params = onnx_qdq_params(args.model).input
     package = import_onnx_model(args.model)
     input_shape = package.buffers[package.input_index].shape
@@ -92,6 +95,7 @@ def main() -> None:
     input_name = session.get_inputs()[0].name
 
     if not args.skip_train:
+        train_dataset = GroupedFruitDataset(args.dataset_root / "Training")
         evaluate_onnx(session, input_name, train_dataset, input_shape, input_params, "train")
     test_predictions = evaluate_onnx(session, input_name, test_dataset, input_shape, input_params, "test")
 

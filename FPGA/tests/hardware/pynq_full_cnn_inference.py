@@ -19,13 +19,15 @@ from budgetcuda.compiler import ModelPackage
 from budgetcuda.onnx_import import import_onnx_model
 
 
-DEFAULT_MODEL = (
+TRAINED_MODEL = (
     ROOT
     / "train_model"
     / "models"
     / "fruit3_budgetcuda_qat_smoke"
     / "fruit3_budgetcuda_int8.onnx"
 )
+DEMO_MODEL = ROOT / "demo" / "models" / "fruit3_budgetcuda_int8.onnx"
+DEFAULT_MODEL = DEMO_MODEL if DEMO_MODEL.exists() else TRAINED_MODEL
 
 
 def run_package(device: Device, package: ModelPackage, input_values: np.ndarray) -> np.ndarray:
