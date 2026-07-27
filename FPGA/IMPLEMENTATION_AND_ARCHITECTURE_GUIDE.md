@@ -1,14 +1,15 @@
 # BudgetCUDA Implementation and Architecture Guide
 
 **Target:** PYNQ-Z2 (`xc7z020clg400-1`)  
-**Deployment profile:** signed INT8 CNN inference, 100 MHz PL clock  
+**Deployment profile:** packed signed INT4 CNN inference, dual 8x8 arrays, 100 MHz PL clock
 **Document status:** current implementation guide and maintenance reference, July 2026
 
 This document explains how to reproduce BudgetCUDA, deploy a model, and safely
 change the system. It describes the current PYNQ-Z2 implementation, not every
-idea retained in the design history. The deployable image contains one 16x16
-systolic array. The source-level eight-array cluster is a scalability prototype
-for a larger FPGA and must not be mistaken for the board configuration.
+idea retained in the design history. The active source contains two 8x8 INT4
+systolic arrays and packed INT4 DDR operators. The presentation-era 16x16 INT8
+implementation is preserved on the `Checkpoint-1` branch and is not the current
+deployment target.
 
 ## 1. Purpose and Source of Truth
 
@@ -40,16 +41,16 @@ When two files disagree, use this order of authority:
 
 ```mermaid
 flowchart LR
-    ONNX["INT8 Q/DQ ONNX model"] --> IMPORT["Python ONNX importer"]
+    ONNX["INT4-QAT Q/DQ ONNX model"] --> IMPORT["Python ONNX importer"]
     IMPORT --> PKG["ModelPackage: buffers + layer IL"]
-    INPUT["NCHW INT8 input"] --> HOST["BudgetCUDA Device and Model"]
+    INPUT["NCHW signed INT4 values"] --> HOST["BudgetCUDA Device and Model"]
     PKG --> HOST
     HOST -->|"TCP :9000 ALLOC/WRITE/EXECUTE/READ/FREE"| SERVER["PS Linux service"]
     SERVER --> CMA["64 MiB non-cacheable CMA arena"]
     SERVER -->|"AXI-Lite at 0x43C80000"| CTRL["PL controller"]
     CTRL --> OPS["GEMM, Conv2D, activation, pooling, tensor ops"]
     OPS <-->|"AXI HP0 bursts"| CMA
-    OPS --> ARRAY["1 x 16x16 systolic array"]
+    OPS --> ARRAY["2 x 8x8 INT4 systolic arrays"]
     ARRAY --> ACC["BRAM accumulator and tile buffers"]
     SERVER -->|"quantized output"| HOST
 ```
@@ -133,9 +134,16 @@ the active top, and verify that synthesis did not trim it.
 The project virtual environment is at the repository root:
 
 ```powershell
+& C:\Python312\python.exe -m venv .venv
+& .\.venv\Scripts\python.exe -m pip install -r FPGA\requirements-cu130.txt
+& .\.venv\Scripts\python.exe -m pip install -r FPGA\requirements-host.txt
 & .\.venv\Scripts\Activate.ps1
 python -c "import torch, onnx, onnxruntime, numpy; print('environment ready')"
 ```
+
+The `cu130` PyTorch wheels carry the CUDA 13.0 runtime and work with an NVIDIA
+driver that reports CUDA 13.0 or newer. Do not reuse `site-packages` from a
+virtual environment created by a different CPython minor version.
 
 ### 5.2 Board
 
@@ -170,24 +178,40 @@ padding contracts before committing them.
 
 ## 7. Train and Export a Supported Model
 
-The reference profile uses PyTorch QAT with signed `qint8`, per-tensor symmetric
-scales, and zero point 0. The fruit classifier is the maintained example.
+The production profile uses signed INT4 fake quantization with values in
+`[-8, 7]`, per-tensor symmetric scales, and zero point 0. PyTorch stores these
+values in `qint8` containers because it does not provide a portable packed-INT4
+eager backend. The ONNX exporter uses the same container convention; the
+BudgetCUDA importer validates the range and packs two values per byte.
+
+BudgetCUDA truncates fixed-point requantization and AveragePool results. The QAT
+profile uses `TruncatingFakeQuantize` and `TruncatingAvgPool2d` so validation
+matches device arithmetic instead of PyTorch's normal rounding behavior.
 
 Fine-tune:
 
 ```powershell
 Set-Location FPGA\train_model
-& ..\..\.venv\Scripts\python.exe train_budgetcuda_qat.py `
-  --epochs 10 --device auto --output-dir models\fruit3_budgetcuda_qat
+& ..\..\.venv\Scripts\python.exe train_budgetcuda_int4.py `
+  --epochs 3 --channels 16 32 64 --device auto
 ```
 
 Export the canonical Q/DQ ONNX model:
 
 ```powershell
-& ..\..\.venv\Scripts\python.exe export_budgetcuda_int8_onnx.py `
-  --checkpoint models\fruit3_budgetcuda_qat\best_budgetcuda_qat_fakequant.pt `
-  --output models\fruit3_budgetcuda_qat\fruit3_budgetcuda_int8.onnx
+& ..\..\.venv\Scripts\python.exe export_budgetcuda_int4_onnx.py
 ```
+
+The exporter validates the ONNX model, imports it back with INT4 as the default,
+and writes an adjacent manifest. The maintained test artifact is
+`models/fruit3_budgetcuda_int4/fruit3_budgetcuda_int4.onnx`.
+
+The 16/32/64 model reuses the leading channels from the old 12/24/48 float
+checkpoint and trains the added channels. Its convolution-weight storage is
+about 0.88 times that of the old 12/24/48 INT8 network despite having roughly
+1.8 times as many convolution parameters. A three-epoch development run reached
+88.12% on 4,362 validation images. This is a functional deployment classifier,
+not a final accuracy ceiling.
 
 The custom exporter exists because a stock PyTorch export may introduce
 unsigned image quantization, conversion nodes, or quantization forms that do
@@ -195,7 +219,8 @@ not match the signed PL datapath. A supported model should satisfy:
 
 - statically known tensor shapes;
 - NCHW convolution and pooling tensors;
-- INT8 weight initializers and INT32 bias initializers;
+- signed INT8-container weight initializers constrained to `[-8, 7]` and INT32
+  bias initializers;
 - scalar, positive, per-tensor scales;
 - symmetric Conv padding written explicitly;
 - LeakyReLU alpha equal to `2^-N`, where `N` is 0 through 7;
@@ -212,9 +237,12 @@ shape, dtype, scale, zero-point, bias, and layout constraints while producing a
 ```python
 from budgetcuda.onnx_import import import_onnx_model
 
-package = import_onnx_model("model_int8.onnx")
+package = import_onnx_model("model_int4.onnx")
 print(len(package.layers), len(package.buffers))
 ```
+
+`import_onnx_model()` now defaults to packed INT4. Use
+`target_dtype="int8"` only with a legacy bitstream and firmware image.
 
 The supported importer surface includes:
 
@@ -289,8 +317,8 @@ Release criteria are:
 - zero DRC errors;
 - WNS and WHS greater than or equal to zero;
 - no unconstrained functional clocks or I/O paths;
-- the active top is `bcuda_tiled_systolic_ddr_top` through the generated PS/PL
-  wrapper;
+- the active accelerator is `bcuda_dual_int4_ddr_top` through
+  `bcuda_tiled_systolic_ddr_ip` and the generated PS/PL wrapper;
 - DSP, BRAM, LUT, and routing utilization fit the `xc7z020`; and
 - no required operator is optimized away.
 
@@ -437,7 +465,7 @@ for index, layer in enumerate(package.layers):
 
 Inspect this before board upload. In particular:
 
-- the runtime input must be INT8 and have the expected static shape;
+- the runtime input must lower to INT4 and have the expected static shape;
 - buffer memory plus descriptors and allocator alignment must fit the 64 MiB
   daemon arena;
 - every layer's `OpType` must be supported by the deployed daemon and PL image;
@@ -457,12 +485,12 @@ Create the network device and upload the package:
 from budgetcuda import Device
 from budgetcuda.onnx_import import import_onnx_model
 
-package = import_onnx_model("model_int8.onnx")
+package = import_onnx_model("model_int4.onnx")
 device = Device("192.168.2.99", 9000, timeout=300.0)
 model = device.load_model(package)
 try:
-    output0 = model.run(input0_int8)
-    output1 = model.run(input1_int8)
+    output0 = model.run(input0_int4_values)
+    output1 = model.run(input1_int4_values)
 finally:
     model.close()
 ```
@@ -486,7 +514,7 @@ socket. Therefore a transient connection can be retried at the application
 level, but an interrupted `EXECUTE` must not be blindly replayed until the board
 status and output ownership are known.
 
-### 13.5 Prepare the INT8 Input
+### 13.5 Prepare the INT4 Input
 
 BudgetCUDA does not automatically resize images, normalize channels, or quantize
 floating inputs. Preprocessing must match training exactly, and the final host
@@ -495,7 +523,7 @@ array must match the imported input shape, order, and dtype.
 For an ONNX Q/DQ model, the input quantization equation is:
 
 ```text
-q = clamp(round(real_value / input_scale) + input_zero_point, -128, 127)
+q = clamp(trunc(real_value / input_scale) + input_zero_point, -8, 7)
 ```
 
 The deployed profile normally has `input_zero_point = 0`. BudgetCUDA reads the
@@ -507,7 +535,7 @@ from budgetcuda import onnx_qdq_params
 
 qdq = onnx_qdq_params(model_path)
 print(qdq.input_name, qdq.input.scale, qdq.input.zero_point)
-input_int8 = qdq.input.quantize(input_float)
+input_int4_values = qdq.input.quantize(input_float)
 ```
 
 For the reference fruit classifier, training used RGB, resize to 64x64 with
@@ -517,7 +545,7 @@ those steps and derives the target dimensions from `input_spec.shape`:
 ```python
 from budgetcuda import load_quantized_image
 
-input_int8 = load_quantized_image(
+input_int4_values = load_quantized_image(
     "apple.jpg",
     input_spec.shape,
     qdq.input,
@@ -533,11 +561,15 @@ values. Non-image inputs should call `qdq.input.quantize(values)` directly.
 Check before every run during integration:
 
 ```python
-if input_int8.dtype != np.int8 or input_int8.shape != input_spec.shape:
+if input_int4_values.dtype != np.int8 or input_int4_values.shape != input_spec.shape:
     raise ValueError(
-        f"expected {input_spec.shape} INT8 input, got {input_int8.shape} {input_int8.dtype}"
+        f"expected {input_spec.shape} INT4 values in an INT8 host container, "
+        f"got {input_int4_values.shape} {input_int4_values.dtype}"
     )
 ```
+
+The NumPy array uses `int8` only as a host container. `Device.write()` validates
+and packs two signed INT4 values per byte before transfer.
 
 Passing float32 to `Model.run()` is not supported merely because NumPy can
 serialize it. `Device.write()` serializes the supplied array's native bytes; it
@@ -1028,8 +1060,8 @@ already occupied by the PYNQ base overlay. Key registers are:
 | `0x08..0x10` | `A_BASE/B_BASE/C_BASE` | Input, secondary input, and output physical addresses |
 | `0x14..0x1c` | strides | Byte strides |
 | `0x20..0x28` | `M/N/K` | Dimensions or operator-specific packed fields |
-| `0x2c` | `TILE_SIZE` | 16 in the deployed design |
-| `0x30` | `ARRAY_COUNT` | 1 on PYNQ-Z2 |
+| `0x2c` | `TILE_SIZE` | 8 for INT4 GEMM; operator-specific kernel height otherwise |
+| `0x30` | `ARRAY_COUNT` | 2 for INT4 GEMM; operator-specific kernel width otherwise |
 | `0x34..0x3c` | requant fields | Multiplier, shift, output zero point |
 
 The driver writes `CONTROL=0`, programs every operand register, writes the
@@ -1039,7 +1071,7 @@ snapshot, and write responses must remain AXI compliant.
 
 Several operators reuse dimension registers. The authoritative packing is in
 `firmware/src/axi_dma.c` and the matching decode in
-`hardware/rtl/bcuda_tiled_systolic_ddr_top.sv`. Change both together and add a
+`hardware/rtl/bcuda_dual_int4_ddr_top.sv`. Change both together and add a
 firmware register-write test plus a top-level RTL test.
 
 ## 18. DDR Data Plane
@@ -1089,21 +1121,18 @@ An element whose global row or column is outside M, N, or K is presented as
 zero. Only valid M-by-N output elements are written. This makes divisible and
 irregular GEMMs follow one schedule without changing mathematical results.
 
-The source-level scheduler can group N tiles across multiple arrays. On the
-PYNQ-Z2, the group width is one because `ARRAY_COUNT=1`. Do not program 8 merely
-because `gemm_array_cluster_8.sv` exists.
+The active scheduler groups N tiles across two arrays. On the PYNQ-Z2 INT4 path,
+`TILE_SIZE=8` and `ARRAY_COUNT=2`. The older eight-array cluster is not part of
+the board image.
 
 ## 20. Systolic Datapath
 
-The active compute core is a 16x16 output-stationary systolic array. INT8 A and
-B values move through the array; each PE accumulates signed products into an
-INT32 partial sum. Pipeline stages separate multiplication, addition, wave
-movement, and output capture to meet 100 MHz.
-
-The Zynq-7020 has 220 DSP48 slices, fewer than the 256 multipliers in a complete
-16x16 array plus support logic. The deployed implementation therefore uses a
-mixed DSP/LUT mapping. The last build consumed all 220 DSPs. The abandoned
-14x14 alternative is retained only in `future_prototypes/`.
+The active compute core contains two 8x8 output-stationary systolic arrays.
+Signed packed INT4 operands are unpacked and sign-extended at the tile
+boundary; every PE accumulates into INT32. The current array multipliers are LUT
+logic, leaving DSP48s available for address, requantization, and future
+experiments. Pipeline stages separate multiplication, accumulation, wave
+movement, and output capture for the 100 MHz target.
 
 Accumulator and wave buffers use BRAM where access patterns permit inference.
 Double buffering allows one tile bank to be filled or drained while another is
@@ -1120,14 +1149,14 @@ GEMM N = output channels
 GEMM K = input channels/groups * kernel height * kernel width
 ```
 
-`conv2d_tile_loader_ddr.sv` computes the source NCHW coordinate for each logical
+`conv2d_tile_loader_int4_ddr.sv` computes the source NCHW coordinate for each logical
 im2col element. Padding positions inject zero; valid positions issue DDR reads.
 This avoids allocating and writing a complete unfolded activation matrix.
 
 `conv_bias_preload_ddr.sv` initializes each output-channel accumulator lane with
 its INT32 bias before K-tile accumulation. The writer stores valid output
 coordinates only. Requantization then converts INT32 accumulators into the next
-INT8 activation domain.
+packed INT4 activation domain.
 
 The address generator is deeply pipelined and uses quotient/counter structure
 instead of expensive modulo and division networks. Preserve stage-valid
@@ -1143,13 +1172,13 @@ launches with different origins to catch this class of failure.
 The PL equation is:
 
 ```text
-y = sat_int8(((x_int32 * multiplier) >>> right_shift) + output_zero_point)
+y = sat_int4(((x_int32 * multiplier) >>> right_shift) + output_zero_point)
 ```
 
 The multiplier and shift approximate a real scale ratio. The multiplier is
 pipelined; the shift is arithmetic; saturation occurs after adding the output
 zero point. The deployed path requires accumulator input zero point 0. The
-writer packs four INT8 results per 32-bit DDR word and emits partial strobes.
+writer packs eight INT4 results per 32-bit DDR word and emits partial strobes.
 
 ### Activation
 

@@ -13,12 +13,14 @@
 #define BCUDA_ACTIVATION_LEAKY_SHIFT_MASK 0x00000700u
 #define BCUDA_POOL_AVERAGE 0x00000001u
 #define BCUDA_DIAGNOSTICS_MAGIC 0x47444342u
-#define BCUDA_DIAGNOSTICS_VERSION 1u
+#define BCUDA_DIAGNOSTICS_VERSION 2u
 #define BCUDA_DIAG_TIMING 0x00000001u
 #define BCUDA_DIAG_MEMORY 0x00000002u
 #define BCUDA_DIAG_OPERATIONS 0x00000004u
 #define BCUDA_DIAG_UTILIZATION 0x00000008u
-#define BCUDA_DIAG_ALL 0x0000000fu
+#define BCUDA_DIAG_HARDWARE 0x00000010u
+#define BCUDA_DIAG_ACCURACY 0x00000020u
+#define BCUDA_DIAG_ALL 0x0000003fu
 
 enum {
     BC_CMD_ALLOC = 1,
@@ -31,7 +33,8 @@ enum {
 enum {
     BC_DTYPE_INT8 = 1,
     BC_DTYPE_INT16 = 2,
-    BC_DTYPE_INT32 = 3
+    BC_DTYPE_INT32 = 3,
+    BC_DTYPE_INT4 = 4
 };
 
 enum {
@@ -184,7 +187,7 @@ typedef struct {
     uint32_t reserved;
 } BcudaGemmDesc;
 
-/* INT32 accumulator to INT8 activation conversion.  right_shift is 0..31. */
+/* INT32 accumulator to packed INT4 or INT8 activation conversion. */
 typedef struct {
     uint32_t input_buffer;
     uint32_t output_buffer;
@@ -262,6 +265,27 @@ typedef struct {
     uint64_t throughput_ops_per_second;
     uint32_t utilization_ppm;
     uint32_t reserved1;
+    uint64_t pl_total_cycles;
+    uint64_t pl_engine_cycles;
+    uint64_t pl_compute_cycles;
+    uint64_t pl_load_cycles;
+    uint64_t pl_cache_wait_cycles;
+    uint64_t pl_cache_ready_cycles;
+    uint64_t pl_ddr_read_commands;
+    uint64_t pl_ddr_read_beats;
+    uint64_t pl_ddr_write_commands;
+    uint64_t pl_ddr_stall_cycles;
+    uint64_t pl_core_rows;
+    uint64_t pl_output_stall_cycles;
+    uint64_t pl_descriptor_count;
+    uint64_t pl_cache_full_cycles;
+    uint64_t output_hash;
+    int64_t output_sum;
+    uint64_t output_elements;
+    int32_t output_min;
+    int32_t output_max;
+    uint32_t output_zero_count;
+    uint32_t output_saturation_count;
 } BcudaDiagnosticsRecord;
 
 typedef struct {

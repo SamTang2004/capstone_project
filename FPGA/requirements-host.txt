@@ -1,2 +1,11 @@
-# Optional host-side dependencies for model import and deployment.
-onnx>=1.14,<1.18
+# Host-side model import, training, deployment, and verification dependencies.
+# Install the CUDA-enabled PyTorch pair separately from requirements-cu130.txt.
+numpy==2.4.4
+onnx==1.22.0
+onnxruntime==1.27.0
+onnxscript==0.7.1
+pillow==12.2.0
+pytest>=9.0,<10
+scikit-learn>=1.9,<2
+scipy>=1.18,<2
+tqdm>=4.69,<5

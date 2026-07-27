@@ -1,7 +1,10 @@
-// Bridges the accelerator's word-command protocol to one-beat AXI4 accesses.
-// It permits one outstanding transaction, which keeps the existing tile
-// loader/writer protocol intact while using PS-attached DDR on the board.
-module memory_io_axi_bridge (
+`timescale 1ns/1ps
+// Bridges the accelerator command protocol to AXI4. Read commands are queued
+// and issued independently of returned data, permitting several same-ID AXI
+// bursts to be outstanding. AXI preserves response order for a common ID.
+module memory_io_axi_bridge #(
+    parameter int READ_CMD_DEPTH = 8
+) (
     input  logic        aclk,
     input  logic        aresetn,
 
@@ -49,64 +52,105 @@ module memory_io_axi_bridge (
     input  logic        m_axi_rlast,
     output logic        m_axi_rready
 );
-    typedef enum logic [2:0] { IDLE, WRITE_ADDR, WRITE_DATA, WRITE_RESP, READ_ADDR, READ_DATA } state_t;
-    state_t state;
-    logic [31:0] addr_r, wdata_r;
-    logic [3:0] len_r;
-    logic [3:0] wstrb_r;
+    localparam int READ_PTR_W = $clog2(READ_CMD_DEPTH);
 
-    assign cmd_ready = state == IDLE;
-    assign m_axi_awaddr = addr_r;
-    assign m_axi_awlen = {4'd0, len_r};
+    typedef enum logic [1:0] {
+        WRITE_IDLE, WRITE_ADDR, WRITE_DATA, WRITE_RESP
+    } write_state_t;
+
+    write_state_t write_state;
+    logic [31:0] write_addr_r;
+    logic [3:0] write_len_r;
+    logic [31:0] read_addr_fifo [0:READ_CMD_DEPTH-1];
+    logic [3:0] read_len_fifo [0:READ_CMD_DEPTH-1];
+    logic [READ_PTR_W-1:0] read_head_r, read_tail_r;
+    logic [READ_PTR_W:0] read_count_r;
+    logic [READ_PTR_W:0] read_outstanding_r;
+
+    wire accept_read = cmd_valid && cmd_ready && !cmd_write;
+    wire accept_write = cmd_valid && cmd_ready && cmd_write;
+    wire issue_read = m_axi_arvalid && m_axi_arready;
+    wire finish_read = m_axi_rvalid && m_axi_rready && m_axi_rlast;
+
+    assign cmd_ready = cmd_write ?
+        (write_state == WRITE_IDLE && read_count_r == 0 &&
+         read_outstanding_r == 0) :
+        (write_state == WRITE_IDLE && read_count_r < READ_CMD_DEPTH);
+
+    assign m_axi_awaddr = write_addr_r;
+    assign m_axi_awlen = {4'd0, write_len_r};
     assign m_axi_awsize = 3'd2;
     assign m_axi_awburst = 2'b01;
-    assign m_axi_awvalid = state == WRITE_ADDR;
+    assign m_axi_awvalid = write_state == WRITE_ADDR;
     assign m_axi_wdata = write_data;
     assign m_axi_wstrb = write_strb;
     assign m_axi_wlast = write_last;
-    assign m_axi_wvalid = state == WRITE_DATA && write_valid;
-    assign write_ready = state == WRITE_DATA && m_axi_wready;
-    assign m_axi_bready = state == WRITE_RESP;
-    assign m_axi_araddr = addr_r;
-    assign m_axi_arlen = {4'd0, len_r};
+    assign m_axi_wvalid = write_state == WRITE_DATA && write_valid;
+    assign write_ready = write_state == WRITE_DATA && m_axi_wready;
+    assign m_axi_bready = write_state == WRITE_RESP;
+
+    assign m_axi_araddr = read_addr_fifo[read_head_r];
+    assign m_axi_arlen = {4'd0, read_len_fifo[read_head_r]};
     assign m_axi_arsize = 3'd2;
     assign m_axi_arburst = 2'b01;
-    assign m_axi_arvalid = state == READ_ADDR;
-    assign read_valid = state == READ_DATA && m_axi_rvalid;
-    assign read_last = read_valid && m_axi_rlast;
+    assign m_axi_arvalid = read_count_r != 0 &&
+                           write_state == WRITE_IDLE;
+    assign read_valid = m_axi_rvalid;
+    assign read_last = m_axi_rvalid && m_axi_rlast;
     assign read_data = m_axi_rdata;
-    assign m_axi_rready = state == READ_DATA && read_ready;
+    assign m_axi_rready = read_ready;
 
     always_ff @(posedge aclk) begin
         if (!aresetn) begin
-            state <= IDLE;
-            addr_r <= '0;
-            wdata_r <= '0;
-            wstrb_r <= '0;
-            len_r <= '0;
+            write_state <= WRITE_IDLE;
+            write_addr_r <= '0;
+            write_len_r <= '0;
+            read_head_r <= '0;
+            read_tail_r <= '0;
+            read_count_r <= '0;
+            read_outstanding_r <= '0;
             error <= 1'b0;
         end else begin
-            if (cmd_valid && cmd_ready) begin
-                addr_r <= cmd_addr;
-                len_r <= cmd_len;
-                wdata_r <= cmd_wdata;
-                wstrb_r <= cmd_wstrb;
-                state <= cmd_write ? WRITE_ADDR : READ_ADDR;
+            if (accept_read) begin
+                read_addr_fifo[read_tail_r] <= cmd_addr;
+                read_len_fifo[read_tail_r] <= cmd_len;
+                read_tail_r <= read_tail_r + 1'b1;
             end
-            unique case (state)
-                IDLE: begin end
-                WRITE_ADDR: if (m_axi_awready) state <= WRITE_DATA;
-                WRITE_DATA: if (write_valid && m_axi_wready && write_last) state <= WRITE_RESP;
+            if (issue_read)
+                read_head_r <= read_head_r + 1'b1;
+
+            unique case ({accept_read, issue_read})
+                2'b10: read_count_r <= read_count_r + 1'b1;
+                2'b01: read_count_r <= read_count_r - 1'b1;
+                default: read_count_r <= read_count_r;
+            endcase
+            unique case ({issue_read, finish_read})
+                2'b10: read_outstanding_r <= read_outstanding_r + 1'b1;
+                2'b01: read_outstanding_r <= read_outstanding_r - 1'b1;
+                default: read_outstanding_r <= read_outstanding_r;
+            endcase
+
+            if (m_axi_rvalid && m_axi_rready &&
+                m_axi_rresp != 2'b00)
+                error <= 1'b1;
+
+            unique case (write_state)
+                WRITE_IDLE: if (accept_write) begin
+                    write_addr_r <= cmd_addr;
+                    write_len_r <= cmd_len;
+                    write_state <= WRITE_ADDR;
+                end
+                WRITE_ADDR: if (m_axi_awready)
+                    write_state <= WRITE_DATA;
+                WRITE_DATA: if (write_valid && m_axi_wready &&
+                                write_last)
+                    write_state <= WRITE_RESP;
                 WRITE_RESP: if (m_axi_bvalid) begin
-                    error <= error || (m_axi_bresp != 2'b00);
-                    state <= IDLE;
+                    if (m_axi_bresp != 2'b00)
+                        error <= 1'b1;
+                    write_state <= WRITE_IDLE;
                 end
-                READ_ADDR: if (m_axi_arready) state <= READ_DATA;
-                READ_DATA: if (m_axi_rvalid && read_ready && m_axi_rlast) begin
-                    error <= error || (m_axi_rresp != 2'b00);
-                    state <= IDLE;
-                end
-                default: state <= IDLE;
+                default: write_state <= WRITE_IDLE;
             endcase
         end
     end

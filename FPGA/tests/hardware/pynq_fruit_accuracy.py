@@ -1,4 +1,4 @@
-"""Evaluate the trained INT8 fruit CNN on Fruits-360 and PYNQ-Z2."""
+"""Evaluate the trained INT4 fruit CNN on Fruits-360 and PYNQ-Z2."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ TRAIN_MODEL = ROOT / "train_model"
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(TRAIN_MODEL))
 
-from budgetcuda import Device, load_quantized_image, onnx_qdq_params
+from budgetcuda import Device, load_quantized_image, onnx_qdq_params, validate_model_package
 from budgetcuda.onnx_import import import_onnx_model
 from paths import TEST_DATA_DIR, TRAINING_DATA_DIR
 from qat_model import CLASS_NAMES, IMAGE_SIZE, GroupedFruitDataset
@@ -77,6 +77,7 @@ def main() -> None:
     parser.add_argument("--board-per-class", type=int, default=100)
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--skip-train", action="store_true")
+    parser.add_argument("--skip-board", action="store_true")
     args = parser.parse_args()
     if args.board_per_class <= 0:
         raise ValueError("board-per-class must be positive")
@@ -85,6 +86,7 @@ def main() -> None:
     test_dataset = GroupedFruitDataset(TEST_DATA_DIR)
     input_params = onnx_qdq_params(args.model).input
     package = import_onnx_model(args.model)
+    validate_model_package(package)
     input_shape = package.buffers[package.input_index].shape
     if input_shape != (1, 3, IMAGE_SIZE, IMAGE_SIZE):
         raise RuntimeError(f"fruit model input shape is {input_shape}, expected (1, 3, {IMAGE_SIZE}, {IMAGE_SIZE})")
@@ -96,6 +98,23 @@ def main() -> None:
     test_predictions = evaluate_onnx(session, input_name, test_dataset, input_shape, input_params, "test")
 
     selected = balanced_samples(test_dataset, args.board_per_class, args.seed)
+    selected_onnx_matrix = np.zeros(
+        (len(CLASS_NAMES), len(CLASS_NAMES)),
+        dtype=np.int64,
+    )
+    for path, target, _ in selected:
+        selected_onnx_matrix[target, test_predictions[path]] += 1
+    selected_onnx_accuracy = float(
+        np.trace(selected_onnx_matrix) / selected_onnx_matrix.sum()
+    )
+    print(
+        f"ONNX balanced-test accuracy={selected_onnx_accuracy:.6f} "
+        f"images={selected_onnx_matrix.sum()}"
+    )
+    print(format_matrix(selected_onnx_matrix))
+    if args.skip_board:
+        return
+
     board_matrix = np.zeros((len(CLASS_NAMES), len(CLASS_NAMES)), dtype=np.int64)
     agreement = 0
     latencies = []

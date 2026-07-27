@@ -4,8 +4,9 @@ import struct
 from dataclasses import dataclass, field, replace
 from typing import Iterable
 
-from .dtypes import BufferUsage, DType, Layout, OpType, dtype_size, normalize_dtype, normalize_layout
+from .dtypes import BufferUsage, DType, Layout, OpType, dtype_nbytes, dtype_size, normalize_dtype, normalize_layout
 from .model import Model
+from .packing import pack_int4
 
 
 MODEL_MAGIC = 0x444D4342
@@ -36,14 +37,19 @@ class HostBuffer:
     ) -> "HostBuffer":
         dtype = normalize_dtype(dtype)
         layout = normalize_layout(layout)
-        itemsize = dtype_size(dtype)
         flat = _flatten(values)
-        raw = b"".join(int(value).to_bytes(itemsize, "little", signed=True) for value in flat)
+        if len(flat) != _num_elements(shape):
+            raise ValueError(f"Buffer {name!r} data does not match shape {tuple(shape)}")
+        if dtype == DType.INT4:
+            raw = pack_int4(flat)
+        else:
+            itemsize = dtype_size(dtype)
+            raw = b"".join(int(value).to_bytes(itemsize, "little", signed=True) for value in flat)
         return cls(name, tuple(shape), dtype, layout, usage, raw)
 
     @property
     def size_bytes(self) -> int:
-        return _num_elements(self.shape) * dtype_size(self.dtype)
+        return dtype_nbytes(self.dtype, _num_elements(self.shape))
 
 
 @dataclass(frozen=True)
@@ -347,13 +353,17 @@ def build_mlp_package(
     weight_values,
     bias_values=None,
     name: str = "mlp",
+    dtype: str | int | DType = DType.INT4,
 ) -> ModelPackage:
+    dtype = normalize_dtype(dtype)
+    if dtype not in (DType.INT4, DType.INT8):
+        raise ValueError("MLP input and weights must be INT4 or INT8")
     buffers = [
-        HostBuffer(f"{name}.input", (1, input_features), DType.INT8, usage=BufferUsage.ACTIVATION),
+        HostBuffer(f"{name}.input", (1, input_features), dtype, usage=BufferUsage.ACTIVATION),
         HostBuffer.from_values(
             f"{name}.weight",
             (input_features, output_features),
-            DType.INT8,
+            dtype,
             weight_values,
             usage=BufferUsage.WEIGHT,
         ),
@@ -393,7 +403,11 @@ def build_tiny_conv_relu_package(
     kernel_shape: tuple[int, int] = (2, 2),
     out_channels: int = 1,
     name: str = "tiny_cnn",
+    dtype: str | int | DType = DType.INT4,
 ) -> ModelPackage:
+    dtype = normalize_dtype(dtype)
+    if dtype not in (DType.INT4, DType.INT8):
+        raise ValueError("CNN input and weights must be INT4 or INT8")
     n, c, h, w = input_shape
     kernel_h, kernel_w = kernel_shape
     out_h = h - kernel_h + 1
@@ -402,11 +416,11 @@ def build_tiny_conv_relu_package(
         raise ValueError("Invalid tiny CNN dimensions")
 
     graph = GraphBuilder(name)
-    input_idx = graph.add_buffer("input", input_shape, DType.INT8, usage=BufferUsage.ACTIVATION, layout=Layout.NCHW)
+    input_idx = graph.add_buffer("input", input_shape, dtype, usage=BufferUsage.ACTIVATION, layout=Layout.NCHW)
     weight_idx = graph.add_buffer(
         "conv.weight",
         (out_channels, c, kernel_h, kernel_w),
-        DType.INT8,
+        dtype,
         usage=BufferUsage.WEIGHT,
         data=weight_values,
         layout=Layout.NCHW,
@@ -432,6 +446,61 @@ def build_tiny_conv_relu_package(
         bias_idx=bias_idx,
     )
     graph.relu(conv_out_idx, output_idx)
+    return graph.package(input_idx, output_idx)
+
+
+def build_tiny_int4_cnn_package(
+    input_shape: tuple[int, int, int, int],
+    weight_values,
+    *,
+    multiplier: int,
+    right_shift: int,
+    output_zero_point: int = 0,
+    bias_values=None,
+    kernel_shape: tuple[int, int] = (2, 2),
+    out_channels: int = 1,
+    name: str = "tiny_int4_cnn",
+) -> ModelPackage:
+    """Build a packed INT4 Conv2D -> requantize -> ReLU graph."""
+
+    n, c, h, w = input_shape
+    kernel_h, kernel_w = kernel_shape
+    out_h = h - kernel_h + 1
+    out_w = w - kernel_w + 1
+    if n <= 0 or c <= 0 or out_h <= 0 or out_w <= 0 or out_channels <= 0:
+        raise ValueError("Invalid tiny INT4 CNN dimensions")
+
+    graph = GraphBuilder(name)
+    input_idx = graph.add_buffer("input", input_shape, DType.INT4, layout=Layout.NCHW)
+    weight_idx = graph.add_buffer(
+        "conv.weight",
+        (out_channels, c, kernel_h, kernel_w),
+        DType.INT4,
+        usage=BufferUsage.WEIGHT,
+        data=weight_values,
+        layout=Layout.NCHW,
+    )
+    bias_idx = 0
+    if bias_values is not None:
+        bias_idx = graph.add_buffer(
+            "conv.bias", (out_channels,), DType.INT32,
+            usage=BufferUsage.WEIGHT, data=bias_values,
+        )
+    output_shape = (n, out_channels, out_h, out_w)
+    accumulator_idx = graph.add_buffer("conv.accumulator", output_shape, DType.INT32, layout=Layout.NCHW)
+    requant_idx = graph.add_buffer("conv.requant", output_shape, DType.INT4, layout=Layout.NCHW)
+    output_idx = graph.add_buffer("output", output_shape, DType.INT4, usage=BufferUsage.OUTPUT, layout=Layout.NCHW)
+    scale_idx = graph.requantize_params(
+        "conv.requant.params", multiplier, right_shift,
+        output_zero_point=output_zero_point,
+    )
+    graph.conv2d(
+        input_idx, weight_idx, accumulator_idx,
+        n=n, c=c, h=h, w=w, out_c=out_channels, out_h=out_h, out_w=out_w,
+        kernel_h=kernel_h, kernel_w=kernel_w, bias_idx=bias_idx,
+    )
+    graph.requantize(accumulator_idx, requant_idx, scale_idx)
+    graph.relu(requant_idx, output_idx)
     return graph.package(input_idx, output_idx)
 
 

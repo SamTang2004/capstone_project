@@ -1,0 +1,15 @@
+{
+  "format": "signed two's-complement INT4",
+  "nibble_order": "even column low, odd column high",
+  "row_alignment": "each row starts at a byte boundary",
+  "unused_tail_nibble": 0,
+  "tile": 8,
+  "a_base": 17,
+  "b_base": 83,
+  "input_row_stride_bytes": 5,
+  "c_base": 151,
+  "c_cols": 7,
+  "c_row_stride_bytes": 5,
+  "input_read_bytes": 64,
+  "output_write_bytes": 32
+}

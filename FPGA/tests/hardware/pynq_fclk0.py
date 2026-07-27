@@ -20,13 +20,14 @@ FCLK0_CTRL = 0x170
 UNLOCK_KEY = 0x0000DF0D
 LOCK_KEY = 0x0000767B
 FCLK0_100_MHZ = 0x00200500
+FCLK0_83_MHZ = 0x00200600
 FCLK0_50_MHZ = 0x00200A00
 FCLK0_25_MHZ = 0x00201400
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mhz", type=int, choices=(25, 50, 100))
+    parser.add_argument("--mhz", type=int, choices=(25, 50, 83, 100))
     args = parser.parse_args()
 
     page_size = mmap.PAGESIZE
@@ -35,7 +36,12 @@ def main() -> None:
         try:
             before = struct.unpack_from("<I", registers, FCLK0_CTRL)[0]
             if args.mhz is not None:
-                target = {25: FCLK0_25_MHZ, 50: FCLK0_50_MHZ, 100: FCLK0_100_MHZ}[args.mhz]
+                target = {
+                    25: FCLK0_25_MHZ,
+                    50: FCLK0_50_MHZ,
+                    83: FCLK0_83_MHZ,
+                    100: FCLK0_100_MHZ,
+                }[args.mhz]
                 struct.pack_into("<I", registers, SLCR_UNLOCK, UNLOCK_KEY)
                 struct.pack_into("<I", registers, FCLK0_CTRL, target)
                 struct.pack_into("<I", registers, SLCR_LOCK, LOCK_KEY)

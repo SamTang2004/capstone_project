@@ -11,6 +11,7 @@ class DType(IntEnum):
     INT8 = 1
     INT16 = 2
     INT32 = 3
+    INT4 = 4
 
 
 class Layout(IntEnum):
@@ -61,6 +62,8 @@ class OpType(IntEnum):
 
 
 DTYPE_ALIASES = {
+    "int4": DType.INT4,
+    "qint4": DType.INT4,
     "int8": DType.INT8,
     "int16": DType.INT16,
     "int32": DType.INT32,
@@ -84,6 +87,13 @@ DTYPE_SIZES = {
     DType.INT8: 1,
     DType.INT16: 2,
     DType.INT32: 4,
+}
+
+DTYPE_BITS = {
+    DType.INT4: 4,
+    DType.INT8: 8,
+    DType.INT16: 16,
+    DType.INT32: 32,
 }
 
 
@@ -121,4 +131,18 @@ def normalize_usage(usage: str | int | BufferUsage) -> BufferUsage:
 
 
 def dtype_size(dtype: str | int | DType) -> int:
-    return DTYPE_SIZES[normalize_dtype(dtype)]
+    dtype = normalize_dtype(dtype)
+    if dtype == DType.INT4:
+        raise ValueError("INT4 is packed; use dtype_nbytes(dtype, element_count)")
+    return DTYPE_SIZES[dtype]
+
+
+def dtype_bits(dtype: str | int | DType) -> int:
+    return DTYPE_BITS[normalize_dtype(dtype)]
+
+
+def dtype_nbytes(dtype: str | int | DType, element_count: int) -> int:
+    element_count = int(element_count)
+    if element_count < 0:
+        raise ValueError("Element count must be non-negative")
+    return (dtype_bits(dtype) * element_count + 7) // 8

@@ -14,7 +14,7 @@ import onnxruntime as ort
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from budgetcuda import Device, onnx_qdq_params
+from budgetcuda import Device, onnx_qdq_params, validate_model_package
 from budgetcuda.compiler import ModelPackage
 from budgetcuda.onnx_import import import_onnx_model
 
@@ -23,8 +23,8 @@ DEFAULT_MODEL = (
     ROOT
     / "train_model"
     / "models"
-    / "fruit3_budgetcuda_qat_smoke"
-    / "fruit3_budgetcuda_int8.onnx"
+    / "fruit3_budgetcuda_int4"
+    / "fruit3_budgetcuda_int4.onnx"
 )
 
 
@@ -75,12 +75,13 @@ def main() -> None:
     args = parser.parse_args()
 
     package = import_onnx_model(args.model)
+    preflight = validate_model_package(package)
     input_buffer = package.buffers[package.input_index]
-    if input_buffer.dtype.name != "INT8":
-        raise RuntimeError(f"expected an INT8 model input, got {input_buffer.dtype.name}")
+    if input_buffer.dtype.name != "INT4":
+        raise RuntimeError(f"expected an INT4 model input, got {input_buffer.dtype.name}")
 
     rng = np.random.default_rng(args.seed)
-    input_values = rng.integers(-32, 33, size=input_buffer.shape, dtype=np.int8)
+    input_values = rng.integers(-8, 8, size=input_buffer.shape, dtype=np.int8)
 
     session = ort.InferenceSession(str(args.model), providers=["CPUExecutionProvider"])
     reference_start = time.perf_counter()
@@ -104,7 +105,7 @@ def main() -> None:
 
     if actual.dtype != np.int8 or actual.shape != reference.shape:
         raise RuntimeError(
-            f"result metadata mismatch: expected FPGA int8 {reference.shape}, "
+            f"result metadata mismatch: expected FPGA INT4 container {reference.shape}, "
             f"got {actual.dtype} {actual.shape}"
         )
     if not np.array_equal(actual, mock_result):
@@ -122,7 +123,7 @@ def main() -> None:
     # quantization error in the externally dequantized ONNX output.
     if max_error > output_scale * args.ort_tolerance_lsb + 1e-6:
         raise RuntimeError(
-            f"full CNN mismatch: FPGA int8={actual.reshape(-1).tolist()} "
+            f"full CNN mismatch: FPGA INT4={actual.reshape(-1).tolist()} "
             f"FPGA float={actual_float.reshape(-1).tolist()} "
             f"reference={reference.reshape(-1).tolist()} max_error={max_error}"
         )
@@ -137,8 +138,8 @@ def main() -> None:
     print(
         "Full CNN inference passed: "
         f"layers={len(package.layers)} buffers={len(package.buffers)} "
-        f"bytes={sum(buffer.size_bytes for buffer in package.buffers)} "
-        f"int8_logits={actual.reshape(-1).tolist()} "
+        f"arena_bytes={preflight.arena_bytes_required} "
+        f"int4_logits={actual.reshape(-1).tolist()} "
         f"float_logits={actual_float.reshape(-1).tolist()} "
         f"class={predicted_class} max_error={max_error:.8f} "
         f"ort_s={reference_seconds:.6f} upload_s={upload_seconds:.6f} "

@@ -94,6 +94,29 @@ static uint32_t bcuda_dtype_bytes(uint32_t dtype) {
     }
 }
 
+static uint32_t bcuda_dtype_bits(uint32_t dtype) {
+    if (dtype == BC_DTYPE_INT4) {
+        return 4u;
+    }
+    return bcuda_dtype_bytes(dtype) * 8u;
+}
+
+static uint64_t bcuda_storage_bytes(uint32_t dtype, uint64_t elements) {
+    uint32_t bits = bcuda_dtype_bits(dtype);
+    return bits == 0u ? 0u : (elements * bits + 7u) / 8u;
+}
+
+static int8_t bcuda_read_i4(const uint8_t *base, uint64_t index) {
+    uint8_t nibble = (base[index >> 1u] >> ((index & 1u) * 4u)) & 0x0fu;
+    return (int8_t)((nibble & 0x08u) != 0u ? (int32_t)nibble - 16 : nibble);
+}
+
+static void bcuda_write_i4(uint8_t *base, uint64_t index, int8_t value) {
+    uint32_t shift = (uint32_t)(index & 1u) * 4u;
+    uint8_t mask = (uint8_t)(0x0fu << shift);
+    base[index >> 1u] = (uint8_t)((base[index >> 1u] & ~mask) | (((uint8_t)value & 0x0fu) << shift));
+}
+
 static uint64_t bcuda_now_ns(void) {
     struct timespec value;
     if (timespec_get(&value, TIME_UTC) != TIME_UTC) {
@@ -123,8 +146,8 @@ static uint64_t bcuda_diag_output_elements(
     if (bcuda_copy_model_buffer(model_buffer, model, layer->output, &output) != BC_STATUS_OK) {
         return 0;
     }
-    uint32_t element_bytes = bcuda_dtype_bytes(output.dtype);
-    return element_bytes == 0 ? 0 : output.size_bytes / element_bytes;
+    uint32_t element_bits = bcuda_dtype_bits(output.dtype);
+    return element_bits == 0 ? 0 : output.size_bytes * 8u / element_bits;
 }
 
 static uint64_t bcuda_diag_operations(
@@ -169,6 +192,99 @@ static void bcuda_diag_resources(
         }
     } else if (layer->op_type == BC_OP_REQUANTIZE) {
         record->weight_bytes = bcuda_diag_buffer_size(model_buffer, model, layer->scale);
+    }
+}
+
+static void bcuda_diag_hardware(
+    BcudaGraphRuntime *runtime,
+    BcudaDiagnosticsRecord *record
+) {
+    BcudaPlDiagnostics counters;
+    if (runtime == 0 || runtime->dma == 0 ||
+        bcuda_axi_dma_read_diagnostics(runtime->dma, &counters) !=
+            BC_STATUS_OK) {
+        return;
+    }
+    record->pl_total_cycles = counters.total_cycles;
+    record->pl_engine_cycles = counters.engine_cycles;
+    record->pl_compute_cycles = counters.compute_cycles;
+    record->pl_load_cycles = counters.load_cycles;
+    record->pl_cache_wait_cycles = counters.cache_wait_cycles;
+    record->pl_cache_ready_cycles = counters.cache_ready_cycles;
+    record->pl_ddr_read_commands = counters.ddr_read_commands;
+    record->pl_ddr_read_beats = counters.ddr_read_beats;
+    record->pl_ddr_write_commands = counters.ddr_write_commands;
+    record->pl_ddr_stall_cycles = counters.ddr_stall_cycles;
+    record->pl_core_rows = counters.core_rows;
+    record->pl_output_stall_cycles = counters.output_stall_cycles;
+    record->pl_descriptor_count = counters.descriptor_count;
+    record->pl_cache_full_cycles = counters.cache_full_cycles;
+}
+
+static void bcuda_diag_accuracy(
+    const BcudaBuffer *model_buffer,
+    const BcudaModelDesc *model,
+    const BcudaLayerDesc *layer,
+    BcudaDiagnosticsRecord *record
+) {
+    BcudaModelBufferDesc entry;
+    BcudaBuffer *output = 0;
+    const uint8_t *bytes;
+    uint64_t elements;
+    uint32_t element_bits;
+    uint64_t hash = 1469598103934665603ull;
+    int32_t minimum = INT32_MAX;
+    int32_t maximum = INT32_MIN;
+
+    if (bcuda_copy_model_buffer(model_buffer, model, layer->output, &entry) !=
+            BC_STATUS_OK ||
+        bcuda_get_buffer(entry.buffer_id, &output) != BC_STATUS_OK ||
+        output == 0 || output->virtual_address == 0 ||
+        entry.size_bytes > output->size_bytes) {
+        return;
+    }
+    bytes = (const uint8_t *)output->virtual_address;
+    for (uint32_t i = 0; i < entry.size_bytes; i++) {
+        hash ^= bytes[i];
+        hash *= 1099511628211ull;
+    }
+    record->output_hash = hash;
+    element_bits = bcuda_dtype_bits(entry.dtype);
+    if (element_bits == 0) {
+        return;
+    }
+    elements = (uint64_t)entry.size_bytes * 8u / element_bits;
+    record->output_elements = elements;
+    for (uint64_t i = 0; i < elements; i++) {
+        int32_t value;
+        if (entry.dtype == BC_DTYPE_INT4) {
+            value = bcuda_read_i4(bytes, i);
+        } else if (entry.dtype == BC_DTYPE_INT8) {
+            value = ((const int8_t *)bytes)[i];
+        } else if (entry.dtype == BC_DTYPE_INT16) {
+            int16_t sample;
+            memcpy(&sample, bytes + i * sizeof(sample), sizeof(sample));
+            value = sample;
+        } else {
+            memcpy(&value, bytes + i * sizeof(value), sizeof(value));
+        }
+        record->output_sum += value;
+        if (value < minimum) minimum = value;
+        if (value > maximum) maximum = value;
+        if (value == 0) record->output_zero_count++;
+        if ((entry.dtype == BC_DTYPE_INT4 && (value == -8 || value == 7)) ||
+            (entry.dtype == BC_DTYPE_INT8 &&
+             (value == INT8_MIN || value == INT8_MAX)) ||
+            (entry.dtype == BC_DTYPE_INT16 &&
+             (value == INT16_MIN || value == INT16_MAX)) ||
+            (entry.dtype == BC_DTYPE_INT32 &&
+             (value == INT32_MIN || value == INT32_MAX))) {
+            record->output_saturation_count++;
+        }
+    }
+    if (elements != 0) {
+        record->output_min = minimum;
+        record->output_max = maximum;
     }
 }
 
@@ -387,8 +503,14 @@ static int bcuda_execute_gemm_layer(BcudaGraphRuntime *runtime, const BcudaBuffe
     gemm.M = layer->n;
     gemm.N = layer->out_c;
     gemm.K = layer->c;
-    gemm.A_dtype = BC_DTYPE_INT8;
-    gemm.B_dtype = BC_DTYPE_INT8;
+    BcudaBuffer *input = 0;
+    BcudaBuffer *weight = 0;
+    status = bcuda_get_buffer(input_id, &input);
+    if (status != BC_STATUS_OK) return status;
+    status = bcuda_get_buffer(weight_id, &weight);
+    if (status != BC_STATUS_OK) return status;
+    gemm.A_dtype = input->dtype;
+    gemm.B_dtype = weight->dtype;
     gemm.C_dtype = BC_DTYPE_INT32;
     gemm.A_layout = BC_LAYOUT_ROW_MAJOR;
     gemm.B_layout = BC_LAYOUT_ROW_MAJOR;
@@ -411,17 +533,27 @@ static int bcuda_execute_activation_layer(BcudaGraphRuntime *runtime, const Bcud
     if (input->dtype != output->dtype || input->size_bytes > output->size_bytes) {
         return BC_STATUS_SHAPE_MISMATCH;
     }
-    if (input->dtype != BC_DTYPE_INT8 && input->dtype != BC_DTYPE_INT32) {
+    if (input->dtype != BC_DTYPE_INT4 && input->dtype != BC_DTYPE_INT8 && input->dtype != BC_DTYPE_INT32) {
         return BC_STATUS_UNSUPPORTED_DTYPE;
     }
-    if (input->dtype == BC_DTYPE_INT8 && runtime != 0 && runtime->dma != 0 && runtime->dma->register_base != 0) {
+    if ((input->dtype == BC_DTYPE_INT8 || input->dtype == BC_DTYPE_INT4) &&
+        runtime != 0 && runtime->dma != 0 && runtime->dma->register_base != 0) {
         status = bcuda_axi_dma_submit_activation(runtime->dma, layer, input, output);
         return status == BC_STATUS_OK ? bcuda_axi_dma_poll_done(runtime->dma) : status;
     }
     uint32_t leaky = layer->flags & BCUDA_ACTIVATION_LEAKY_RELU;
     uint32_t shift = (layer->flags & BCUDA_ACTIVATION_LEAKY_SHIFT_MASK) >> BCUDA_ACTIVATION_LEAKY_SHIFT_SHIFT;
 
-    if (input->dtype == BC_DTYPE_INT8) {
+    if (input->dtype == BC_DTYPE_INT4) {
+        uint64_t elements = input->size_bytes * 2u;
+        const uint8_t *src = (const uint8_t *)input->virtual_address;
+        uint8_t *dst = (uint8_t *)output->virtual_address;
+        memset(dst, 0, (size_t)output->size_bytes);
+        for (uint64_t i = 0; i < elements; i++) {
+            int8_t value = bcuda_read_i4(src, i);
+            bcuda_write_i4(dst, i, value < 0 ? (leaky ? (value >> shift) : 0) : value);
+        }
+    } else if (input->dtype == BC_DTYPE_INT8) {
         const int8_t *src = (const int8_t *)input->virtual_address;
         int8_t *dst = (int8_t *)output->virtual_address;
         for (uint64_t i = 0; i < input->size_bytes; i++) {
@@ -455,8 +587,12 @@ static int bcuda_execute_requantize_layer(BcudaGraphRuntime *runtime, const Bcud
     if (status != BC_STATUS_OK) {
         return status;
     }
-    if (input->dtype != BC_DTYPE_INT32 || output->dtype != BC_DTYPE_INT8 || scale->dtype != BC_DTYPE_INT32 ||
-        scale->size_bytes < sizeof(BcudaRequantParams) || input->size_bytes / sizeof(int32_t) > output->size_bytes) {
+    uint32_t output_bits = bcuda_dtype_bits(output->dtype);
+    uint64_t elements_available = output_bits == 0u ? 0u : output->size_bytes * 8u / output_bits;
+    if (input->dtype != BC_DTYPE_INT32 ||
+        (output->dtype != BC_DTYPE_INT4 && output->dtype != BC_DTYPE_INT8) ||
+        scale->dtype != BC_DTYPE_INT32 || scale->size_bytes < sizeof(BcudaRequantParams) ||
+        input->size_bytes / sizeof(int32_t) > elements_available) {
         return BC_STATUS_SHAPE_MISMATCH;
     }
 
@@ -482,9 +618,19 @@ static int bcuda_execute_requantize_layer(BcudaGraphRuntime *runtime, const Bcud
     }
 
     const uint8_t *src = (const uint8_t *)input->virtual_address;
-    int8_t *dst = (int8_t *)output->virtual_address;
-    for (uint32_t i = 0; i < elements; i++) {
-        dst[i] = bcuda_requantize_value(bcuda_read_i32(src + i * sizeof(int32_t)), &params);
+    uint8_t *dst = (uint8_t *)output->virtual_address;
+    if (output->dtype == BC_DTYPE_INT4) {
+        memset(dst, 0, (size_t)output->size_bytes);
+        for (uint32_t i = 0; i < elements; i++) {
+            int8_t value = bcuda_requantize_value(bcuda_read_i32(src + i * sizeof(int32_t)), &params);
+            if (value < -8) value = -8;
+            if (value > 7) value = 7;
+            bcuda_write_i4(dst, i, value);
+        }
+    } else {
+        for (uint32_t i = 0; i < elements; i++) {
+            dst[i] = (uint8_t)bcuda_requantize_value(bcuda_read_i32(src + i * sizeof(int32_t)), &params);
+        }
     }
     return BC_STATUS_OK;
 }
@@ -523,25 +669,31 @@ static int bcuda_execute_upsample_layer(BcudaGraphRuntime *runtime, const BcudaB
     if (input->dtype != output->dtype) {
         return BC_STATUS_SHAPE_MISMATCH;
     }
-    uint32_t elem_bytes = bcuda_dtype_bytes(input->dtype);
-    if (elem_bytes == 0) {
+    uint32_t elem_bits = bcuda_dtype_bits(input->dtype);
+    if (elem_bits == 0) {
         return BC_STATUS_UNSUPPORTED_DTYPE;
     }
     if (layer->n == 0 || layer->c == 0 || layer->h == 0 || layer->w == 0 || layer->out_h == 0 || layer->out_w == 0) {
         return BC_STATUS_SHAPE_MISMATCH;
     }
-    uint64_t input_bytes = (uint64_t)layer->n * layer->c * layer->h * layer->w * elem_bytes;
-    uint64_t output_bytes = (uint64_t)layer->n * layer->c * layer->out_h * layer->out_w * elem_bytes;
+    uint64_t input_elements = (uint64_t)layer->n * layer->c * layer->h * layer->w;
+    uint64_t output_elements = (uint64_t)layer->n * layer->c * layer->out_h * layer->out_w;
+    uint64_t input_bytes = bcuda_storage_bytes(input->dtype, input_elements);
+    uint64_t output_bytes = bcuda_storage_bytes(output->dtype, output_elements);
     if (input_bytes > input->size_bytes || output_bytes > output->size_bytes) {
         return BC_STATUS_SHAPE_MISMATCH;
     }
-    if (runtime != 0 && runtime->dma != 0 && runtime->dma->register_base != 0) {
+    if (input->dtype == BC_DTYPE_INT4 && runtime != 0 &&
+        runtime->dma != 0 && runtime->dma->register_base != 0) {
         status = bcuda_axi_dma_submit_upsample(runtime->dma, layer, input, output);
         return status == BC_STATUS_OK ? bcuda_axi_dma_poll_done(runtime->dma) : status;
     }
 
     const uint8_t *src = (const uint8_t *)input->virtual_address;
     uint8_t *dst = (uint8_t *)output->virtual_address;
+    if (input->dtype == BC_DTYPE_INT4) {
+        memset(dst, 0, (size_t)output->size_bytes);
+    }
     for (uint32_t n = 0; n < layer->n; n++) {
         for (uint32_t c = 0; c < layer->c; c++) {
             for (uint32_t oh = 0; oh < layer->out_h; oh++) {
@@ -550,7 +702,13 @@ static int bcuda_execute_upsample_layer(BcudaGraphRuntime *runtime, const BcudaB
                     uint32_t iw = (uint32_t)(((uint64_t)ow * layer->w) / layer->out_w);
                     uint64_t src_idx = (((uint64_t)n * layer->c + c) * layer->h + ih) * layer->w + iw;
                     uint64_t dst_idx = (((uint64_t)n * layer->c + c) * layer->out_h + oh) * layer->out_w + ow;
-                    memcpy(dst + dst_idx * elem_bytes, src + src_idx * elem_bytes, elem_bytes);
+                    if (input->dtype == BC_DTYPE_INT4) {
+                        bcuda_write_i4(dst, dst_idx, bcuda_read_i4(src, src_idx));
+                    } else {
+                        uint32_t elem_bytes = elem_bits / 8u;
+                        memcpy(dst + dst_idx * elem_bytes,
+                               src + src_idx * elem_bytes, elem_bytes);
+                    }
                 }
             }
         }
@@ -560,7 +718,9 @@ static int bcuda_execute_upsample_layer(BcudaGraphRuntime *runtime, const BcudaB
 
 static int bcuda_concat_copy_input(const BcudaBuffer *input, BcudaBuffer *output, uint32_t dtype, uint32_t n_batches, uint32_t in_channels, uint32_t out_channels, uint32_t h, uint32_t w, uint32_t channel_offset) {
     uint32_t elem_bytes = bcuda_dtype_bytes(dtype);
-    if (input == 0 || input->dtype != dtype || input->size_bytes < (uint64_t)n_batches * in_channels * h * w * elem_bytes) {
+    uint64_t input_elements = (uint64_t)n_batches * in_channels * h * w;
+    if (input == 0 || input->dtype != dtype ||
+        input->size_bytes < bcuda_storage_bytes(dtype, input_elements)) {
         return BC_STATUS_SHAPE_MISMATCH;
     }
     const uint8_t *src = (const uint8_t *)input->virtual_address;
@@ -569,7 +729,16 @@ static int bcuda_concat_copy_input(const BcudaBuffer *input, BcudaBuffer *output
         for (uint32_t c = 0; c < in_channels; c++) {
             uint64_t src_idx = ((uint64_t)n * in_channels + c) * h * w;
             uint64_t dst_idx = ((uint64_t)n * out_channels + channel_offset + c) * h * w;
-            memcpy(dst + dst_idx * elem_bytes, src + src_idx * elem_bytes, (size_t)h * w * elem_bytes);
+            if (dtype == BC_DTYPE_INT4) {
+                for (uint64_t i = 0; i < (uint64_t)h * w; i++) {
+                    bcuda_write_i4(dst, dst_idx + i,
+                                   bcuda_read_i4(src, src_idx + i));
+                }
+            } else {
+                memcpy(dst + dst_idx * elem_bytes,
+                       src + src_idx * elem_bytes,
+                       (size_t)h * w * elem_bytes);
+            }
         }
     }
     return BC_STATUS_OK;
@@ -587,16 +756,23 @@ static int bcuda_execute_concat_layer(BcudaGraphRuntime *runtime, const BcudaBuf
     if (layer->n == 0 || layer->h == 0 || layer->w == 0 || layer->out_c == 0) {
         return BC_STATUS_SHAPE_MISMATCH;
     }
-    uint32_t elem_bytes = bcuda_dtype_bytes(output->dtype);
-    if (elem_bytes == 0) {
+    uint32_t elem_bits = bcuda_dtype_bits(output->dtype);
+    if (elem_bits == 0) {
         return BC_STATUS_UNSUPPORTED_DTYPE;
     }
-    uint64_t output_bytes = (uint64_t)layer->n * layer->out_c * layer->h * layer->w * elem_bytes;
+    uint64_t output_bytes = bcuda_storage_bytes(
+        output->dtype,
+        (uint64_t)layer->n * layer->out_c * layer->h * layer->w);
     if (output_bytes > output->size_bytes) {
         return BC_STATUS_SHAPE_MISMATCH;
     }
 
     uint32_t channel_offset = 0;
+    if (output->dtype == BC_DTYPE_INT4 &&
+        (runtime == 0 || runtime->dma == 0 ||
+         runtime->dma->register_base == 0)) {
+        memset(output->virtual_address, 0, (size_t)output->size_bytes);
+    }
     for (uint32_t i = 0; i < input_count; i++) {
         status = bcuda_graph_table_buffer(model_buffer, model, input_indexes[i], &inputs[i]);
         if (status != BC_STATUS_OK) {
@@ -605,12 +781,15 @@ static int bcuda_execute_concat_layer(BcudaGraphRuntime *runtime, const BcudaBuf
         if (inputs[i]->dtype != output->dtype) {
             return BC_STATUS_SHAPE_MISMATCH;
         }
-        uint64_t denom = (uint64_t)layer->n * layer->h * layer->w * elem_bytes;
-        if (denom == 0 || (inputs[i]->size_bytes % denom) != 0) {
+        if (inputs[i]->rank < 2 || inputs[i]->shape[1] == 0) {
             return BC_STATUS_SHAPE_MISMATCH;
         }
-        uint32_t in_channels = (uint32_t)(inputs[i]->size_bytes / denom);
-        if (in_channels == 0 || channel_offset + in_channels > layer->out_c) {
+        uint32_t in_channels = inputs[i]->shape[1];
+        uint64_t input_elements =
+            (uint64_t)layer->n * in_channels * layer->h * layer->w;
+        if (channel_offset + in_channels > layer->out_c ||
+            inputs[i]->size_bytes <
+                bcuda_storage_bytes(output->dtype, input_elements)) {
             return BC_STATUS_SHAPE_MISMATCH;
         }
         if (runtime == 0 || runtime->dma == 0 || runtime->dma->register_base == 0) {
@@ -624,7 +803,8 @@ static int bcuda_execute_concat_layer(BcudaGraphRuntime *runtime, const BcudaBuf
     if (channel_offset != layer->out_c) {
         return BC_STATUS_SHAPE_MISMATCH;
     }
-    if (runtime != 0 && runtime->dma != 0 && runtime->dma->register_base != 0) {
+    if (output->dtype == BC_DTYPE_INT4 && runtime != 0 &&
+        runtime->dma != 0 && runtime->dma->register_base != 0) {
         status = bcuda_axi_dma_submit_concat(runtime->dma, layer, inputs[0], inputs[1], input_count == 3 ? inputs[2] : 0, output);
         return status == BC_STATUS_OK ? bcuda_axi_dma_poll_done(runtime->dma) : status;
     }
@@ -642,7 +822,8 @@ static int bcuda_execute_pool_layer(BcudaGraphRuntime *runtime, const BcudaBuffe
     if (status != BC_STATUS_OK) {
         return status;
     }
-    if (input->dtype != BC_DTYPE_INT8 || output->dtype != BC_DTYPE_INT8) {
+    if ((input->dtype != BC_DTYPE_INT8 && input->dtype != BC_DTYPE_INT4) ||
+        output->dtype != input->dtype) {
         return BC_STATUS_UNSUPPORTED_DTYPE;
     }
     if (layer->n == 0 || layer->c == 0 || layer->h == 0 || layer->w == 0 || layer->out_h == 0 || layer->out_w == 0 ||
@@ -651,10 +832,12 @@ static int bcuda_execute_pool_layer(BcudaGraphRuntime *runtime, const BcudaBuffe
     }
     uint64_t input_elements = (uint64_t)layer->n * layer->c * layer->h * layer->w;
     uint64_t output_elements = (uint64_t)layer->n * layer->c * layer->out_h * layer->out_w;
-    if (input_elements > input->size_bytes || output_elements > output->size_bytes) {
+    if (bcuda_storage_bytes(input->dtype, input_elements) > input->size_bytes ||
+        bcuda_storage_bytes(output->dtype, output_elements) > output->size_bytes) {
         return BC_STATUS_SHAPE_MISMATCH;
     }
-    if (runtime != 0 && runtime->dma != 0 && runtime->dma->register_base != 0) {
+    if (input->dtype == BC_DTYPE_INT4 && runtime != 0 &&
+        runtime->dma != 0 && runtime->dma->register_base != 0) {
         status = (layer->flags & BCUDA_POOL_AVERAGE) != 0u
             ? bcuda_axi_dma_submit_avgpool(runtime->dma, layer, input, output)
             : bcuda_axi_dma_submit_maxpool(runtime->dma, layer, input, output);
@@ -663,6 +846,9 @@ static int bcuda_execute_pool_layer(BcudaGraphRuntime *runtime, const BcudaBuffe
 
     const int8_t *src = (const int8_t *)input->virtual_address;
     int8_t *dst = (int8_t *)output->virtual_address;
+    if (input->dtype == BC_DTYPE_INT4) {
+        memset(dst, 0, (size_t)output->size_bytes);
+    }
     for (uint32_t n = 0; n < layer->n; n++) {
         for (uint32_t c = 0; c < layer->c; c++) {
             for (uint32_t oh = 0; oh < layer->out_h; oh++) {
@@ -681,17 +867,25 @@ static int bcuda_execute_pool_layer(BcudaGraphRuntime *runtime, const BcudaBuffe
                                 continue;
                             }
                             uint64_t src_idx = (((uint64_t)n * layer->c + c) * layer->h + (uint32_t)ih) * layer->w + (uint32_t)iw;
-                            sum += src[src_idx];
+                            int8_t sample = input->dtype == BC_DTYPE_INT4
+                                ? bcuda_read_i4((const uint8_t *)src, src_idx)
+                                : src[src_idx];
+                            sum += sample;
                             count++;
-                            if (src[src_idx] > best) {
-                                best = src[src_idx];
+                            if (sample > best) {
+                                best = sample;
                             }
                         }
                     }
                     uint64_t dst_idx = (((uint64_t)n * layer->c + c) * layer->out_h + oh) * layer->out_w + ow;
-                    dst[dst_idx] = (layer->flags & BCUDA_POOL_AVERAGE) != 0u
+                    int8_t result = (layer->flags & BCUDA_POOL_AVERAGE) != 0u
                         ? (int8_t)(sum < 0 ? -((-sum) / (int32_t)count) : sum / (int32_t)count)
                         : best;
+                    if (input->dtype == BC_DTYPE_INT4) {
+                        bcuda_write_i4((uint8_t *)dst, dst_idx, result);
+                    } else {
+                        dst[dst_idx] = result;
+                    }
                 }
             }
         }
@@ -726,7 +920,9 @@ static int bcuda_execute_conv2d_layer(BcudaGraphRuntime *runtime, const BcudaBuf
         status = bcuda_axi_dma_submit_conv2d(runtime->dma, layer, input, weight, bias, output);
         return status == BC_STATUS_OK ? bcuda_axi_dma_poll_done(runtime->dma) : status;
     }
-    if (input->dtype != BC_DTYPE_INT8 || weight->dtype != BC_DTYPE_INT8 || output->dtype != BC_DTYPE_INT32 ||
+    if (!((input->dtype == BC_DTYPE_INT8 && weight->dtype == BC_DTYPE_INT8) ||
+          (input->dtype == BC_DTYPE_INT4 && weight->dtype == BC_DTYPE_INT4)) ||
+        output->dtype != BC_DTYPE_INT32 ||
         (bias != 0 && bias->dtype != BC_DTYPE_INT32)) {
         return BC_STATUS_UNSUPPORTED_DTYPE;
     }
@@ -739,7 +935,9 @@ static int bcuda_execute_conv2d_layer(BcudaGraphRuntime *runtime, const BcudaBuf
     uint64_t input_elements = (uint64_t)layer->n * layer->c * layer->h * layer->w;
     uint64_t weight_elements = (uint64_t)layer->out_c * layer->c * layer->kernel_h * layer->kernel_w;
     uint64_t output_bytes = (uint64_t)layer->n * layer->out_c * layer->out_h * layer->out_w * sizeof(int32_t);
-    if (input_elements > input->size_bytes || weight_elements > weight->size_bytes || output_bytes > output->size_bytes ||
+    if (bcuda_storage_bytes(input->dtype, input_elements) > input->size_bytes ||
+        bcuda_storage_bytes(weight->dtype, weight_elements) > weight->size_bytes ||
+        output_bytes > output->size_bytes ||
         (bias != 0 && (uint64_t)layer->out_c * sizeof(int32_t) > bias->size_bytes)) {
         return BC_STATUS_SHAPE_MISMATCH;
     }
@@ -766,7 +964,11 @@ static int bcuda_execute_conv2d_layer(BcudaGraphRuntime *runtime, const BcudaBuf
                                 }
                                 uint64_t input_idx = (((uint64_t)n * layer->c + ic) * layer->h + (uint32_t)ih) * layer->w + (uint32_t)iw;
                                 uint64_t weight_idx = (((uint64_t)oc * layer->c + ic) * layer->kernel_h + kh) * layer->kernel_w + kw;
-                                acc += (int32_t)src[input_idx] * (int32_t)wgt[weight_idx];
+                                int8_t input_value = input->dtype == BC_DTYPE_INT4
+                                    ? bcuda_read_i4((const uint8_t *)src, input_idx) : src[input_idx];
+                                int8_t weight_value = weight->dtype == BC_DTYPE_INT4
+                                    ? bcuda_read_i4((const uint8_t *)wgt, weight_idx) : wgt[weight_idx];
+                                acc += (int32_t)input_value * (int32_t)weight_value;
                             }
                         }
                     }
@@ -777,6 +979,66 @@ static int bcuda_execute_conv2d_layer(BcudaGraphRuntime *runtime, const BcudaBuf
         }
     }
     return BC_STATUS_OK;
+}
+
+static int bcuda_fused_conv_eligible(
+    BcudaGraphRuntime *runtime,
+    const BcudaLayerDesc *conv,
+    const BcudaLayerDesc *requant,
+    const BcudaLayerDesc *activation
+) {
+    return runtime != 0 && runtime->dma != 0 &&
+        runtime->dma->register_base != 0 &&
+        conv->op_type == BC_OP_CONV2D_GEMM &&
+        requant->op_type == BC_OP_REQUANTIZE &&
+        activation->op_type == BC_OP_ACTIVATION &&
+        conv->output == requant->input0 &&
+        requant->output == activation->input0 &&
+        ((uint64_t)conv->out_h * conv->out_w & 7u) == 0u;
+}
+
+static int bcuda_execute_fused_conv_layers(
+    BcudaGraphRuntime *runtime,
+    const BcudaBuffer *model_buffer,
+    const BcudaModelDesc *model,
+    const BcudaLayerDesc *conv,
+    const BcudaLayerDesc *requant,
+    const BcudaLayerDesc *activation
+) {
+    BcudaBuffer *input = 0;
+    BcudaBuffer *weight = 0;
+    BcudaBuffer *bias = 0;
+    BcudaBuffer *scale = 0;
+    BcudaBuffer *output = 0;
+    BcudaRequantParams params;
+    int status = bcuda_graph_table_buffer(model_buffer, model,
+                                          conv->input0, &input);
+    if (status != BC_STATUS_OK) return status;
+    status = bcuda_graph_table_buffer(model_buffer, model,
+                                      conv->weight, &weight);
+    if (status != BC_STATUS_OK) return status;
+    if (conv->bias != 0) {
+        status = bcuda_graph_table_buffer(model_buffer, model,
+                                          conv->bias, &bias);
+        if (status != BC_STATUS_OK) return status;
+    }
+    status = bcuda_graph_table_buffer(model_buffer, model,
+                                      requant->scale, &scale);
+    if (status != BC_STATUS_OK) return status;
+    status = bcuda_graph_table_buffer(model_buffer, model,
+                                      activation->output, &output);
+    if (status != BC_STATUS_OK) return status;
+    if (scale->dtype != BC_DTYPE_INT32 ||
+        scale->size_bytes < sizeof(params)) {
+        return BC_STATUS_SHAPE_MISMATCH;
+    }
+    memcpy(&params, scale->virtual_address, sizeof(params));
+    status = bcuda_axi_dma_submit_fused_conv2d(
+        runtime->dma, conv, &params, activation,
+        input, weight, bias, output
+    );
+    return status == BC_STATUS_OK ?
+           bcuda_axi_dma_poll_done(runtime->dma) : status;
 }
 
 void bcuda_graph_runtime_init(BcudaGraphRuntime *runtime, BcudaAxiDma *dma) {
@@ -807,7 +1069,11 @@ int bcuda_execute_gemm(BcudaGraphRuntime *runtime, const BcudaGemmDesc *desc) {
         return status;
     }
 
-    if ((desc->M & 15u) != 0u || (desc->N & 15u) != 0u || (desc->K & 15u) != 0u) {
+    uint32_t tile_mask = desc->A_dtype == BC_DTYPE_INT4 ? 7u : 15u;
+    if ((desc->M & tile_mask) != 0u || (desc->N & tile_mask) != 0u || (desc->K & tile_mask) != 0u) {
+        if (desc->A_dtype == BC_DTYPE_INT4) {
+            return BC_STATUS_SHAPE_MISMATCH;
+        }
         return bcuda_execute_padded_gemm(runtime, desc, A, B, C);
     }
 
@@ -879,9 +1145,23 @@ int bcuda_execute_graph(BcudaGraphRuntime *runtime, const BcudaGraphExecDesc *de
 
     for (uint32_t i = 0; i < model_desc.num_layers; i++) {
         BcudaLayerDesc layer;
+        BcudaLayerDesc fused_requant;
+        BcudaLayerDesc fused_activation;
+        uint32_t fused_skip = 0;
+        int fused_candidate = 0;
         status = bcuda_copy_layer(model, &model_desc, i, &layer);
         if (status != BC_STATUS_OK) {
             return status;
+        }
+        if (i + 2u < model_desc.num_layers &&
+            layer.op_type == BC_OP_CONV2D_GEMM &&
+            bcuda_copy_layer(model, &model_desc, i + 1u,
+                             &fused_requant) == BC_STATUS_OK &&
+            bcuda_copy_layer(model, &model_desc, i + 2u,
+                             &fused_activation) == BC_STATUS_OK) {
+            fused_candidate = bcuda_fused_conv_eligible(
+                runtime, &layer, &fused_requant, &fused_activation
+            );
         }
         BcudaDiagnosticsRecord *record = diagnostics_header == 0 ? 0 : &diagnostics_records[i];
         if (record != 0) {
@@ -901,7 +1181,24 @@ int bcuda_execute_graph(BcudaGraphRuntime *runtime, const BcudaGraphExecDesc *de
                 status = bcuda_execute_gemm_layer(runtime, model, &model_desc, &layer);
                 break;
             case BC_OP_CONV2D_GEMM:
-                status = bcuda_execute_conv2d_layer(runtime, model, &model_desc, &layer);
+                if (fused_candidate) {
+                    status = bcuda_execute_fused_conv_layers(
+                        runtime, model, &model_desc, &layer,
+                        &fused_requant, &fused_activation
+                    );
+                    if (status == BC_STATUS_OK) {
+                        fused_skip = 2u;
+                    } else if (status == BC_STATUS_SHAPE_MISMATCH ||
+                               status == BC_STATUS_UNSUPPORTED_DTYPE) {
+                        status = bcuda_execute_conv2d_layer(
+                            runtime, model, &model_desc, &layer
+                        );
+                    }
+                } else {
+                    status = bcuda_execute_conv2d_layer(
+                        runtime, model, &model_desc, &layer
+                    );
+                }
                 break;
             case BC_OP_ACTIVATION:
                 status = bcuda_execute_activation_layer(runtime, model, &model_desc, &layer);
@@ -942,6 +1239,16 @@ int bcuda_execute_graph(BcudaGraphRuntime *runtime, const BcudaGraphExecDesc *de
                     diagnostics_header->peak_operations_per_cycle
                 );
             }
+            if (status == BC_STATUS_OK && layer.op_type != BC_OP_RESHAPE &&
+                (desc->flags & BCUDA_DIAG_HARDWARE) != 0) {
+                bcuda_diag_hardware(runtime, record);
+            }
+            if (status == BC_STATUS_OK && fused_skip == 0u &&
+                (desc->flags & BCUDA_DIAG_ACCURACY) != 0) {
+                bcuda_diag_accuracy(
+                    model, &model_desc, &layer, record
+                );
+            }
             diagnostics_header->layer_count = i + 1;
         }
         if (status != BC_STATUS_OK) {
@@ -954,6 +1261,31 @@ int bcuda_execute_graph(BcudaGraphRuntime *runtime, const BcudaGraphExecDesc *de
                     (desc->flags & BCUDA_DIAG_MEMORY) != 0 ? bcuda_buffer_bytes_used() : 0;
             }
             return status;
+        }
+        if (fused_skip != 0u) {
+            if (diagnostics_header != 0) {
+                const BcudaLayerDesc *fused_layers[2] = {
+                    &fused_requant, &fused_activation
+                };
+                for (uint32_t skipped = 0; skipped < 2u; skipped++) {
+                    BcudaDiagnosticsRecord *skipped_record =
+                        &diagnostics_records[i + skipped + 1u];
+                    memset(skipped_record, 0, sizeof(*skipped_record));
+                    skipped_record->layer_index = i + skipped + 1u;
+                    skipped_record->op_type =
+                        fused_layers[skipped]->op_type;
+                    skipped_record->status = BC_STATUS_OK;
+                    if (skipped == 1u &&
+                        (desc->flags & BCUDA_DIAG_ACCURACY) != 0) {
+                        bcuda_diag_accuracy(
+                            model, &model_desc, fused_layers[skipped],
+                            skipped_record
+                        );
+                    }
+                }
+                diagnostics_header->layer_count = i + 3u;
+            }
+            i += fused_skip;
         }
     }
     if (diagnostics_header != 0) {

@@ -14,11 +14,23 @@ import argparse
 PL_BASE = 0x43C80000
 XLNK_DEVICE = "/dev/xlnk"
 XLNK_IOCALLOCBUF = 0xC0045802  # _IOWR('X', 2, unsigned long) on 32-bit ARM.
-TILE = 16
+TILE = 8
+INT4_CONTROL = 0x100
 
 
 def round_up_tile(value: int) -> int:
     return (value + TILE - 1) & ~(TILE - 1)
+
+
+def write_int4(data: mmap.mmap, row_stride: int, row: int, col: int, value: int) -> None:
+    offset = row * row_stride + col // 2
+    nibble = value & 0xF
+    current = data[offset]
+    data[offset] = (
+        (current & 0x0F) | (nibble << 4)
+        if col & 1
+        else (current & 0xF0) | nibble
+    )
 
 
 class XlnkBuffer:
@@ -54,6 +66,8 @@ def main() -> None:
     hw_m = round_up_tile(args.m) if args.pad_to_tile else args.m
     hw_n = round_up_tile(args.n) if args.pad_to_tile else args.n
     hw_k = round_up_tile(args.k) if args.pad_to_tile else args.k
+    a_stride = (hw_k + 1) // 2
+    b_stride = (hw_n + 1) // 2
 
     fd = os.open(XLNK_DEVICE, os.O_RDWR)
     a = b = c = None
@@ -61,8 +75,8 @@ def main() -> None:
     page_base = PL_BASE & ~(page_size - 1)
     page_offset = PL_BASE - page_base
     try:
-        a = XlnkBuffer(fd, hw_m * hw_k)
-        b = XlnkBuffer(fd, hw_k * hw_n)
+        a = XlnkBuffer(fd, hw_m * a_stride)
+        b = XlnkBuffer(fd, hw_k * b_stride)
         c = XlnkBuffer(fd, hw_m * hw_n * 4)
         print(
             f"allocated A=0x{a.physical_address:08x} B=0x{b.physical_address:08x} C=0x{c.physical_address:08x}",
@@ -75,19 +89,19 @@ def main() -> None:
         b_values = [0] * (args.k * args.n)
         for row in range(args.m):
             for col in range(args.k):
-                value = rng.randint(-8, 7) if rng is not None else ((row * 3 + col * 5) % 17) - 8
+                value = rng.randint(-8, 7) if rng is not None else ((row * 3 + col * 5) % 16) - 8
                 a_values[row * args.k + col] = value
-                struct.pack_into("<b", a.data, row * hw_k + col, value)
+                write_int4(a.data, a_stride, row, col, value)
         if args.identity_b:
             for index in range(min(args.k, args.n)):
                 b_values[index * args.n + index] = 1
-                struct.pack_into("<b", b.data, index * hw_n + index, 1)
+                write_int4(b.data, b_stride, index, index, 1)
         else:
             for row in range(args.k):
                 for col in range(args.n):
                     value = rng.randint(-8, 7) if rng is not None else ((row * 7 + col * 2) % 13) - 6
                     b_values[row * args.n + col] = value
-                    struct.pack_into("<b", b.data, row * hw_n + col, value)
+                    write_int4(b.data, b_stride, row, col, value)
         expected = None if args.identity_b else [
             sum(a_values[row * args.k + inner] * b_values[inner * args.n + col] for inner in range(args.k))
             for row in range(args.m) for col in range(args.n)
@@ -112,16 +126,16 @@ def main() -> None:
                 write(0x08, a.physical_address)
                 write(0x0C, b.physical_address)
                 write(0x10, c.physical_address)
-                write(0x14, hw_k)
-                write(0x18, hw_n)
+                write(0x14, a_stride)
+                write(0x18, b_stride)
                 write(0x1C, hw_n * 4)
                 write(0x20, hw_m)
                 write(0x24, hw_n)
                 write(0x28, hw_k)
                 write(0x2C, TILE)
-                write(0x30, 1)
+                write(0x30, 2)
                 print("starting control", flush=True)
-                write(0x00, 1)
+                write(0x00, INT4_CONTROL | 1)
                 print("submitted GEMM", flush=True)
 
                 deadline = time.monotonic() + args.timeout_seconds

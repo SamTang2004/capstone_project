@@ -41,6 +41,46 @@ C3_OUT = 48
 # Quantization backend
 # ============================================================
 
+class TruncatingFakeQuantize(tq.FakeQuantize):
+    """Per-tensor fake quantizer matching BudgetCUDA's truncating requantizer."""
+
+    def forward(self, x):
+        if self.observer_enabled[0] == 1:
+            self.activation_post_process(x.detach())
+            scale, zero_point = self.calculate_qparams()
+            self.scale.resize_(scale.shape)
+            self.zero_point.resize_(zero_point.shape)
+            self.scale.copy_(scale)
+            self.zero_point.copy_(zero_point)
+        if self.fake_quant_enabled[0] == 0:
+            return x
+        scale = self.scale.to(device=x.device, dtype=x.dtype)
+        zero_point = self.zero_point.to(device=x.device, dtype=x.dtype)
+        quantized = torch.trunc(x / scale) + zero_point
+        quantized = torch.clamp(quantized, self.quant_min, self.quant_max)
+        dequantized = (quantized - zero_point) * scale
+        return x + (dequantized - x).detach()
+
+
+class TruncatingAvgPool2d(nn.AvgPool2d):
+    """AveragePool with the unchanged-scale integer truncation used by PL."""
+
+    def __init__(self, kernel_size):
+        super().__init__(kernel_size)
+        object.__setattr__(self, "_scale_source", None)
+
+    def bind_scale(self, fake_quant) -> None:
+        object.__setattr__(self, "_scale_source", fake_quant)
+
+    def forward(self, x):
+        pooled = super().forward(x)
+        source = self._scale_source
+        if source is None:
+            return pooled
+        scale = source.scale.to(device=pooled.device, dtype=pooled.dtype)
+        quantized = torch.trunc(pooled / scale).clamp(-8, 7) * scale
+        return pooled + (quantized - pooled).detach()
+
 def select_quant_backend():
     engines = torch.backends.quantized.supported_engines
     print("Supported quantized engines:", engines)
@@ -60,19 +100,19 @@ def select_quant_backend():
 
 
 def budgetcuda_qat_qconfig() -> tq.QConfig:
-    """PyTorch eager-QAT profile matching BudgetCUDA's signed PL arithmetic.
+    """PyTorch eager-QAT profile matching BudgetCUDA's signed INT4 arithmetic.
 
     The deployed accelerator has one requantization scale per tensor and its
     activation units interpret zero as the real zero.  Therefore this profile
     deliberately uses signed, per-tensor symmetric fake quantization for both
     activations and weights.  It is built entirely from torch.ao primitives.
     """
-    fake_quant = tq.FakeQuantize.with_args(
+    fake_quant = TruncatingFakeQuantize.with_args(
         observer=tq.MovingAverageMinMaxObserver,
         dtype=torch.qint8,
         qscheme=torch.per_tensor_symmetric,
-        quant_min=-127,
-        quant_max=127,
+        quant_min=-8,
+        quant_max=7,
         reduce_range=False,
     )
     return tq.QConfig(activation=fake_quant, weight=fake_quant)
@@ -85,7 +125,10 @@ def prepare_budgetcuda_qat(model: nn.Module) -> nn.Module:
         model.fuse_model()
     model.train()
     model.qconfig = budgetcuda_qat_qconfig()
-    return tq.prepare_qat(model, inplace=False)
+    prepared = tq.prepare_qat(model, inplace=False)
+    if isinstance(prepared.avgpool, TruncatingAvgPool2d):
+        prepared.avgpool.bind_scale(prepared.conv3.activation_post_process)
+    return prepared
 
 
 # ============================================================
@@ -198,28 +241,32 @@ class QATFruitCNN64(nn.Module):
     This is better for FPGA/HLS than AdaptiveAvgPool2d.
     """
 
-    def __init__(self, num_classes=3):
+    def __init__(self, num_classes=3, channels=(C1_OUT, C2_OUT, C3_OUT)):
         super().__init__()
+        c1, c2, c3 = (int(value) for value in channels)
+        if min(c1, c2, c3) <= 0:
+            raise ValueError("Channel counts must be positive")
+        self.channels = (c1, c2, c3)
 
         self.quant = tq.QuantStub()
 
-        self.conv1 = nn.Conv2d(3, C1_OUT, kernel_size=3, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(C1_OUT)
+        self.conv1 = nn.Conv2d(3, c1, kernel_size=3, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(c1)
         self.relu1 = nn.ReLU(inplace=False)
         self.pool1 = nn.MaxPool2d(2)
 
-        self.conv2 = nn.Conv2d(C1_OUT, C2_OUT, kernel_size=3, padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(C2_OUT)
+        self.conv2 = nn.Conv2d(c1, c2, kernel_size=3, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(c2)
         self.relu2 = nn.ReLU(inplace=False)
         self.pool2 = nn.MaxPool2d(2)
 
-        self.conv3 = nn.Conv2d(C2_OUT, C3_OUT, kernel_size=3, padding=1, bias=False)
-        self.bn3 = nn.BatchNorm2d(C3_OUT)
+        self.conv3 = nn.Conv2d(c2, c3, kernel_size=3, padding=1, bias=False)
+        self.bn3 = nn.BatchNorm2d(c3)
         self.relu3 = nn.ReLU(inplace=False)
 
-        self.avgpool = nn.AvgPool2d(kernel_size=16)
+        self.avgpool = TruncatingAvgPool2d(kernel_size=16)
 
-        self.fc = nn.Linear(C3_OUT, num_classes)
+        self.fc = nn.Linear(c3, num_classes)
 
         self.dequant = tq.DeQuantStub()
 
@@ -321,12 +368,22 @@ def load_float_checkpoint_into_qat(model, checkpoint_path: Path):
             skipped.append((src, dst, "missing in QAT model"))
             continue
 
-        if state[src].shape != mapped_state[dst].shape:
-            skipped.append((src, dst, f"shape mismatch {state[src].shape} vs {mapped_state[dst].shape}"))
+        source_value = state[src]
+        target_value = mapped_state[dst]
+        if source_value.shape == target_value.shape:
+            mapped_state[dst] = source_value
+            loaded.append((src, dst))
             continue
-
-        mapped_state[dst] = state[src]
-        loaded.append((src, dst))
+        if (
+            source_value.ndim == target_value.ndim
+            and all(source <= target for source, target in zip(source_value.shape, target_value.shape))
+        ):
+            widened = target_value.clone()
+            widened[tuple(slice(0, size) for size in source_value.shape)] = source_value
+            mapped_state[dst] = widened
+            loaded.append((src, f"{dst} (partial {tuple(source_value.shape)})"))
+            continue
+        skipped.append((src, dst, f"shape mismatch {source_value.shape} vs {target_value.shape}"))
 
     model.load_state_dict(mapped_state, strict=False)
 
@@ -508,14 +565,7 @@ def main():
             print("  but a 64x64 float checkpoint is preferable.")
             print()
 
-    # Fuse before QAT.
-    model_fp32.eval()
-    model_fp32.fuse_model()
-
-    # Prepare QAT.
-    model_fp32.train()
-    model_fp32.qconfig = tq.get_default_qat_qconfig(qengine)
-    model_qat = tq.prepare_qat(model_fp32, inplace=False)
+    model_qat = prepare_budgetcuda_qat(model_fp32)
 
     model_qat = model_qat.to(device)
 

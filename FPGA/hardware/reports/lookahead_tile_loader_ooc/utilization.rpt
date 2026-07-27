@@ -1,0 +1,32 @@
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2024 Advanced Micro Devices, Inc. All Rights Reserved.
+------------------------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version : Vivado v.2024.2 (win64) Build 5239630 Fri Nov 08 22:35:27 MST 2024
+| Date         : Sun Jul 26 13:31:14 2026
+| Host         : Server_0 running 64-bit major release  (build 9200)
+| Command      : report_utilization -hierarchical -file C:/python_projects/capstone_project/FPGA/hardware/reports/lookahead_tile_loader_ooc/utilization.rpt
+| Design       : lookahead_tile_loader_int4
+| Device       : xc7z020clg400-1
+| Speed File   : -1
+| Design State : Synthesized
+------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Utilization Design Information
+
+Table of Contents
+-----------------
+1. Utilization by Hierarchy
+
+1. Utilization by Hierarchy
+---------------------------
+
++--------------------------------+-----------------------+------------+------------+---------+------+-----+--------+--------+------------+
+|            Instance            |         Module        | Total LUTs | Logic LUTs | LUTRAMs | SRLs | FFs | RAMB36 | RAMB18 | DSP Blocks |
++--------------------------------+-----------------------+------------+------------+---------+------+-----+--------+--------+------------+
+| lookahead_tile_loader_int4     |                 (top) |        610 |        350 |     260 |    0 | 161 |      0 |      3 |          0 |
+|   (lookahead_tile_loader_int4) |                 (top) |        437 |        177 |     260 |    0 | 161 |      0 |      0 |          0 |
+|   a_storage                    |   lookahead_tile_bram |         33 |         33 |       0 |    0 |   0 |      0 |      1 |          0 |
+|   b0_storage                   | lookahead_tile_bram_0 |         33 |         33 |       0 |    0 |   0 |      0 |      1 |          0 |
+|   b1_storage                   | lookahead_tile_bram_1 |        107 |        107 |       0 |    0 |   0 |      0 |      1 |          0 |
++--------------------------------+-----------------------+------------+------------+---------+------+-----+--------+--------+------------+
+
+

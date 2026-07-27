@@ -1,0 +1,1692 @@
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2024 Advanced Micro Devices, Inc. All Rights Reserved.
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version : Vivado v.2024.2 (win64) Build 5239630 Fri Nov 08 22:35:27 MST 2024
+| Date         : Sun Jul 26 13:31:20 2026
+| Host         : Server_0 running 64-bit major release  (build 9200)
+| Command      : report_timing_summary -delay_type max -max_paths 20 -file C:/python_projects/capstone_project/FPGA/hardware/reports/lookahead_tile_loader_ooc/timing.rpt
+| Design       : lookahead_tile_loader_int4
+| Device       : 7z020-clg400
+| Speed File   : -1  PRODUCTION 1.12 2019-11-22
+| Design State : Synthesized
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Timing Summary Report
+
+------------------------------------------------------------------------------------------------
+| Timer Settings
+| --------------
+------------------------------------------------------------------------------------------------
+
+  Enable Multi Corner Analysis               :  Yes
+  Enable Pessimism Removal                   :  Yes
+  Pessimism Removal Resolution               :  Nearest Common Node
+  Enable Input Delay Default Clock           :  No
+  Enable Preset / Clear Arcs                 :  No
+  Disable Flight Delays                      :  No
+  Ignore I/O Paths                           :  No
+  Timing Early Launch at Borrowing Latches   :  No
+  Borrow Time for Max Delay Exceptions       :  Yes
+  Merge Timing Exceptions                    :  Yes
+  Inter-SLR Compensation                     :  Conservative
+
+  Corner  Analyze    Analyze    
+  Name    Max Paths  Min Paths  
+  ------  ---------  ---------  
+  Slow    Yes        Yes        
+  Fast    Yes        Yes        
+
+
+------------------------------------------------------------------------------------------------
+| Report Methodology
+| ------------------
+------------------------------------------------------------------------------------------------
+
+No report available as report_methodology has not been run prior. Run report_methodology on the current design for the summary of methodology violations.
+
+
+
+check_timing report
+
+Table of Contents
+-----------------
+1. checking no_clock (0)
+2. checking constant_clock (0)
+3. checking pulse_width_clock (0)
+4. checking unconstrained_internal_endpoints (0)
+5. checking no_input_delay (282)
+6. checking no_output_delay (192)
+7. checking multiple_clock (0)
+8. checking generated_clocks (0)
+9. checking loops (0)
+10. checking partial_input_delay (0)
+11. checking partial_output_delay (0)
+12. checking latch_loops (0)
+
+1. checking no_clock (0)
+------------------------
+ There are 0 register/latch pins with no clock.
+
+
+2. checking constant_clock (0)
+------------------------------
+ There are 0 register/latch pins with constant_clock.
+
+
+3. checking pulse_width_clock (0)
+---------------------------------
+ There are 0 register/latch pins which need pulse_width check
+
+
+4. checking unconstrained_internal_endpoints (0)
+------------------------------------------------
+ There are 0 pins that are not constrained for maximum delay.
+
+ There are 0 pins that are not constrained for maximum delay due to constant clock.
+
+
+5. checking no_input_delay (282)
+--------------------------------
+ There are 282 input ports with no input delay specified. (HIGH)
+
+ There are 0 input ports with no input delay but user has a false path constraint.
+
+
+6. checking no_output_delay (192)
+---------------------------------
+ There are 192 ports with no output delay specified. (HIGH)
+
+ There are 0 ports with no output delay but user has a false path constraint
+
+ There are 0 ports with no output delay but with a timing clock defined on it or propagating through it
+
+
+7. checking multiple_clock (0)
+------------------------------
+ There are 0 register/latch pins with multiple clocks.
+
+
+8. checking generated_clocks (0)
+--------------------------------
+ There are 0 generated clocks that are not connected to a clock source.
+
+
+9. checking loops (0)
+---------------------
+ There are 0 combinational loops in the design.
+
+
+10. checking partial_input_delay (0)
+------------------------------------
+ There are 0 input ports with partial input delay specified.
+
+
+11. checking partial_output_delay (0)
+-------------------------------------
+ There are 0 ports with partial output delay specified.
+
+
+12. checking latch_loops (0)
+----------------------------
+ There are 0 combinational latch loops in the design through latch input
+
+
+
+------------------------------------------------------------------------------------------------
+| Design Timing Summary
+| ---------------------
+------------------------------------------------------------------------------------------------
+
+    WNS(ns)      TNS(ns)  TNS Failing Endpoints  TNS Total Endpoints     WPWS(ns)     TPWS(ns)  TPWS Failing Endpoints  TPWS Total Endpoints  
+    -------      -------  ---------------------  -------------------     --------     --------  ----------------------  --------------------  
+      3.674        0.000                      0                 2098        3.750        0.000                       0                   679  
+
+
+All user specified timing constraints are met.
+
+
+------------------------------------------------------------------------------------------------
+| Clock Summary
+| -------------
+------------------------------------------------------------------------------------------------
+
+Clock                 Waveform(ns)       Period(ns)      Frequency(MHz)
+-----                 ------------       ----------      --------------
+lookahead_loader_clk  {0.000 5.000}      10.000          100.000         
+
+
+------------------------------------------------------------------------------------------------
+| Intra Clock Table
+| -----------------
+------------------------------------------------------------------------------------------------
+
+Clock                     WNS(ns)      TNS(ns)  TNS Failing Endpoints  TNS Total Endpoints     WPWS(ns)     TPWS(ns)  TPWS Failing Endpoints  TPWS Total Endpoints  
+-----                     -------      -------  ---------------------  -------------------     --------     --------  ----------------------  --------------------  
+lookahead_loader_clk        3.674        0.000                      0                 2098        3.750        0.000                       0                   679  
+
+
+------------------------------------------------------------------------------------------------
+| Inter Clock Table
+| -----------------
+------------------------------------------------------------------------------------------------
+
+From Clock    To Clock          WNS(ns)      TNS(ns)  TNS Failing Endpoints  TNS Total Endpoints  
+----------    --------          -------      -------  ---------------------  -------------------  
+
+
+------------------------------------------------------------------------------------------------
+| Other Path Groups Table
+| -----------------------
+------------------------------------------------------------------------------------------------
+
+Path Group    From Clock    To Clock          WNS(ns)      TNS(ns)  TNS Failing Endpoints  TNS Total Endpoints  
+----------    ----------    --------          -------      -------  ---------------------  -------------------  
+
+
+------------------------------------------------------------------------------------------------
+| Timing Details
+| --------------
+------------------------------------------------------------------------------------------------
+
+
+---------------------------------------------------------------------------------------------------
+From Clock:  lookahead_loader_clk
+  To Clock:  lookahead_loader_clk
+
+Setup :            0  Failing Endpoints,  Worst Slack        3.674ns,  Total Violation        0.000ns
+Hold  :           NA  Failing Endpoints,  Worst Slack           NA  ,  Total Violation           NA
+PW    :            0  Failing Endpoints,  Worst Slack        3.750ns,  Total Violation        0.000ns
+---------------------------------------------------------------------------------------------------
+
+
+Max Delay Paths
+--------------------------------------------------------------------------------------
+Slack (MET) :             3.674ns  (required time - arrival time)
+  Source:                 response_bank_reg[0]/C
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Destination:            response_address_reg[1]/D
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Path Group:             lookahead_loader_clk
+  Path Type:              Setup (Max at Slow Process Corner)
+  Requirement:            10.000ns  (lookahead_loader_clk rise@10.000ns - lookahead_loader_clk rise@0.000ns)
+  Data Path Delay:        6.319ns  (logic 2.723ns (43.092%)  route 3.596ns (56.908%))
+  Logic Levels:           7  (CARRY4=1 LUT5=1 LUT6=2 MUXF7=2 RAMD32=1)
+  Clock Path Skew:        -0.049ns (DCD - SCD + CPR)
+    Destination Clock Delay (DCD):    0.924ns = ( 10.924 - 10.000 ) 
+    Source Clock Delay      (SCD):    0.973ns
+    Clock Pessimism Removal (CPR):    0.000ns
+  Clock Uncertainty:      0.035ns  ((TSJ^2 + TIJ^2)^1/2 + DJ) / 2 + PE
+    Total System Jitter     (TSJ):    0.071ns
+    Total Input Jitter      (TIJ):    0.000ns
+    Discrete Jitter          (DJ):    0.000ns
+    Phase Error              (PE):    0.000ns
+
+    Location             Delay type                Incr(ns)  Path(ns)    Netlist Resource(s)
+  -------------------------------------------------------------------    -------------------
+                         (clock lookahead_loader_clk rise edge)
+                                                      0.000     0.000 r  
+                                                      0.000     0.000 r  clk (IN)
+                         net (fo=678, unset)          0.973     0.973    clk
+                         FDRE                                         r  response_bank_reg[0]/C
+  -------------------------------------------------------------------    -------------------
+                         FDRE (Prop_fdre_C_Q)         0.518     1.491 r  response_bank_reg[0]/Q
+                         net (fo=35, unplaced)        1.038     2.529    b0_stride_mem_reg_r2_0_3_0_5/ADDRA0
+                         RAMD32 (Prop_ramd32_RADR0_O)
+                                                      0.321     2.850 r  b0_stride_mem_reg_r2_0_3_0_5/RAMA/O
+                         net (fo=1, unplaced)         1.111     3.961    b0_stride_mem_reg_r2_0_3_0_5_n_1
+                         LUT6 (Prop_lut6_I1_O)        0.124     4.085 r  response_address[1]_i_17/O
+                         net (fo=1, unplaced)         0.000     4.085    response_address[1]_i_17_n_0
+                         CARRY4 (Prop_carry4_S[0]_O[1])
+                                                      0.427     4.512 r  response_address_reg[1]_i_11/O[1]
+                         net (fo=3, unplaced)         0.543     5.055    response_address[1]
+                         MUXF7 (Prop_muxf7_S_O)       0.496     5.551 r  response_address_reg[1]_i_8/O
+                         net (fo=1, unplaced)         0.452     6.003    response_address_reg[1]_i_8_n_0
+                         LUT5 (Prop_lut5_I4_O)        0.298     6.301 r  response_address[1]_i_5/O
+                         net (fo=1, unplaced)         0.000     6.301    response_address[1]_i_5_n_0
+                         MUXF7 (Prop_muxf7_I0_O)      0.241     6.542 r  response_address_reg[1]_i_2/O
+                         net (fo=1, unplaced)         0.452     6.994    response_address_reg[1]_i_2_n_0
+                         LUT6 (Prop_lut6_I0_O)        0.298     7.292 r  response_address[1]_i_1/O
+                         net (fo=1, unplaced)         0.000     7.292    response_address[1]_i_1_n_0
+                         FDRE                                         r  response_address_reg[1]/D
+  -------------------------------------------------------------------    -------------------
+
+                         (clock lookahead_loader_clk rise edge)
+                                                     10.000    10.000 r  
+                                                      0.000    10.000 r  clk (IN)
+                         net (fo=678, unset)          0.924    10.924    clk
+                         FDRE                                         r  response_address_reg[1]/C
+                         clock pessimism              0.000    10.924    
+                         clock uncertainty           -0.035    10.889    
+                         FDRE (Setup_fdre_C_D)        0.077    10.966    response_address_reg[1]
+  -------------------------------------------------------------------
+                         required time                         10.966    
+                         arrival time                          -7.292    
+  -------------------------------------------------------------------
+                         slack                                  3.674    
+
+Slack (MET) :             3.792ns  (required time - arrival time)
+  Source:                 issue_bank_reg[0]/C
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Destination:            issue_address_reg[31]/D
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Path Group:             lookahead_loader_clk
+  Path Type:              Setup (Max at Slow Process Corner)
+  Requirement:            10.000ns  (lookahead_loader_clk rise@10.000ns - lookahead_loader_clk rise@0.000ns)
+  Data Path Delay:        6.201ns  (logic 2.940ns (47.412%)  route 3.261ns (52.588%))
+  Logic Levels:           12  (CARRY4=8 LUT6=3 RAMD32=1)
+  Clock Path Skew:        -0.049ns (DCD - SCD + CPR)
+    Destination Clock Delay (DCD):    0.924ns = ( 10.924 - 10.000 ) 
+    Source Clock Delay      (SCD):    0.973ns
+    Clock Pessimism Removal (CPR):    0.000ns
+  Clock Uncertainty:      0.035ns  ((TSJ^2 + TIJ^2)^1/2 + DJ) / 2 + PE
+    Total System Jitter     (TSJ):    0.071ns
+    Total Input Jitter      (TIJ):    0.000ns
+    Discrete Jitter          (DJ):    0.000ns
+    Phase Error              (PE):    0.000ns
+
+    Location             Delay type                Incr(ns)  Path(ns)    Netlist Resource(s)
+  -------------------------------------------------------------------    -------------------
+                         (clock lookahead_loader_clk rise edge)
+                                                      0.000     0.000 r  
+                                                      0.000     0.000 r  clk (IN)
+                         net (fo=678, unset)          0.973     0.973    clk
+                         FDRE                                         r  issue_bank_reg[0]/C
+  -------------------------------------------------------------------    -------------------
+                         FDRE (Prop_fdre_C_Q)         0.518     1.491 r  issue_bank_reg[0]/Q
+                         net (fo=148, unplaced)       1.074     2.565    b0_stride_mem_reg_r1_0_3_0_5/ADDRA0
+                         RAMD32 (Prop_ramd32_RADR0_O)
+                                                      0.321     2.886 r  b0_stride_mem_reg_r1_0_3_0_5/RAMA/O
+                         net (fo=1, unplaced)         1.111     3.997    b0_stride_mem_reg_r1_0_3_0_5_n_1
+                         LUT6 (Prop_lut6_I1_O)        0.124     4.121 r  issue_address[3]_i_7/O
+                         net (fo=1, unplaced)         0.000     4.121    issue_address[3]_i_7_n_0
+                         CARRY4 (Prop_carry4_S[0]_CO[3])
+                                                      0.513     4.634 r  issue_address_reg[3]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.009     4.643    issue_address_reg[3]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.760 r  issue_address_reg[7]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.760    issue_address_reg[7]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.877 r  issue_address_reg[11]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.877    issue_address_reg[11]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.994 r  issue_address_reg[15]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.994    issue_address_reg[15]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     5.111 r  issue_address_reg[19]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     5.111    issue_address_reg[19]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     5.228 r  issue_address_reg[23]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     5.228    issue_address_reg[23]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     5.345 r  issue_address_reg[27]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     5.345    issue_address_reg[27]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_O[3])
+                                                      0.331     5.676 r  issue_address_reg[31]_i_3/O[3]
+                         net (fo=1, unplaced)         0.618     6.294    data2[31]
+                         LUT6 (Prop_lut6_I1_O)        0.307     6.601 r  issue_address[31]_i_2/O
+                         net (fo=1, unplaced)         0.449     7.050    issue_address[31]_i_2_n_0
+                         LUT6 (Prop_lut6_I3_O)        0.124     7.174 r  issue_address[31]_i_1/O
+                         net (fo=1, unplaced)         0.000     7.174    issue_address2_out[31]
+                         FDRE                                         r  issue_address_reg[31]/D
+  -------------------------------------------------------------------    -------------------
+
+                         (clock lookahead_loader_clk rise edge)
+                                                     10.000    10.000 r  
+                                                      0.000    10.000 r  clk (IN)
+                         net (fo=678, unset)          0.924    10.924    clk
+                         FDRE                                         r  issue_address_reg[31]/C
+                         clock pessimism              0.000    10.924    
+                         clock uncertainty           -0.035    10.889    
+                         FDRE (Setup_fdre_C_D)        0.077    10.966    issue_address_reg[31]
+  -------------------------------------------------------------------
+                         required time                         10.966    
+                         arrival time                          -7.174    
+  -------------------------------------------------------------------
+                         slack                                  3.792    
+
+Slack (MET) :             3.909ns  (required time - arrival time)
+  Source:                 issue_bank_reg[0]/C
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Destination:            issue_address_reg[27]/D
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Path Group:             lookahead_loader_clk
+  Path Type:              Setup (Max at Slow Process Corner)
+  Requirement:            10.000ns  (lookahead_loader_clk rise@10.000ns - lookahead_loader_clk rise@0.000ns)
+  Data Path Delay:        6.084ns  (logic 2.823ns (46.400%)  route 3.261ns (53.600%))
+  Logic Levels:           11  (CARRY4=7 LUT6=3 RAMD32=1)
+  Clock Path Skew:        -0.049ns (DCD - SCD + CPR)
+    Destination Clock Delay (DCD):    0.924ns = ( 10.924 - 10.000 ) 
+    Source Clock Delay      (SCD):    0.973ns
+    Clock Pessimism Removal (CPR):    0.000ns
+  Clock Uncertainty:      0.035ns  ((TSJ^2 + TIJ^2)^1/2 + DJ) / 2 + PE
+    Total System Jitter     (TSJ):    0.071ns
+    Total Input Jitter      (TIJ):    0.000ns
+    Discrete Jitter          (DJ):    0.000ns
+    Phase Error              (PE):    0.000ns
+
+    Location             Delay type                Incr(ns)  Path(ns)    Netlist Resource(s)
+  -------------------------------------------------------------------    -------------------
+                         (clock lookahead_loader_clk rise edge)
+                                                      0.000     0.000 r  
+                                                      0.000     0.000 r  clk (IN)
+                         net (fo=678, unset)          0.973     0.973    clk
+                         FDRE                                         r  issue_bank_reg[0]/C
+  -------------------------------------------------------------------    -------------------
+                         FDRE (Prop_fdre_C_Q)         0.518     1.491 r  issue_bank_reg[0]/Q
+                         net (fo=148, unplaced)       1.074     2.565    b0_stride_mem_reg_r1_0_3_0_5/ADDRA0
+                         RAMD32 (Prop_ramd32_RADR0_O)
+                                                      0.321     2.886 r  b0_stride_mem_reg_r1_0_3_0_5/RAMA/O
+                         net (fo=1, unplaced)         1.111     3.997    b0_stride_mem_reg_r1_0_3_0_5_n_1
+                         LUT6 (Prop_lut6_I1_O)        0.124     4.121 r  issue_address[3]_i_7/O
+                         net (fo=1, unplaced)         0.000     4.121    issue_address[3]_i_7_n_0
+                         CARRY4 (Prop_carry4_S[0]_CO[3])
+                                                      0.513     4.634 r  issue_address_reg[3]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.009     4.643    issue_address_reg[3]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.760 r  issue_address_reg[7]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.760    issue_address_reg[7]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.877 r  issue_address_reg[11]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.877    issue_address_reg[11]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.994 r  issue_address_reg[15]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.994    issue_address_reg[15]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     5.111 r  issue_address_reg[19]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     5.111    issue_address_reg[19]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     5.228 r  issue_address_reg[23]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     5.228    issue_address_reg[23]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_O[3])
+                                                      0.331     5.559 r  issue_address_reg[27]_i_3/O[3]
+                         net (fo=1, unplaced)         0.618     6.177    data2[27]
+                         LUT6 (Prop_lut6_I1_O)        0.307     6.484 r  issue_address[27]_i_2/O
+                         net (fo=1, unplaced)         0.449     6.933    issue_address[27]_i_2_n_0
+                         LUT6 (Prop_lut6_I3_O)        0.124     7.057 r  issue_address[27]_i_1/O
+                         net (fo=1, unplaced)         0.000     7.057    issue_address2_out[27]
+                         FDRE                                         r  issue_address_reg[27]/D
+  -------------------------------------------------------------------    -------------------
+
+                         (clock lookahead_loader_clk rise edge)
+                                                     10.000    10.000 r  
+                                                      0.000    10.000 r  clk (IN)
+                         net (fo=678, unset)          0.924    10.924    clk
+                         FDRE                                         r  issue_address_reg[27]/C
+                         clock pessimism              0.000    10.924    
+                         clock uncertainty           -0.035    10.889    
+                         FDRE (Setup_fdre_C_D)        0.077    10.966    issue_address_reg[27]
+  -------------------------------------------------------------------
+                         required time                         10.966    
+                         arrival time                          -7.057    
+  -------------------------------------------------------------------
+                         slack                                  3.909    
+
+Slack (MET) :             4.026ns  (required time - arrival time)
+  Source:                 issue_bank_reg[0]/C
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Destination:            issue_address_reg[23]/D
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Path Group:             lookahead_loader_clk
+  Path Type:              Setup (Max at Slow Process Corner)
+  Requirement:            10.000ns  (lookahead_loader_clk rise@10.000ns - lookahead_loader_clk rise@0.000ns)
+  Data Path Delay:        5.967ns  (logic 2.706ns (45.349%)  route 3.261ns (54.651%))
+  Logic Levels:           10  (CARRY4=6 LUT6=3 RAMD32=1)
+  Clock Path Skew:        -0.049ns (DCD - SCD + CPR)
+    Destination Clock Delay (DCD):    0.924ns = ( 10.924 - 10.000 ) 
+    Source Clock Delay      (SCD):    0.973ns
+    Clock Pessimism Removal (CPR):    0.000ns
+  Clock Uncertainty:      0.035ns  ((TSJ^2 + TIJ^2)^1/2 + DJ) / 2 + PE
+    Total System Jitter     (TSJ):    0.071ns
+    Total Input Jitter      (TIJ):    0.000ns
+    Discrete Jitter          (DJ):    0.000ns
+    Phase Error              (PE):    0.000ns
+
+    Location             Delay type                Incr(ns)  Path(ns)    Netlist Resource(s)
+  -------------------------------------------------------------------    -------------------
+                         (clock lookahead_loader_clk rise edge)
+                                                      0.000     0.000 r  
+                                                      0.000     0.000 r  clk (IN)
+                         net (fo=678, unset)          0.973     0.973    clk
+                         FDRE                                         r  issue_bank_reg[0]/C
+  -------------------------------------------------------------------    -------------------
+                         FDRE (Prop_fdre_C_Q)         0.518     1.491 r  issue_bank_reg[0]/Q
+                         net (fo=148, unplaced)       1.074     2.565    b0_stride_mem_reg_r1_0_3_0_5/ADDRA0
+                         RAMD32 (Prop_ramd32_RADR0_O)
+                                                      0.321     2.886 r  b0_stride_mem_reg_r1_0_3_0_5/RAMA/O
+                         net (fo=1, unplaced)         1.111     3.997    b0_stride_mem_reg_r1_0_3_0_5_n_1
+                         LUT6 (Prop_lut6_I1_O)        0.124     4.121 r  issue_address[3]_i_7/O
+                         net (fo=1, unplaced)         0.000     4.121    issue_address[3]_i_7_n_0
+                         CARRY4 (Prop_carry4_S[0]_CO[3])
+                                                      0.513     4.634 r  issue_address_reg[3]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.009     4.643    issue_address_reg[3]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.760 r  issue_address_reg[7]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.760    issue_address_reg[7]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.877 r  issue_address_reg[11]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.877    issue_address_reg[11]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.994 r  issue_address_reg[15]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.994    issue_address_reg[15]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     5.111 r  issue_address_reg[19]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     5.111    issue_address_reg[19]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_O[3])
+                                                      0.331     5.442 r  issue_address_reg[23]_i_3/O[3]
+                         net (fo=1, unplaced)         0.618     6.060    data2[23]
+                         LUT6 (Prop_lut6_I1_O)        0.307     6.367 r  issue_address[23]_i_2/O
+                         net (fo=1, unplaced)         0.449     6.816    issue_address[23]_i_2_n_0
+                         LUT6 (Prop_lut6_I3_O)        0.124     6.940 r  issue_address[23]_i_1/O
+                         net (fo=1, unplaced)         0.000     6.940    issue_address2_out[23]
+                         FDRE                                         r  issue_address_reg[23]/D
+  -------------------------------------------------------------------    -------------------
+
+                         (clock lookahead_loader_clk rise edge)
+                                                     10.000    10.000 r  
+                                                      0.000    10.000 r  clk (IN)
+                         net (fo=678, unset)          0.924    10.924    clk
+                         FDRE                                         r  issue_address_reg[23]/C
+                         clock pessimism              0.000    10.924    
+                         clock uncertainty           -0.035    10.889    
+                         FDRE (Setup_fdre_C_D)        0.077    10.966    issue_address_reg[23]
+  -------------------------------------------------------------------
+                         required time                         10.966    
+                         arrival time                          -6.940    
+  -------------------------------------------------------------------
+                         slack                                  4.026    
+
+Slack (MET) :             4.039ns  (required time - arrival time)
+  Source:                 issue_bank_reg[0]/C
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Destination:            issue_address_reg[30]/D
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Path Group:             lookahead_loader_clk
+  Path Type:              Setup (Max at Slow Process Corner)
+  Requirement:            10.000ns  (lookahead_loader_clk rise@10.000ns - lookahead_loader_clk rise@0.000ns)
+  Data Path Delay:        5.954ns  (logic 2.859ns (48.018%)  route 3.095ns (51.982%))
+  Logic Levels:           12  (CARRY4=8 LUT6=3 RAMD32=1)
+  Clock Path Skew:        -0.049ns (DCD - SCD + CPR)
+    Destination Clock Delay (DCD):    0.924ns = ( 10.924 - 10.000 ) 
+    Source Clock Delay      (SCD):    0.973ns
+    Clock Pessimism Removal (CPR):    0.000ns
+  Clock Uncertainty:      0.035ns  ((TSJ^2 + TIJ^2)^1/2 + DJ) / 2 + PE
+    Total System Jitter     (TSJ):    0.071ns
+    Total Input Jitter      (TIJ):    0.000ns
+    Discrete Jitter          (DJ):    0.000ns
+    Phase Error              (PE):    0.000ns
+
+    Location             Delay type                Incr(ns)  Path(ns)    Netlist Resource(s)
+  -------------------------------------------------------------------    -------------------
+                         (clock lookahead_loader_clk rise edge)
+                                                      0.000     0.000 r  
+                                                      0.000     0.000 r  clk (IN)
+                         net (fo=678, unset)          0.973     0.973    clk
+                         FDRE                                         r  issue_bank_reg[0]/C
+  -------------------------------------------------------------------    -------------------
+                         FDRE (Prop_fdre_C_Q)         0.518     1.491 r  issue_bank_reg[0]/Q
+                         net (fo=148, unplaced)       1.074     2.565    b0_stride_mem_reg_r1_0_3_0_5/ADDRA0
+                         RAMD32 (Prop_ramd32_RADR0_O)
+                                                      0.321     2.886 r  b0_stride_mem_reg_r1_0_3_0_5/RAMA/O
+                         net (fo=1, unplaced)         1.111     3.997    b0_stride_mem_reg_r1_0_3_0_5_n_1
+                         LUT6 (Prop_lut6_I1_O)        0.124     4.121 r  issue_address[3]_i_7/O
+                         net (fo=1, unplaced)         0.000     4.121    issue_address[3]_i_7_n_0
+                         CARRY4 (Prop_carry4_S[0]_CO[3])
+                                                      0.513     4.634 r  issue_address_reg[3]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.009     4.643    issue_address_reg[3]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.760 r  issue_address_reg[7]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.760    issue_address_reg[7]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.877 r  issue_address_reg[11]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.877    issue_address_reg[11]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.994 r  issue_address_reg[15]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.994    issue_address_reg[15]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     5.111 r  issue_address_reg[19]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     5.111    issue_address_reg[19]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     5.228 r  issue_address_reg[23]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     5.228    issue_address_reg[23]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     5.345 r  issue_address_reg[27]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     5.345    issue_address_reg[27]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_O[2])
+                                                      0.256     5.601 r  issue_address_reg[31]_i_3/O[2]
+                         net (fo=1, unplaced)         0.452     6.053    data2[30]
+                         LUT6 (Prop_lut6_I1_O)        0.301     6.354 r  issue_address[30]_i_2/O
+                         net (fo=1, unplaced)         0.449     6.803    issue_address[30]_i_2_n_0
+                         LUT6 (Prop_lut6_I3_O)        0.124     6.927 r  issue_address[30]_i_1/O
+                         net (fo=1, unplaced)         0.000     6.927    issue_address2_out[30]
+                         FDRE                                         r  issue_address_reg[30]/D
+  -------------------------------------------------------------------    -------------------
+
+                         (clock lookahead_loader_clk rise edge)
+                                                     10.000    10.000 r  
+                                                      0.000    10.000 r  clk (IN)
+                         net (fo=678, unset)          0.924    10.924    clk
+                         FDRE                                         r  issue_address_reg[30]/C
+                         clock pessimism              0.000    10.924    
+                         clock uncertainty           -0.035    10.889    
+                         FDRE (Setup_fdre_C_D)        0.077    10.966    issue_address_reg[30]
+  -------------------------------------------------------------------
+                         required time                         10.966    
+                         arrival time                          -6.927    
+  -------------------------------------------------------------------
+                         slack                                  4.039    
+
+Slack (MET) :             4.071ns  (required time - arrival time)
+  Source:                 response_bank_reg[0]/C
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Destination:            response_address_reg[0]/D
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Path Group:             lookahead_loader_clk
+  Path Type:              Setup (Max at Slow Process Corner)
+  Requirement:            10.000ns  (lookahead_loader_clk rise@10.000ns - lookahead_loader_clk rise@0.000ns)
+  Data Path Delay:        5.922ns  (logic 2.656ns (44.850%)  route 3.266ns (55.150%))
+  Logic Levels:           8  (CARRY4=1 LUT5=1 LUT6=2 MUXF7=2 MUXF8=1 RAMD32=1)
+  Clock Path Skew:        -0.049ns (DCD - SCD + CPR)
+    Destination Clock Delay (DCD):    0.924ns = ( 10.924 - 10.000 ) 
+    Source Clock Delay      (SCD):    0.973ns
+    Clock Pessimism Removal (CPR):    0.000ns
+  Clock Uncertainty:      0.035ns  ((TSJ^2 + TIJ^2)^1/2 + DJ) / 2 + PE
+    Total System Jitter     (TSJ):    0.071ns
+    Total Input Jitter      (TIJ):    0.000ns
+    Discrete Jitter          (DJ):    0.000ns
+    Phase Error              (PE):    0.000ns
+
+    Location             Delay type                Incr(ns)  Path(ns)    Netlist Resource(s)
+  -------------------------------------------------------------------    -------------------
+                         (clock lookahead_loader_clk rise edge)
+                                                      0.000     0.000 r  
+                                                      0.000     0.000 r  clk (IN)
+                         net (fo=678, unset)          0.973     0.973    clk
+                         FDRE                                         r  response_bank_reg[0]/C
+  -------------------------------------------------------------------    -------------------
+                         FDRE (Prop_fdre_C_Q)         0.518     1.491 r  response_bank_reg[0]/Q
+                         net (fo=35, unplaced)        1.038     2.529    b0_stride_mem_reg_r2_0_3_0_5/ADDRA0
+                         RAMD32 (Prop_ramd32_RADR0_O)
+                                                      0.321     2.850 r  b0_stride_mem_reg_r2_0_3_0_5/RAMA/O
+                         net (fo=1, unplaced)         1.111     3.961    b0_stride_mem_reg_r2_0_3_0_5_n_1
+                         LUT6 (Prop_lut6_I1_O)        0.124     4.085 r  response_address[1]_i_17/O
+                         net (fo=1, unplaced)         0.000     4.085    response_address[1]_i_17_n_0
+                         CARRY4 (Prop_carry4_S[0]_O[0])
+                                                      0.252     4.337 r  response_address_reg[1]_i_11/O[0]
+                         net (fo=3, unplaced)         0.353     4.690    response_address[0]
+                         MUXF7 (Prop_muxf7_S_O)       0.485     5.175 r  response_address_reg[0]_i_6/O
+                         net (fo=1, unplaced)         0.000     5.175    response_address_reg[0]_i_6_n_0
+                         MUXF8 (Prop_muxf8_I0_O)      0.098     5.273 r  response_address_reg[0]_i_5/O
+                         net (fo=1, unplaced)         0.312     5.585    response_address_reg[0]_i_5_n_0
+                         LUT5 (Prop_lut5_I4_O)        0.319     5.904 r  response_address[0]_i_3/O
+                         net (fo=1, unplaced)         0.000     5.904    response_address[0]_i_3_n_0
+                         MUXF7 (Prop_muxf7_I0_O)      0.241     6.145 r  response_address_reg[0]_i_2/O
+                         net (fo=1, unplaced)         0.452     6.597    response_address_reg[0]_i_2_n_0
+                         LUT6 (Prop_lut6_I0_O)        0.298     6.895 r  response_address[0]_i_1/O
+                         net (fo=1, unplaced)         0.000     6.895    response_address[0]_i_1_n_0
+                         FDRE                                         r  response_address_reg[0]/D
+  -------------------------------------------------------------------    -------------------
+
+                         (clock lookahead_loader_clk rise edge)
+                                                     10.000    10.000 r  
+                                                      0.000    10.000 r  clk (IN)
+                         net (fo=678, unset)          0.924    10.924    clk
+                         FDRE                                         r  response_address_reg[0]/C
+                         clock pessimism              0.000    10.924    
+                         clock uncertainty           -0.035    10.889    
+                         FDRE (Setup_fdre_C_D)        0.077    10.966    response_address_reg[0]
+  -------------------------------------------------------------------
+                         required time                         10.966    
+                         arrival time                          -6.895    
+  -------------------------------------------------------------------
+                         slack                                  4.071    
+
+Slack (MET) :             4.093ns  (required time - arrival time)
+  Source:                 issue_bank_reg[0]/C
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Destination:            issue_address_reg[29]/D
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Path Group:             lookahead_loader_clk
+  Path Type:              Setup (Max at Slow Process Corner)
+  Requirement:            10.000ns  (lookahead_loader_clk rise@10.000ns - lookahead_loader_clk rise@0.000ns)
+  Data Path Delay:        5.900ns  (logic 2.945ns (49.915%)  route 2.955ns (50.085%))
+  Logic Levels:           12  (CARRY4=8 LUT6=3 RAMD32=1)
+  Clock Path Skew:        -0.049ns (DCD - SCD + CPR)
+    Destination Clock Delay (DCD):    0.924ns = ( 10.924 - 10.000 ) 
+    Source Clock Delay      (SCD):    0.973ns
+    Clock Pessimism Removal (CPR):    0.000ns
+  Clock Uncertainty:      0.035ns  ((TSJ^2 + TIJ^2)^1/2 + DJ) / 2 + PE
+    Total System Jitter     (TSJ):    0.071ns
+    Total Input Jitter      (TIJ):    0.000ns
+    Discrete Jitter          (DJ):    0.000ns
+    Phase Error              (PE):    0.000ns
+
+    Location             Delay type                Incr(ns)  Path(ns)    Netlist Resource(s)
+  -------------------------------------------------------------------    -------------------
+                         (clock lookahead_loader_clk rise edge)
+                                                      0.000     0.000 r  
+                                                      0.000     0.000 r  clk (IN)
+                         net (fo=678, unset)          0.973     0.973    clk
+                         FDRE                                         r  issue_bank_reg[0]/C
+  -------------------------------------------------------------------    -------------------
+                         FDRE (Prop_fdre_C_Q)         0.518     1.491 r  issue_bank_reg[0]/Q
+                         net (fo=148, unplaced)       1.074     2.565    b0_stride_mem_reg_r1_0_3_0_5/ADDRA0
+                         RAMD32 (Prop_ramd32_RADR0_O)
+                                                      0.321     2.886 r  b0_stride_mem_reg_r1_0_3_0_5/RAMA/O
+                         net (fo=1, unplaced)         1.111     3.997    b0_stride_mem_reg_r1_0_3_0_5_n_1
+                         LUT6 (Prop_lut6_I1_O)        0.124     4.121 r  issue_address[3]_i_7/O
+                         net (fo=1, unplaced)         0.000     4.121    issue_address[3]_i_7_n_0
+                         CARRY4 (Prop_carry4_S[0]_CO[3])
+                                                      0.513     4.634 r  issue_address_reg[3]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.009     4.643    issue_address_reg[3]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.760 r  issue_address_reg[7]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.760    issue_address_reg[7]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.877 r  issue_address_reg[11]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.877    issue_address_reg[11]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.994 r  issue_address_reg[15]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.994    issue_address_reg[15]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     5.111 r  issue_address_reg[19]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     5.111    issue_address_reg[19]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     5.228 r  issue_address_reg[23]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     5.228    issue_address_reg[23]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     5.345 r  issue_address_reg[27]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     5.345    issue_address_reg[27]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_O[1])
+                                                      0.337     5.682 r  issue_address_reg[31]_i_3/O[1]
+                         net (fo=1, unplaced)         0.312     5.994    data2[29]
+                         LUT6 (Prop_lut6_I1_O)        0.306     6.300 r  issue_address[29]_i_2/O
+                         net (fo=1, unplaced)         0.449     6.749    issue_address[29]_i_2_n_0
+                         LUT6 (Prop_lut6_I3_O)        0.124     6.873 r  issue_address[29]_i_1/O
+                         net (fo=1, unplaced)         0.000     6.873    issue_address2_out[29]
+                         FDRE                                         r  issue_address_reg[29]/D
+  -------------------------------------------------------------------    -------------------
+
+                         (clock lookahead_loader_clk rise edge)
+                                                     10.000    10.000 r  
+                                                      0.000    10.000 r  clk (IN)
+                         net (fo=678, unset)          0.924    10.924    clk
+                         FDRE                                         r  issue_address_reg[29]/C
+                         clock pessimism              0.000    10.924    
+                         clock uncertainty           -0.035    10.889    
+                         FDRE (Setup_fdre_C_D)        0.077    10.966    issue_address_reg[29]
+  -------------------------------------------------------------------
+                         required time                         10.966    
+                         arrival time                          -6.873    
+  -------------------------------------------------------------------
+                         slack                                  4.093    
+
+Slack (MET) :             4.143ns  (required time - arrival time)
+  Source:                 issue_bank_reg[0]/C
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Destination:            issue_address_reg[19]/D
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Path Group:             lookahead_loader_clk
+  Path Type:              Setup (Max at Slow Process Corner)
+  Requirement:            10.000ns  (lookahead_loader_clk rise@10.000ns - lookahead_loader_clk rise@0.000ns)
+  Data Path Delay:        5.850ns  (logic 2.589ns (44.256%)  route 3.261ns (55.744%))
+  Logic Levels:           9  (CARRY4=5 LUT6=3 RAMD32=1)
+  Clock Path Skew:        -0.049ns (DCD - SCD + CPR)
+    Destination Clock Delay (DCD):    0.924ns = ( 10.924 - 10.000 ) 
+    Source Clock Delay      (SCD):    0.973ns
+    Clock Pessimism Removal (CPR):    0.000ns
+  Clock Uncertainty:      0.035ns  ((TSJ^2 + TIJ^2)^1/2 + DJ) / 2 + PE
+    Total System Jitter     (TSJ):    0.071ns
+    Total Input Jitter      (TIJ):    0.000ns
+    Discrete Jitter          (DJ):    0.000ns
+    Phase Error              (PE):    0.000ns
+
+    Location             Delay type                Incr(ns)  Path(ns)    Netlist Resource(s)
+  -------------------------------------------------------------------    -------------------
+                         (clock lookahead_loader_clk rise edge)
+                                                      0.000     0.000 r  
+                                                      0.000     0.000 r  clk (IN)
+                         net (fo=678, unset)          0.973     0.973    clk
+                         FDRE                                         r  issue_bank_reg[0]/C
+  -------------------------------------------------------------------    -------------------
+                         FDRE (Prop_fdre_C_Q)         0.518     1.491 r  issue_bank_reg[0]/Q
+                         net (fo=148, unplaced)       1.074     2.565    b0_stride_mem_reg_r1_0_3_0_5/ADDRA0
+                         RAMD32 (Prop_ramd32_RADR0_O)
+                                                      0.321     2.886 r  b0_stride_mem_reg_r1_0_3_0_5/RAMA/O
+                         net (fo=1, unplaced)         1.111     3.997    b0_stride_mem_reg_r1_0_3_0_5_n_1
+                         LUT6 (Prop_lut6_I1_O)        0.124     4.121 r  issue_address[3]_i_7/O
+                         net (fo=1, unplaced)         0.000     4.121    issue_address[3]_i_7_n_0
+                         CARRY4 (Prop_carry4_S[0]_CO[3])
+                                                      0.513     4.634 r  issue_address_reg[3]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.009     4.643    issue_address_reg[3]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.760 r  issue_address_reg[7]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.760    issue_address_reg[7]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.877 r  issue_address_reg[11]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.877    issue_address_reg[11]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.994 r  issue_address_reg[15]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.994    issue_address_reg[15]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_O[3])
+                                                      0.331     5.325 r  issue_address_reg[19]_i_3/O[3]
+                         net (fo=1, unplaced)         0.618     5.943    data2[19]
+                         LUT6 (Prop_lut6_I1_O)        0.307     6.250 r  issue_address[19]_i_2/O
+                         net (fo=1, unplaced)         0.449     6.699    issue_address[19]_i_2_n_0
+                         LUT6 (Prop_lut6_I3_O)        0.124     6.823 r  issue_address[19]_i_1/O
+                         net (fo=1, unplaced)         0.000     6.823    issue_address2_out[19]
+                         FDRE                                         r  issue_address_reg[19]/D
+  -------------------------------------------------------------------    -------------------
+
+                         (clock lookahead_loader_clk rise edge)
+                                                     10.000    10.000 r  
+                                                      0.000    10.000 r  clk (IN)
+                         net (fo=678, unset)          0.924    10.924    clk
+                         FDRE                                         r  issue_address_reg[19]/C
+                         clock pessimism              0.000    10.924    
+                         clock uncertainty           -0.035    10.889    
+                         FDRE (Setup_fdre_C_D)        0.077    10.966    issue_address_reg[19]
+  -------------------------------------------------------------------
+                         required time                         10.966    
+                         arrival time                          -6.823    
+  -------------------------------------------------------------------
+                         slack                                  4.143    
+
+Slack (MET) :             4.156ns  (required time - arrival time)
+  Source:                 issue_bank_reg[0]/C
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Destination:            issue_address_reg[26]/D
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Path Group:             lookahead_loader_clk
+  Path Type:              Setup (Max at Slow Process Corner)
+  Requirement:            10.000ns  (lookahead_loader_clk rise@10.000ns - lookahead_loader_clk rise@0.000ns)
+  Data Path Delay:        5.837ns  (logic 2.742ns (46.976%)  route 3.095ns (53.024%))
+  Logic Levels:           11  (CARRY4=7 LUT6=3 RAMD32=1)
+  Clock Path Skew:        -0.049ns (DCD - SCD + CPR)
+    Destination Clock Delay (DCD):    0.924ns = ( 10.924 - 10.000 ) 
+    Source Clock Delay      (SCD):    0.973ns
+    Clock Pessimism Removal (CPR):    0.000ns
+  Clock Uncertainty:      0.035ns  ((TSJ^2 + TIJ^2)^1/2 + DJ) / 2 + PE
+    Total System Jitter     (TSJ):    0.071ns
+    Total Input Jitter      (TIJ):    0.000ns
+    Discrete Jitter          (DJ):    0.000ns
+    Phase Error              (PE):    0.000ns
+
+    Location             Delay type                Incr(ns)  Path(ns)    Netlist Resource(s)
+  -------------------------------------------------------------------    -------------------
+                         (clock lookahead_loader_clk rise edge)
+                                                      0.000     0.000 r  
+                                                      0.000     0.000 r  clk (IN)
+                         net (fo=678, unset)          0.973     0.973    clk
+                         FDRE                                         r  issue_bank_reg[0]/C
+  -------------------------------------------------------------------    -------------------
+                         FDRE (Prop_fdre_C_Q)         0.518     1.491 r  issue_bank_reg[0]/Q
+                         net (fo=148, unplaced)       1.074     2.565    b0_stride_mem_reg_r1_0_3_0_5/ADDRA0
+                         RAMD32 (Prop_ramd32_RADR0_O)
+                                                      0.321     2.886 r  b0_stride_mem_reg_r1_0_3_0_5/RAMA/O
+                         net (fo=1, unplaced)         1.111     3.997    b0_stride_mem_reg_r1_0_3_0_5_n_1
+                         LUT6 (Prop_lut6_I1_O)        0.124     4.121 r  issue_address[3]_i_7/O
+                         net (fo=1, unplaced)         0.000     4.121    issue_address[3]_i_7_n_0
+                         CARRY4 (Prop_carry4_S[0]_CO[3])
+                                                      0.513     4.634 r  issue_address_reg[3]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.009     4.643    issue_address_reg[3]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.760 r  issue_address_reg[7]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.760    issue_address_reg[7]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.877 r  issue_address_reg[11]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.877    issue_address_reg[11]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.994 r  issue_address_reg[15]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.994    issue_address_reg[15]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     5.111 r  issue_address_reg[19]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     5.111    issue_address_reg[19]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     5.228 r  issue_address_reg[23]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     5.228    issue_address_reg[23]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_O[2])
+                                                      0.256     5.484 r  issue_address_reg[27]_i_3/O[2]
+                         net (fo=1, unplaced)         0.452     5.936    data2[26]
+                         LUT6 (Prop_lut6_I1_O)        0.301     6.237 r  issue_address[26]_i_2/O
+                         net (fo=1, unplaced)         0.449     6.686    issue_address[26]_i_2_n_0
+                         LUT6 (Prop_lut6_I3_O)        0.124     6.810 r  issue_address[26]_i_1/O
+                         net (fo=1, unplaced)         0.000     6.810    issue_address2_out[26]
+                         FDRE                                         r  issue_address_reg[26]/D
+  -------------------------------------------------------------------    -------------------
+
+                         (clock lookahead_loader_clk rise edge)
+                                                     10.000    10.000 r  
+                                                      0.000    10.000 r  clk (IN)
+                         net (fo=678, unset)          0.924    10.924    clk
+                         FDRE                                         r  issue_address_reg[26]/C
+                         clock pessimism              0.000    10.924    
+                         clock uncertainty           -0.035    10.889    
+                         FDRE (Setup_fdre_C_D)        0.077    10.966    issue_address_reg[26]
+  -------------------------------------------------------------------
+                         required time                         10.966    
+                         arrival time                          -6.810    
+  -------------------------------------------------------------------
+                         slack                                  4.156    
+
+Slack (MET) :             4.210ns  (required time - arrival time)
+  Source:                 issue_bank_reg[0]/C
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Destination:            issue_address_reg[25]/D
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Path Group:             lookahead_loader_clk
+  Path Type:              Setup (Max at Slow Process Corner)
+  Requirement:            10.000ns  (lookahead_loader_clk rise@10.000ns - lookahead_loader_clk rise@0.000ns)
+  Data Path Delay:        5.783ns  (logic 2.828ns (48.902%)  route 2.955ns (51.098%))
+  Logic Levels:           11  (CARRY4=7 LUT6=3 RAMD32=1)
+  Clock Path Skew:        -0.049ns (DCD - SCD + CPR)
+    Destination Clock Delay (DCD):    0.924ns = ( 10.924 - 10.000 ) 
+    Source Clock Delay      (SCD):    0.973ns
+    Clock Pessimism Removal (CPR):    0.000ns
+  Clock Uncertainty:      0.035ns  ((TSJ^2 + TIJ^2)^1/2 + DJ) / 2 + PE
+    Total System Jitter     (TSJ):    0.071ns
+    Total Input Jitter      (TIJ):    0.000ns
+    Discrete Jitter          (DJ):    0.000ns
+    Phase Error              (PE):    0.000ns
+
+    Location             Delay type                Incr(ns)  Path(ns)    Netlist Resource(s)
+  -------------------------------------------------------------------    -------------------
+                         (clock lookahead_loader_clk rise edge)
+                                                      0.000     0.000 r  
+                                                      0.000     0.000 r  clk (IN)
+                         net (fo=678, unset)          0.973     0.973    clk
+                         FDRE                                         r  issue_bank_reg[0]/C
+  -------------------------------------------------------------------    -------------------
+                         FDRE (Prop_fdre_C_Q)         0.518     1.491 r  issue_bank_reg[0]/Q
+                         net (fo=148, unplaced)       1.074     2.565    b0_stride_mem_reg_r1_0_3_0_5/ADDRA0
+                         RAMD32 (Prop_ramd32_RADR0_O)
+                                                      0.321     2.886 r  b0_stride_mem_reg_r1_0_3_0_5/RAMA/O
+                         net (fo=1, unplaced)         1.111     3.997    b0_stride_mem_reg_r1_0_3_0_5_n_1
+                         LUT6 (Prop_lut6_I1_O)        0.124     4.121 r  issue_address[3]_i_7/O
+                         net (fo=1, unplaced)         0.000     4.121    issue_address[3]_i_7_n_0
+                         CARRY4 (Prop_carry4_S[0]_CO[3])
+                                                      0.513     4.634 r  issue_address_reg[3]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.009     4.643    issue_address_reg[3]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.760 r  issue_address_reg[7]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.760    issue_address_reg[7]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.877 r  issue_address_reg[11]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.877    issue_address_reg[11]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.994 r  issue_address_reg[15]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.994    issue_address_reg[15]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     5.111 r  issue_address_reg[19]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     5.111    issue_address_reg[19]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     5.228 r  issue_address_reg[23]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     5.228    issue_address_reg[23]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_O[1])
+                                                      0.337     5.565 r  issue_address_reg[27]_i_3/O[1]
+                         net (fo=1, unplaced)         0.312     5.877    data2[25]
+                         LUT6 (Prop_lut6_I1_O)        0.306     6.183 r  issue_address[25]_i_2/O
+                         net (fo=1, unplaced)         0.449     6.632    issue_address[25]_i_2_n_0
+                         LUT6 (Prop_lut6_I3_O)        0.124     6.756 r  issue_address[25]_i_1/O
+                         net (fo=1, unplaced)         0.000     6.756    issue_address2_out[25]
+                         FDRE                                         r  issue_address_reg[25]/D
+  -------------------------------------------------------------------    -------------------
+
+                         (clock lookahead_loader_clk rise edge)
+                                                     10.000    10.000 r  
+                                                      0.000    10.000 r  clk (IN)
+                         net (fo=678, unset)          0.924    10.924    clk
+                         FDRE                                         r  issue_address_reg[25]/C
+                         clock pessimism              0.000    10.924    
+                         clock uncertainty           -0.035    10.889    
+                         FDRE (Setup_fdre_C_D)        0.077    10.966    issue_address_reg[25]
+  -------------------------------------------------------------------
+                         required time                         10.966    
+                         arrival time                          -6.756    
+  -------------------------------------------------------------------
+                         slack                                  4.210    
+
+Slack (MET) :             4.210ns  (required time - arrival time)
+  Source:                 issue_bank_reg[0]/C
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Destination:            issue_address_reg[28]/D
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Path Group:             lookahead_loader_clk
+  Path Type:              Setup (Max at Slow Process Corner)
+  Requirement:            10.000ns  (lookahead_loader_clk rise@10.000ns - lookahead_loader_clk rise@0.000ns)
+  Data Path Delay:        5.783ns  (logic 2.829ns (48.919%)  route 2.954ns (51.081%))
+  Logic Levels:           12  (CARRY4=8 LUT6=3 RAMD32=1)
+  Clock Path Skew:        -0.049ns (DCD - SCD + CPR)
+    Destination Clock Delay (DCD):    0.924ns = ( 10.924 - 10.000 ) 
+    Source Clock Delay      (SCD):    0.973ns
+    Clock Pessimism Removal (CPR):    0.000ns
+  Clock Uncertainty:      0.035ns  ((TSJ^2 + TIJ^2)^1/2 + DJ) / 2 + PE
+    Total System Jitter     (TSJ):    0.071ns
+    Total Input Jitter      (TIJ):    0.000ns
+    Discrete Jitter          (DJ):    0.000ns
+    Phase Error              (PE):    0.000ns
+
+    Location             Delay type                Incr(ns)  Path(ns)    Netlist Resource(s)
+  -------------------------------------------------------------------    -------------------
+                         (clock lookahead_loader_clk rise edge)
+                                                      0.000     0.000 r  
+                                                      0.000     0.000 r  clk (IN)
+                         net (fo=678, unset)          0.973     0.973    clk
+                         FDRE                                         r  issue_bank_reg[0]/C
+  -------------------------------------------------------------------    -------------------
+                         FDRE (Prop_fdre_C_Q)         0.518     1.491 r  issue_bank_reg[0]/Q
+                         net (fo=148, unplaced)       1.074     2.565    b0_stride_mem_reg_r1_0_3_0_5/ADDRA0
+                         RAMD32 (Prop_ramd32_RADR0_O)
+                                                      0.321     2.886 r  b0_stride_mem_reg_r1_0_3_0_5/RAMA/O
+                         net (fo=1, unplaced)         1.111     3.997    b0_stride_mem_reg_r1_0_3_0_5_n_1
+                         LUT6 (Prop_lut6_I1_O)        0.124     4.121 r  issue_address[3]_i_7/O
+                         net (fo=1, unplaced)         0.000     4.121    issue_address[3]_i_7_n_0
+                         CARRY4 (Prop_carry4_S[0]_CO[3])
+                                                      0.513     4.634 r  issue_address_reg[3]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.009     4.643    issue_address_reg[3]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.760 r  issue_address_reg[7]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.760    issue_address_reg[7]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.877 r  issue_address_reg[11]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.877    issue_address_reg[11]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.994 r  issue_address_reg[15]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.994    issue_address_reg[15]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     5.111 r  issue_address_reg[19]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     5.111    issue_address_reg[19]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     5.228 r  issue_address_reg[23]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     5.228    issue_address_reg[23]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     5.345 r  issue_address_reg[27]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     5.345    issue_address_reg[27]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_O[0])
+                                                      0.232     5.577 r  issue_address_reg[31]_i_3/O[0]
+                         net (fo=1, unplaced)         0.311     5.888    data2[28]
+                         LUT6 (Prop_lut6_I1_O)        0.295     6.183 r  issue_address[28]_i_2/O
+                         net (fo=1, unplaced)         0.449     6.632    issue_address[28]_i_2_n_0
+                         LUT6 (Prop_lut6_I3_O)        0.124     6.756 r  issue_address[28]_i_1/O
+                         net (fo=1, unplaced)         0.000     6.756    issue_address2_out[28]
+                         FDRE                                         r  issue_address_reg[28]/D
+  -------------------------------------------------------------------    -------------------
+
+                         (clock lookahead_loader_clk rise edge)
+                                                     10.000    10.000 r  
+                                                      0.000    10.000 r  clk (IN)
+                         net (fo=678, unset)          0.924    10.924    clk
+                         FDRE                                         r  issue_address_reg[28]/C
+                         clock pessimism              0.000    10.924    
+                         clock uncertainty           -0.035    10.889    
+                         FDRE (Setup_fdre_C_D)        0.077    10.966    issue_address_reg[28]
+  -------------------------------------------------------------------
+                         required time                         10.966    
+                         arrival time                          -6.756    
+  -------------------------------------------------------------------
+                         slack                                  4.210    
+
+Slack (MET) :             4.260ns  (required time - arrival time)
+  Source:                 issue_bank_reg[0]/C
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Destination:            issue_address_reg[15]/D
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Path Group:             lookahead_loader_clk
+  Path Type:              Setup (Max at Slow Process Corner)
+  Requirement:            10.000ns  (lookahead_loader_clk rise@10.000ns - lookahead_loader_clk rise@0.000ns)
+  Data Path Delay:        5.733ns  (logic 2.472ns (43.119%)  route 3.261ns (56.881%))
+  Logic Levels:           8  (CARRY4=4 LUT6=3 RAMD32=1)
+  Clock Path Skew:        -0.049ns (DCD - SCD + CPR)
+    Destination Clock Delay (DCD):    0.924ns = ( 10.924 - 10.000 ) 
+    Source Clock Delay      (SCD):    0.973ns
+    Clock Pessimism Removal (CPR):    0.000ns
+  Clock Uncertainty:      0.035ns  ((TSJ^2 + TIJ^2)^1/2 + DJ) / 2 + PE
+    Total System Jitter     (TSJ):    0.071ns
+    Total Input Jitter      (TIJ):    0.000ns
+    Discrete Jitter          (DJ):    0.000ns
+    Phase Error              (PE):    0.000ns
+
+    Location             Delay type                Incr(ns)  Path(ns)    Netlist Resource(s)
+  -------------------------------------------------------------------    -------------------
+                         (clock lookahead_loader_clk rise edge)
+                                                      0.000     0.000 r  
+                                                      0.000     0.000 r  clk (IN)
+                         net (fo=678, unset)          0.973     0.973    clk
+                         FDRE                                         r  issue_bank_reg[0]/C
+  -------------------------------------------------------------------    -------------------
+                         FDRE (Prop_fdre_C_Q)         0.518     1.491 r  issue_bank_reg[0]/Q
+                         net (fo=148, unplaced)       1.074     2.565    b0_stride_mem_reg_r1_0_3_0_5/ADDRA0
+                         RAMD32 (Prop_ramd32_RADR0_O)
+                                                      0.321     2.886 r  b0_stride_mem_reg_r1_0_3_0_5/RAMA/O
+                         net (fo=1, unplaced)         1.111     3.997    b0_stride_mem_reg_r1_0_3_0_5_n_1
+                         LUT6 (Prop_lut6_I1_O)        0.124     4.121 r  issue_address[3]_i_7/O
+                         net (fo=1, unplaced)         0.000     4.121    issue_address[3]_i_7_n_0
+                         CARRY4 (Prop_carry4_S[0]_CO[3])
+                                                      0.513     4.634 r  issue_address_reg[3]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.009     4.643    issue_address_reg[3]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.760 r  issue_address_reg[7]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.760    issue_address_reg[7]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.877 r  issue_address_reg[11]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.877    issue_address_reg[11]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_O[3])
+                                                      0.331     5.208 r  issue_address_reg[15]_i_3/O[3]
+                         net (fo=1, unplaced)         0.618     5.826    data2[15]
+                         LUT6 (Prop_lut6_I1_O)        0.307     6.133 r  issue_address[15]_i_2/O
+                         net (fo=1, unplaced)         0.449     6.582    issue_address[15]_i_2_n_0
+                         LUT6 (Prop_lut6_I3_O)        0.124     6.706 r  issue_address[15]_i_1/O
+                         net (fo=1, unplaced)         0.000     6.706    issue_address2_out[15]
+                         FDRE                                         r  issue_address_reg[15]/D
+  -------------------------------------------------------------------    -------------------
+
+                         (clock lookahead_loader_clk rise edge)
+                                                     10.000    10.000 r  
+                                                      0.000    10.000 r  clk (IN)
+                         net (fo=678, unset)          0.924    10.924    clk
+                         FDRE                                         r  issue_address_reg[15]/C
+                         clock pessimism              0.000    10.924    
+                         clock uncertainty           -0.035    10.889    
+                         FDRE (Setup_fdre_C_D)        0.077    10.966    issue_address_reg[15]
+  -------------------------------------------------------------------
+                         required time                         10.966    
+                         arrival time                          -6.706    
+  -------------------------------------------------------------------
+                         slack                                  4.260    
+
+Slack (MET) :             4.273ns  (required time - arrival time)
+  Source:                 issue_bank_reg[0]/C
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Destination:            issue_address_reg[22]/D
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Path Group:             lookahead_loader_clk
+  Path Type:              Setup (Max at Slow Process Corner)
+  Requirement:            10.000ns  (lookahead_loader_clk rise@10.000ns - lookahead_loader_clk rise@0.000ns)
+  Data Path Delay:        5.720ns  (logic 2.625ns (45.892%)  route 3.095ns (54.108%))
+  Logic Levels:           10  (CARRY4=6 LUT6=3 RAMD32=1)
+  Clock Path Skew:        -0.049ns (DCD - SCD + CPR)
+    Destination Clock Delay (DCD):    0.924ns = ( 10.924 - 10.000 ) 
+    Source Clock Delay      (SCD):    0.973ns
+    Clock Pessimism Removal (CPR):    0.000ns
+  Clock Uncertainty:      0.035ns  ((TSJ^2 + TIJ^2)^1/2 + DJ) / 2 + PE
+    Total System Jitter     (TSJ):    0.071ns
+    Total Input Jitter      (TIJ):    0.000ns
+    Discrete Jitter          (DJ):    0.000ns
+    Phase Error              (PE):    0.000ns
+
+    Location             Delay type                Incr(ns)  Path(ns)    Netlist Resource(s)
+  -------------------------------------------------------------------    -------------------
+                         (clock lookahead_loader_clk rise edge)
+                                                      0.000     0.000 r  
+                                                      0.000     0.000 r  clk (IN)
+                         net (fo=678, unset)          0.973     0.973    clk
+                         FDRE                                         r  issue_bank_reg[0]/C
+  -------------------------------------------------------------------    -------------------
+                         FDRE (Prop_fdre_C_Q)         0.518     1.491 r  issue_bank_reg[0]/Q
+                         net (fo=148, unplaced)       1.074     2.565    b0_stride_mem_reg_r1_0_3_0_5/ADDRA0
+                         RAMD32 (Prop_ramd32_RADR0_O)
+                                                      0.321     2.886 r  b0_stride_mem_reg_r1_0_3_0_5/RAMA/O
+                         net (fo=1, unplaced)         1.111     3.997    b0_stride_mem_reg_r1_0_3_0_5_n_1
+                         LUT6 (Prop_lut6_I1_O)        0.124     4.121 r  issue_address[3]_i_7/O
+                         net (fo=1, unplaced)         0.000     4.121    issue_address[3]_i_7_n_0
+                         CARRY4 (Prop_carry4_S[0]_CO[3])
+                                                      0.513     4.634 r  issue_address_reg[3]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.009     4.643    issue_address_reg[3]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.760 r  issue_address_reg[7]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.760    issue_address_reg[7]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.877 r  issue_address_reg[11]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.877    issue_address_reg[11]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.994 r  issue_address_reg[15]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.994    issue_address_reg[15]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     5.111 r  issue_address_reg[19]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     5.111    issue_address_reg[19]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_O[2])
+                                                      0.256     5.367 r  issue_address_reg[23]_i_3/O[2]
+                         net (fo=1, unplaced)         0.452     5.819    data2[22]
+                         LUT6 (Prop_lut6_I1_O)        0.301     6.120 r  issue_address[22]_i_2/O
+                         net (fo=1, unplaced)         0.449     6.569    issue_address[22]_i_2_n_0
+                         LUT6 (Prop_lut6_I3_O)        0.124     6.693 r  issue_address[22]_i_1/O
+                         net (fo=1, unplaced)         0.000     6.693    issue_address2_out[22]
+                         FDRE                                         r  issue_address_reg[22]/D
+  -------------------------------------------------------------------    -------------------
+
+                         (clock lookahead_loader_clk rise edge)
+                                                     10.000    10.000 r  
+                                                      0.000    10.000 r  clk (IN)
+                         net (fo=678, unset)          0.924    10.924    clk
+                         FDRE                                         r  issue_address_reg[22]/C
+                         clock pessimism              0.000    10.924    
+                         clock uncertainty           -0.035    10.889    
+                         FDRE (Setup_fdre_C_D)        0.077    10.966    issue_address_reg[22]
+  -------------------------------------------------------------------
+                         required time                         10.966    
+                         arrival time                          -6.693    
+  -------------------------------------------------------------------
+                         slack                                  4.273    
+
+Slack (MET) :             4.327ns  (required time - arrival time)
+  Source:                 issue_bank_reg[0]/C
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Destination:            issue_address_reg[21]/D
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Path Group:             lookahead_loader_clk
+  Path Type:              Setup (Max at Slow Process Corner)
+  Requirement:            10.000ns  (lookahead_loader_clk rise@10.000ns - lookahead_loader_clk rise@0.000ns)
+  Data Path Delay:        5.666ns  (logic 2.711ns (47.847%)  route 2.955ns (52.153%))
+  Logic Levels:           10  (CARRY4=6 LUT6=3 RAMD32=1)
+  Clock Path Skew:        -0.049ns (DCD - SCD + CPR)
+    Destination Clock Delay (DCD):    0.924ns = ( 10.924 - 10.000 ) 
+    Source Clock Delay      (SCD):    0.973ns
+    Clock Pessimism Removal (CPR):    0.000ns
+  Clock Uncertainty:      0.035ns  ((TSJ^2 + TIJ^2)^1/2 + DJ) / 2 + PE
+    Total System Jitter     (TSJ):    0.071ns
+    Total Input Jitter      (TIJ):    0.000ns
+    Discrete Jitter          (DJ):    0.000ns
+    Phase Error              (PE):    0.000ns
+
+    Location             Delay type                Incr(ns)  Path(ns)    Netlist Resource(s)
+  -------------------------------------------------------------------    -------------------
+                         (clock lookahead_loader_clk rise edge)
+                                                      0.000     0.000 r  
+                                                      0.000     0.000 r  clk (IN)
+                         net (fo=678, unset)          0.973     0.973    clk
+                         FDRE                                         r  issue_bank_reg[0]/C
+  -------------------------------------------------------------------    -------------------
+                         FDRE (Prop_fdre_C_Q)         0.518     1.491 r  issue_bank_reg[0]/Q
+                         net (fo=148, unplaced)       1.074     2.565    b0_stride_mem_reg_r1_0_3_0_5/ADDRA0
+                         RAMD32 (Prop_ramd32_RADR0_O)
+                                                      0.321     2.886 r  b0_stride_mem_reg_r1_0_3_0_5/RAMA/O
+                         net (fo=1, unplaced)         1.111     3.997    b0_stride_mem_reg_r1_0_3_0_5_n_1
+                         LUT6 (Prop_lut6_I1_O)        0.124     4.121 r  issue_address[3]_i_7/O
+                         net (fo=1, unplaced)         0.000     4.121    issue_address[3]_i_7_n_0
+                         CARRY4 (Prop_carry4_S[0]_CO[3])
+                                                      0.513     4.634 r  issue_address_reg[3]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.009     4.643    issue_address_reg[3]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.760 r  issue_address_reg[7]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.760    issue_address_reg[7]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.877 r  issue_address_reg[11]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.877    issue_address_reg[11]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.994 r  issue_address_reg[15]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.994    issue_address_reg[15]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     5.111 r  issue_address_reg[19]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     5.111    issue_address_reg[19]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_O[1])
+                                                      0.337     5.448 r  issue_address_reg[23]_i_3/O[1]
+                         net (fo=1, unplaced)         0.312     5.760    data2[21]
+                         LUT6 (Prop_lut6_I1_O)        0.306     6.066 r  issue_address[21]_i_2/O
+                         net (fo=1, unplaced)         0.449     6.515    issue_address[21]_i_2_n_0
+                         LUT6 (Prop_lut6_I3_O)        0.124     6.639 r  issue_address[21]_i_1/O
+                         net (fo=1, unplaced)         0.000     6.639    issue_address2_out[21]
+                         FDRE                                         r  issue_address_reg[21]/D
+  -------------------------------------------------------------------    -------------------
+
+                         (clock lookahead_loader_clk rise edge)
+                                                     10.000    10.000 r  
+                                                      0.000    10.000 r  clk (IN)
+                         net (fo=678, unset)          0.924    10.924    clk
+                         FDRE                                         r  issue_address_reg[21]/C
+                         clock pessimism              0.000    10.924    
+                         clock uncertainty           -0.035    10.889    
+                         FDRE (Setup_fdre_C_D)        0.077    10.966    issue_address_reg[21]
+  -------------------------------------------------------------------
+                         required time                         10.966    
+                         arrival time                          -6.639    
+  -------------------------------------------------------------------
+                         slack                                  4.327    
+
+Slack (MET) :             4.327ns  (required time - arrival time)
+  Source:                 issue_bank_reg[0]/C
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Destination:            issue_address_reg[24]/D
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Path Group:             lookahead_loader_clk
+  Path Type:              Setup (Max at Slow Process Corner)
+  Requirement:            10.000ns  (lookahead_loader_clk rise@10.000ns - lookahead_loader_clk rise@0.000ns)
+  Data Path Delay:        5.666ns  (logic 2.712ns (47.864%)  route 2.954ns (52.136%))
+  Logic Levels:           11  (CARRY4=7 LUT6=3 RAMD32=1)
+  Clock Path Skew:        -0.049ns (DCD - SCD + CPR)
+    Destination Clock Delay (DCD):    0.924ns = ( 10.924 - 10.000 ) 
+    Source Clock Delay      (SCD):    0.973ns
+    Clock Pessimism Removal (CPR):    0.000ns
+  Clock Uncertainty:      0.035ns  ((TSJ^2 + TIJ^2)^1/2 + DJ) / 2 + PE
+    Total System Jitter     (TSJ):    0.071ns
+    Total Input Jitter      (TIJ):    0.000ns
+    Discrete Jitter          (DJ):    0.000ns
+    Phase Error              (PE):    0.000ns
+
+    Location             Delay type                Incr(ns)  Path(ns)    Netlist Resource(s)
+  -------------------------------------------------------------------    -------------------
+                         (clock lookahead_loader_clk rise edge)
+                                                      0.000     0.000 r  
+                                                      0.000     0.000 r  clk (IN)
+                         net (fo=678, unset)          0.973     0.973    clk
+                         FDRE                                         r  issue_bank_reg[0]/C
+  -------------------------------------------------------------------    -------------------
+                         FDRE (Prop_fdre_C_Q)         0.518     1.491 r  issue_bank_reg[0]/Q
+                         net (fo=148, unplaced)       1.074     2.565    b0_stride_mem_reg_r1_0_3_0_5/ADDRA0
+                         RAMD32 (Prop_ramd32_RADR0_O)
+                                                      0.321     2.886 r  b0_stride_mem_reg_r1_0_3_0_5/RAMA/O
+                         net (fo=1, unplaced)         1.111     3.997    b0_stride_mem_reg_r1_0_3_0_5_n_1
+                         LUT6 (Prop_lut6_I1_O)        0.124     4.121 r  issue_address[3]_i_7/O
+                         net (fo=1, unplaced)         0.000     4.121    issue_address[3]_i_7_n_0
+                         CARRY4 (Prop_carry4_S[0]_CO[3])
+                                                      0.513     4.634 r  issue_address_reg[3]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.009     4.643    issue_address_reg[3]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.760 r  issue_address_reg[7]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.760    issue_address_reg[7]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.877 r  issue_address_reg[11]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.877    issue_address_reg[11]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.994 r  issue_address_reg[15]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.994    issue_address_reg[15]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     5.111 r  issue_address_reg[19]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     5.111    issue_address_reg[19]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     5.228 r  issue_address_reg[23]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     5.228    issue_address_reg[23]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_O[0])
+                                                      0.232     5.460 r  issue_address_reg[27]_i_3/O[0]
+                         net (fo=1, unplaced)         0.311     5.771    data2[24]
+                         LUT6 (Prop_lut6_I1_O)        0.295     6.066 r  issue_address[24]_i_2/O
+                         net (fo=1, unplaced)         0.449     6.515    issue_address[24]_i_2_n_0
+                         LUT6 (Prop_lut6_I3_O)        0.124     6.639 r  issue_address[24]_i_1/O
+                         net (fo=1, unplaced)         0.000     6.639    issue_address2_out[24]
+                         FDRE                                         r  issue_address_reg[24]/D
+  -------------------------------------------------------------------    -------------------
+
+                         (clock lookahead_loader_clk rise edge)
+                                                     10.000    10.000 r  
+                                                      0.000    10.000 r  clk (IN)
+                         net (fo=678, unset)          0.924    10.924    clk
+                         FDRE                                         r  issue_address_reg[24]/C
+                         clock pessimism              0.000    10.924    
+                         clock uncertainty           -0.035    10.889    
+                         FDRE (Setup_fdre_C_D)        0.077    10.966    issue_address_reg[24]
+  -------------------------------------------------------------------
+                         required time                         10.966    
+                         arrival time                          -6.639    
+  -------------------------------------------------------------------
+                         slack                                  4.327    
+
+Slack (MET) :             4.377ns  (required time - arrival time)
+  Source:                 issue_bank_reg[0]/C
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Destination:            issue_address_reg[11]/D
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Path Group:             lookahead_loader_clk
+  Path Type:              Setup (Max at Slow Process Corner)
+  Requirement:            10.000ns  (lookahead_loader_clk rise@10.000ns - lookahead_loader_clk rise@0.000ns)
+  Data Path Delay:        5.616ns  (logic 2.355ns (41.934%)  route 3.261ns (58.066%))
+  Logic Levels:           7  (CARRY4=3 LUT6=3 RAMD32=1)
+  Clock Path Skew:        -0.049ns (DCD - SCD + CPR)
+    Destination Clock Delay (DCD):    0.924ns = ( 10.924 - 10.000 ) 
+    Source Clock Delay      (SCD):    0.973ns
+    Clock Pessimism Removal (CPR):    0.000ns
+  Clock Uncertainty:      0.035ns  ((TSJ^2 + TIJ^2)^1/2 + DJ) / 2 + PE
+    Total System Jitter     (TSJ):    0.071ns
+    Total Input Jitter      (TIJ):    0.000ns
+    Discrete Jitter          (DJ):    0.000ns
+    Phase Error              (PE):    0.000ns
+
+    Location             Delay type                Incr(ns)  Path(ns)    Netlist Resource(s)
+  -------------------------------------------------------------------    -------------------
+                         (clock lookahead_loader_clk rise edge)
+                                                      0.000     0.000 r  
+                                                      0.000     0.000 r  clk (IN)
+                         net (fo=678, unset)          0.973     0.973    clk
+                         FDRE                                         r  issue_bank_reg[0]/C
+  -------------------------------------------------------------------    -------------------
+                         FDRE (Prop_fdre_C_Q)         0.518     1.491 r  issue_bank_reg[0]/Q
+                         net (fo=148, unplaced)       1.074     2.565    b0_stride_mem_reg_r1_0_3_0_5/ADDRA0
+                         RAMD32 (Prop_ramd32_RADR0_O)
+                                                      0.321     2.886 r  b0_stride_mem_reg_r1_0_3_0_5/RAMA/O
+                         net (fo=1, unplaced)         1.111     3.997    b0_stride_mem_reg_r1_0_3_0_5_n_1
+                         LUT6 (Prop_lut6_I1_O)        0.124     4.121 r  issue_address[3]_i_7/O
+                         net (fo=1, unplaced)         0.000     4.121    issue_address[3]_i_7_n_0
+                         CARRY4 (Prop_carry4_S[0]_CO[3])
+                                                      0.513     4.634 r  issue_address_reg[3]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.009     4.643    issue_address_reg[3]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.760 r  issue_address_reg[7]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.760    issue_address_reg[7]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_O[3])
+                                                      0.331     5.091 r  issue_address_reg[11]_i_3/O[3]
+                         net (fo=1, unplaced)         0.618     5.709    data2[11]
+                         LUT6 (Prop_lut6_I1_O)        0.307     6.016 r  issue_address[11]_i_2/O
+                         net (fo=1, unplaced)         0.449     6.465    issue_address[11]_i_2_n_0
+                         LUT6 (Prop_lut6_I3_O)        0.124     6.589 r  issue_address[11]_i_1/O
+                         net (fo=1, unplaced)         0.000     6.589    issue_address2_out[11]
+                         FDRE                                         r  issue_address_reg[11]/D
+  -------------------------------------------------------------------    -------------------
+
+                         (clock lookahead_loader_clk rise edge)
+                                                     10.000    10.000 r  
+                                                      0.000    10.000 r  clk (IN)
+                         net (fo=678, unset)          0.924    10.924    clk
+                         FDRE                                         r  issue_address_reg[11]/C
+                         clock pessimism              0.000    10.924    
+                         clock uncertainty           -0.035    10.889    
+                         FDRE (Setup_fdre_C_D)        0.077    10.966    issue_address_reg[11]
+  -------------------------------------------------------------------
+                         required time                         10.966    
+                         arrival time                          -6.589    
+  -------------------------------------------------------------------
+                         slack                                  4.377    
+
+Slack (MET) :             4.390ns  (required time - arrival time)
+  Source:                 issue_bank_reg[0]/C
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Destination:            issue_address_reg[18]/D
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Path Group:             lookahead_loader_clk
+  Path Type:              Setup (Max at Slow Process Corner)
+  Requirement:            10.000ns  (lookahead_loader_clk rise@10.000ns - lookahead_loader_clk rise@0.000ns)
+  Data Path Delay:        5.603ns  (logic 2.508ns (44.762%)  route 3.095ns (55.238%))
+  Logic Levels:           9  (CARRY4=5 LUT6=3 RAMD32=1)
+  Clock Path Skew:        -0.049ns (DCD - SCD + CPR)
+    Destination Clock Delay (DCD):    0.924ns = ( 10.924 - 10.000 ) 
+    Source Clock Delay      (SCD):    0.973ns
+    Clock Pessimism Removal (CPR):    0.000ns
+  Clock Uncertainty:      0.035ns  ((TSJ^2 + TIJ^2)^1/2 + DJ) / 2 + PE
+    Total System Jitter     (TSJ):    0.071ns
+    Total Input Jitter      (TIJ):    0.000ns
+    Discrete Jitter          (DJ):    0.000ns
+    Phase Error              (PE):    0.000ns
+
+    Location             Delay type                Incr(ns)  Path(ns)    Netlist Resource(s)
+  -------------------------------------------------------------------    -------------------
+                         (clock lookahead_loader_clk rise edge)
+                                                      0.000     0.000 r  
+                                                      0.000     0.000 r  clk (IN)
+                         net (fo=678, unset)          0.973     0.973    clk
+                         FDRE                                         r  issue_bank_reg[0]/C
+  -------------------------------------------------------------------    -------------------
+                         FDRE (Prop_fdre_C_Q)         0.518     1.491 r  issue_bank_reg[0]/Q
+                         net (fo=148, unplaced)       1.074     2.565    b0_stride_mem_reg_r1_0_3_0_5/ADDRA0
+                         RAMD32 (Prop_ramd32_RADR0_O)
+                                                      0.321     2.886 r  b0_stride_mem_reg_r1_0_3_0_5/RAMA/O
+                         net (fo=1, unplaced)         1.111     3.997    b0_stride_mem_reg_r1_0_3_0_5_n_1
+                         LUT6 (Prop_lut6_I1_O)        0.124     4.121 r  issue_address[3]_i_7/O
+                         net (fo=1, unplaced)         0.000     4.121    issue_address[3]_i_7_n_0
+                         CARRY4 (Prop_carry4_S[0]_CO[3])
+                                                      0.513     4.634 r  issue_address_reg[3]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.009     4.643    issue_address_reg[3]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.760 r  issue_address_reg[7]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.760    issue_address_reg[7]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.877 r  issue_address_reg[11]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.877    issue_address_reg[11]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.117     4.994 r  issue_address_reg[15]_i_3/CO[3]
+                         net (fo=1, unplaced)         0.000     4.994    issue_address_reg[15]_i_3_n_0
+                         CARRY4 (Prop_carry4_CI_O[2])
+                                                      0.256     5.250 r  issue_address_reg[19]_i_3/O[2]
+                         net (fo=1, unplaced)         0.452     5.702    data2[18]
+                         LUT6 (Prop_lut6_I1_O)        0.301     6.003 r  issue_address[18]_i_2/O
+                         net (fo=1, unplaced)         0.449     6.452    issue_address[18]_i_2_n_0
+                         LUT6 (Prop_lut6_I3_O)        0.124     6.576 r  issue_address[18]_i_1/O
+                         net (fo=1, unplaced)         0.000     6.576    issue_address2_out[18]
+                         FDRE                                         r  issue_address_reg[18]/D
+  -------------------------------------------------------------------    -------------------
+
+                         (clock lookahead_loader_clk rise edge)
+                                                     10.000    10.000 r  
+                                                      0.000    10.000 r  clk (IN)
+                         net (fo=678, unset)          0.924    10.924    clk
+                         FDRE                                         r  issue_address_reg[18]/C
+                         clock pessimism              0.000    10.924    
+                         clock uncertainty           -0.035    10.889    
+                         FDRE (Setup_fdre_C_D)        0.077    10.966    issue_address_reg[18]
+  -------------------------------------------------------------------
+                         required time                         10.966    
+                         arrival time                          -6.576    
+  -------------------------------------------------------------------
+                         slack                                  4.390    
+
+Slack (MET) :             4.405ns  (required time - arrival time)
+  Source:                 schedule_bank_reg[0]__0/C
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Destination:            fetch_b0_mask_d_reg[0]/R
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Path Group:             lookahead_loader_clk
+  Path Type:              Setup (Max at Slow Process Corner)
+  Requirement:            10.000ns  (lookahead_loader_clk rise@10.000ns - lookahead_loader_clk rise@0.000ns)
+  Data Path Delay:        4.987ns  (logic 1.090ns (21.857%)  route 3.897ns (78.143%))
+  Logic Levels:           3  (LUT5=1 LUT6=1 RAMD32=1)
+  Clock Path Skew:        -0.049ns (DCD - SCD + CPR)
+    Destination Clock Delay (DCD):    0.924ns = ( 10.924 - 10.000 ) 
+    Source Clock Delay      (SCD):    0.973ns
+    Clock Pessimism Removal (CPR):    0.000ns
+  Clock Uncertainty:      0.035ns  ((TSJ^2 + TIJ^2)^1/2 + DJ) / 2 + PE
+    Total System Jitter     (TSJ):    0.071ns
+    Total Input Jitter      (TIJ):    0.000ns
+    Discrete Jitter          (DJ):    0.000ns
+    Phase Error              (PE):    0.000ns
+
+    Location             Delay type                Incr(ns)  Path(ns)    Netlist Resource(s)
+  -------------------------------------------------------------------    -------------------
+                         (clock lookahead_loader_clk rise edge)
+                                                      0.000     0.000 r  
+                                                      0.000     0.000 r  clk (IN)
+                         net (fo=678, unset)          0.973     0.973    clk
+                         FDRE                                         r  schedule_bank_reg[0]__0/C
+  -------------------------------------------------------------------    -------------------
+                         FDRE (Prop_fdre_C_Q)         0.518     1.491 r  schedule_bank_reg[0]__0/Q
+                         net (fo=65, unplaced)        1.054     2.545    b_row_mask_mem_reg_0_3_0_5/ADDRC0
+                         RAMD32 (Prop_ramd32_RADR0_O)
+                                                      0.324     2.869 f  b_row_mask_mem_reg_0_3_0_5/RAMC/O
+                         net (fo=1, unplaced)         1.111     3.980    fetch_b0_mask_d3[4]
+                         LUT6 (Prop_lut6_I1_O)        0.124     4.104 r  fetch_b1_mask_d[7]_i_4/O
+                         net (fo=1, unplaced)         0.902     5.006    fetch_b1_mask_d[7]_i_4_n_0
+                         LUT5 (Prop_lut5_I1_O)        0.124     5.130 r  fetch_b1_mask_d[7]_i_1/O
+                         net (fo=16, unplaced)        0.830     5.960    fetch_b1_mask_d[7]_i_1_n_0
+                         FDRE                                         r  fetch_b0_mask_d_reg[0]/R
+  -------------------------------------------------------------------    -------------------
+
+                         (clock lookahead_loader_clk rise edge)
+                                                     10.000    10.000 r  
+                                                      0.000    10.000 r  clk (IN)
+                         net (fo=678, unset)          0.924    10.924    clk
+                         FDRE                                         r  fetch_b0_mask_d_reg[0]/C
+                         clock pessimism              0.000    10.924    
+                         clock uncertainty           -0.035    10.889    
+                         FDRE (Setup_fdre_C_R)       -0.524    10.365    fetch_b0_mask_d_reg[0]
+  -------------------------------------------------------------------
+                         required time                         10.365    
+                         arrival time                          -5.960    
+  -------------------------------------------------------------------
+                         slack                                  4.405    
+
+Slack (MET) :             4.405ns  (required time - arrival time)
+  Source:                 schedule_bank_reg[0]__0/C
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Destination:            fetch_b0_mask_d_reg[1]/R
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Path Group:             lookahead_loader_clk
+  Path Type:              Setup (Max at Slow Process Corner)
+  Requirement:            10.000ns  (lookahead_loader_clk rise@10.000ns - lookahead_loader_clk rise@0.000ns)
+  Data Path Delay:        4.987ns  (logic 1.090ns (21.857%)  route 3.897ns (78.143%))
+  Logic Levels:           3  (LUT5=1 LUT6=1 RAMD32=1)
+  Clock Path Skew:        -0.049ns (DCD - SCD + CPR)
+    Destination Clock Delay (DCD):    0.924ns = ( 10.924 - 10.000 ) 
+    Source Clock Delay      (SCD):    0.973ns
+    Clock Pessimism Removal (CPR):    0.000ns
+  Clock Uncertainty:      0.035ns  ((TSJ^2 + TIJ^2)^1/2 + DJ) / 2 + PE
+    Total System Jitter     (TSJ):    0.071ns
+    Total Input Jitter      (TIJ):    0.000ns
+    Discrete Jitter          (DJ):    0.000ns
+    Phase Error              (PE):    0.000ns
+
+    Location             Delay type                Incr(ns)  Path(ns)    Netlist Resource(s)
+  -------------------------------------------------------------------    -------------------
+                         (clock lookahead_loader_clk rise edge)
+                                                      0.000     0.000 r  
+                                                      0.000     0.000 r  clk (IN)
+                         net (fo=678, unset)          0.973     0.973    clk
+                         FDRE                                         r  schedule_bank_reg[0]__0/C
+  -------------------------------------------------------------------    -------------------
+                         FDRE (Prop_fdre_C_Q)         0.518     1.491 r  schedule_bank_reg[0]__0/Q
+                         net (fo=65, unplaced)        1.054     2.545    b_row_mask_mem_reg_0_3_0_5/ADDRC0
+                         RAMD32 (Prop_ramd32_RADR0_O)
+                                                      0.324     2.869 f  b_row_mask_mem_reg_0_3_0_5/RAMC/O
+                         net (fo=1, unplaced)         1.111     3.980    fetch_b0_mask_d3[4]
+                         LUT6 (Prop_lut6_I1_O)        0.124     4.104 r  fetch_b1_mask_d[7]_i_4/O
+                         net (fo=1, unplaced)         0.902     5.006    fetch_b1_mask_d[7]_i_4_n_0
+                         LUT5 (Prop_lut5_I1_O)        0.124     5.130 r  fetch_b1_mask_d[7]_i_1/O
+                         net (fo=16, unplaced)        0.830     5.960    fetch_b1_mask_d[7]_i_1_n_0
+                         FDRE                                         r  fetch_b0_mask_d_reg[1]/R
+  -------------------------------------------------------------------    -------------------
+
+                         (clock lookahead_loader_clk rise edge)
+                                                     10.000    10.000 r  
+                                                      0.000    10.000 r  clk (IN)
+                         net (fo=678, unset)          0.924    10.924    clk
+                         FDRE                                         r  fetch_b0_mask_d_reg[1]/C
+                         clock pessimism              0.000    10.924    
+                         clock uncertainty           -0.035    10.889    
+                         FDRE (Setup_fdre_C_R)       -0.524    10.365    fetch_b0_mask_d_reg[1]
+  -------------------------------------------------------------------
+                         required time                         10.365    
+                         arrival time                          -5.960    
+  -------------------------------------------------------------------
+                         slack                                  4.405    
+
+Slack (MET) :             4.405ns  (required time - arrival time)
+  Source:                 schedule_bank_reg[0]__0/C
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Destination:            fetch_b0_mask_d_reg[2]/R
+                            (rising edge-triggered cell FDRE clocked by lookahead_loader_clk  {rise@0.000ns fall@5.000ns period=10.000ns})
+  Path Group:             lookahead_loader_clk
+  Path Type:              Setup (Max at Slow Process Corner)
+  Requirement:            10.000ns  (lookahead_loader_clk rise@10.000ns - lookahead_loader_clk rise@0.000ns)
+  Data Path Delay:        4.987ns  (logic 1.090ns (21.857%)  route 3.897ns (78.143%))
+  Logic Levels:           3  (LUT5=1 LUT6=1 RAMD32=1)
+  Clock Path Skew:        -0.049ns (DCD - SCD + CPR)
+    Destination Clock Delay (DCD):    0.924ns = ( 10.924 - 10.000 ) 
+    Source Clock Delay      (SCD):    0.973ns
+    Clock Pessimism Removal (CPR):    0.000ns
+  Clock Uncertainty:      0.035ns  ((TSJ^2 + TIJ^2)^1/2 + DJ) / 2 + PE
+    Total System Jitter     (TSJ):    0.071ns
+    Total Input Jitter      (TIJ):    0.000ns
+    Discrete Jitter          (DJ):    0.000ns
+    Phase Error              (PE):    0.000ns
+
+    Location             Delay type                Incr(ns)  Path(ns)    Netlist Resource(s)
+  -------------------------------------------------------------------    -------------------
+                         (clock lookahead_loader_clk rise edge)
+                                                      0.000     0.000 r  
+                                                      0.000     0.000 r  clk (IN)
+                         net (fo=678, unset)          0.973     0.973    clk
+                         FDRE                                         r  schedule_bank_reg[0]__0/C
+  -------------------------------------------------------------------    -------------------
+                         FDRE (Prop_fdre_C_Q)         0.518     1.491 r  schedule_bank_reg[0]__0/Q
+                         net (fo=65, unplaced)        1.054     2.545    b_row_mask_mem_reg_0_3_0_5/ADDRC0
+                         RAMD32 (Prop_ramd32_RADR0_O)
+                                                      0.324     2.869 f  b_row_mask_mem_reg_0_3_0_5/RAMC/O
+                         net (fo=1, unplaced)         1.111     3.980    fetch_b0_mask_d3[4]
+                         LUT6 (Prop_lut6_I1_O)        0.124     4.104 r  fetch_b1_mask_d[7]_i_4/O
+                         net (fo=1, unplaced)         0.902     5.006    fetch_b1_mask_d[7]_i_4_n_0
+                         LUT5 (Prop_lut5_I1_O)        0.124     5.130 r  fetch_b1_mask_d[7]_i_1/O
+                         net (fo=16, unplaced)        0.830     5.960    fetch_b1_mask_d[7]_i_1_n_0
+                         FDRE                                         r  fetch_b0_mask_d_reg[2]/R
+  -------------------------------------------------------------------    -------------------
+
+                         (clock lookahead_loader_clk rise edge)
+                                                     10.000    10.000 r  
+                                                      0.000    10.000 r  clk (IN)
+                         net (fo=678, unset)          0.924    10.924    clk
+                         FDRE                                         r  fetch_b0_mask_d_reg[2]/C
+                         clock pessimism              0.000    10.924    
+                         clock uncertainty           -0.035    10.889    
+                         FDRE (Setup_fdre_C_R)       -0.524    10.365    fetch_b0_mask_d_reg[2]
+  -------------------------------------------------------------------
+                         required time                         10.365    
+                         arrival time                          -5.960    
+  -------------------------------------------------------------------
+                         slack                                  4.405    
+
+
+
+
+
+Pulse Width Checks
+--------------------------------------------------------------------------------------
+Clock Name:         lookahead_loader_clk
+Waveform(ns):       { 0.000 5.000 }
+Period(ns):         10.000
+Sources:            { clk }
+
+Check Type        Corner  Lib Pin             Reference Pin  Required(ns)  Actual(ns)  Slack(ns)  Location  Pin
+Min Period        n/a     RAMB18E1/CLKARDCLK  n/a            2.944         10.000      7.056                a_storage/memory_reg/CLKARDCLK
+Min Period        n/a     RAMB18E1/CLKBWRCLK  n/a            2.944         10.000      7.056                a_storage/memory_reg/CLKBWRCLK
+Min Period        n/a     RAMB18E1/CLKARDCLK  n/a            2.944         10.000      7.056                b0_storage/memory_reg/CLKARDCLK
+Min Period        n/a     RAMB18E1/CLKBWRCLK  n/a            2.944         10.000      7.056                b0_storage/memory_reg/CLKBWRCLK
+Min Period        n/a     RAMB18E1/CLKARDCLK  n/a            2.944         10.000      7.056                b1_storage/memory_reg/CLKARDCLK
+Min Period        n/a     RAMB18E1/CLKBWRCLK  n/a            2.944         10.000      7.056                b1_storage/memory_reg/CLKBWRCLK
+Min Period        n/a     FDRE/C              n/a            1.000         10.000      9.000                allocate_bank_reg[0]/C
+Min Period        n/a     FDRE/C              n/a            1.000         10.000      9.000                allocate_bank_reg[1]/C
+Min Period        n/a     FDRE/C              n/a            1.000         10.000      9.000                allocated_tiles_reg[0]/C
+Min Period        n/a     FDRE/C              n/a            1.000         10.000      9.000                allocated_tiles_reg[1]/C
+Min Period        n/a     FDRE/C              n/a            1.000         10.000      9.000                allocated_tiles_reg[2]/C
+Min Period        n/a     FDRE/C              n/a            1.000         10.000      9.000                error_reg/C
+Min Period        n/a     FDRE/C              n/a            1.000         10.000      9.000                fetch_a_mask_d_reg[0]/C
+Min Period        n/a     FDRE/C              n/a            1.000         10.000      9.000                fetch_a_mask_d_reg[1]/C
+Min Period        n/a     FDRE/C              n/a            1.000         10.000      9.000                fetch_a_mask_d_reg[2]/C
+Min Period        n/a     FDRE/C              n/a            1.000         10.000      9.000                fetch_a_mask_d_reg[3]/C
+Min Period        n/a     FDRE/C              n/a            1.000         10.000      9.000                fetch_a_mask_d_reg[4]/C
+Min Period        n/a     FDRE/C              n/a            1.000         10.000      9.000                fetch_a_mask_d_reg[5]/C
+Min Period        n/a     FDRE/C              n/a            1.000         10.000      9.000                fetch_a_mask_d_reg[6]/C
+Min Period        n/a     FDRE/C              n/a            1.000         10.000      9.000                fetch_a_mask_d_reg[7]/C
+Low Pulse Width   Slow    RAMD32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_0_5/RAMA/CLK
+Low Pulse Width   Fast    RAMD32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_0_5/RAMA/CLK
+Low Pulse Width   Slow    RAMD32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_0_5/RAMA_D1/CLK
+Low Pulse Width   Fast    RAMD32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_0_5/RAMA_D1/CLK
+Low Pulse Width   Slow    RAMD32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_0_5/RAMB/CLK
+Low Pulse Width   Fast    RAMD32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_0_5/RAMB/CLK
+Low Pulse Width   Slow    RAMD32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_0_5/RAMB_D1/CLK
+Low Pulse Width   Fast    RAMD32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_0_5/RAMB_D1/CLK
+Low Pulse Width   Slow    RAMD32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_0_5/RAMC/CLK
+Low Pulse Width   Fast    RAMD32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_0_5/RAMC/CLK
+Low Pulse Width   Slow    RAMD32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_0_5/RAMC_D1/CLK
+Low Pulse Width   Fast    RAMD32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_0_5/RAMC_D1/CLK
+Low Pulse Width   Slow    RAMS32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_0_5/RAMD/CLK
+Low Pulse Width   Fast    RAMS32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_0_5/RAMD/CLK
+Low Pulse Width   Slow    RAMS32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_0_5/RAMD_D1/CLK
+Low Pulse Width   Fast    RAMS32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_0_5/RAMD_D1/CLK
+Low Pulse Width   Slow    RAMD32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_12_17/RAMA/CLK
+Low Pulse Width   Fast    RAMD32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_12_17/RAMA/CLK
+Low Pulse Width   Slow    RAMD32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_12_17/RAMA_D1/CLK
+Low Pulse Width   Fast    RAMD32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_12_17/RAMA_D1/CLK
+High Pulse Width  Slow    RAMD32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_0_5/RAMA/CLK
+High Pulse Width  Fast    RAMD32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_0_5/RAMA/CLK
+High Pulse Width  Slow    RAMD32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_0_5/RAMA_D1/CLK
+High Pulse Width  Fast    RAMD32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_0_5/RAMA_D1/CLK
+High Pulse Width  Slow    RAMD32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_0_5/RAMB/CLK
+High Pulse Width  Fast    RAMD32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_0_5/RAMB/CLK
+High Pulse Width  Slow    RAMD32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_0_5/RAMB_D1/CLK
+High Pulse Width  Fast    RAMD32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_0_5/RAMB_D1/CLK
+High Pulse Width  Slow    RAMD32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_0_5/RAMC/CLK
+High Pulse Width  Fast    RAMD32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_0_5/RAMC/CLK
+High Pulse Width  Slow    RAMD32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_0_5/RAMC_D1/CLK
+High Pulse Width  Fast    RAMD32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_0_5/RAMC_D1/CLK
+High Pulse Width  Slow    RAMS32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_0_5/RAMD/CLK
+High Pulse Width  Fast    RAMS32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_0_5/RAMD/CLK
+High Pulse Width  Slow    RAMS32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_0_5/RAMD_D1/CLK
+High Pulse Width  Fast    RAMS32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_0_5/RAMD_D1/CLK
+High Pulse Width  Slow    RAMD32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_12_17/RAMA/CLK
+High Pulse Width  Fast    RAMD32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_12_17/RAMA/CLK
+High Pulse Width  Slow    RAMD32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_12_17/RAMA_D1/CLK
+High Pulse Width  Fast    RAMD32/CLK          n/a            1.250         5.000       3.750                a_base_mem_reg_r1_0_3_12_17/RAMA_D1/CLK
+
+
+

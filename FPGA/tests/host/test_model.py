@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from budgetcuda import Device
+from budgetcuda import Device, DiagnosticsSettings
 from budgetcuda.compiler import HostBuffer, Layer, ModelPackage, build_tiny_conv_relu_package, upload_model
 from budgetcuda.dtypes import BufferUsage, DType, OpType
 from budgetcuda.model import Model
@@ -93,9 +93,9 @@ class ModelTest(unittest.TestCase):
         dev = Device.mock()
         package = build_tiny_conv_relu_package((1, 1, 3, 3), [[[[1, 0], [0, 1]]]], bias_values=[-10])
         model = upload_model(dev, package)
-        result = model.run([1, 2, 3, 4, 5, 6, 7, 8, 9])
+        result = model.run([1, 2, 3, 4, 5, 6, 7, 7, 7])
         values = result.reshape(-1).tolist() if hasattr(result, "reshape") else result
-        self.assertEqual(values, [0, 0, 2, 4])
+        self.assertEqual(values, [0, 0, 1, 2])
 
     def test_model_run_executes_mock_requantize(self):
         dev = Device.mock()
@@ -126,6 +126,70 @@ class ModelTest(unittest.TestCase):
         result = model.run([-8, -3, 0, 7])
         values = result.tolist() if hasattr(result, "tolist") else result
         self.assertEqual(values, [-2, -1, 0, 7])
+
+    def test_model_run_executes_packed_int4_maxpool(self):
+        dev = Device.mock()
+        package = ModelPackage(
+            buffers=[
+                HostBuffer("input", (1, 1, 2, 4), DType.INT4),
+                HostBuffer("output", (1, 1, 1, 2), DType.INT4, usage=BufferUsage.OUTPUT),
+            ],
+            layers=[
+                Layer(
+                    OpType.POOL,
+                    input0=0,
+                    output=1,
+                    n=1,
+                    c=1,
+                    h=2,
+                    w=4,
+                    out_h=1,
+                    out_w=2,
+                    kernel_h=2,
+                    kernel_w=2,
+                    stride_h=2,
+                    stride_w=2,
+                )
+            ],
+            input_index=0,
+            output_index=1,
+        )
+        result = upload_model(dev, package).run([-8, -1, 2, 3, 7, 0, -4, 6])
+        values = result.reshape(-1).tolist() if hasattr(result, "reshape") else result
+        self.assertEqual(values, [7, 6])
+
+    def test_diagnostics_fingerprint_finds_first_divergent_layer(self):
+        package = ModelPackage(
+            buffers=[
+                HostBuffer("input", (4,), DType.INT8),
+                HostBuffer("middle", (4,), DType.INT8),
+                HostBuffer(
+                    "output", (4,), DType.INT8,
+                    usage=BufferUsage.OUTPUT,
+                ),
+            ],
+            layers=[
+                Layer(OpType.ACTIVATION, input0=0, output=1),
+                Layer(OpType.ACTIVATION, input0=1, output=2),
+            ],
+            input_index=0,
+            output_index=2,
+        )
+        first = upload_model(Device.mock(), package).run(
+            [-1, 0, 3, 127], diagnostics=DiagnosticsSettings()
+        ).diagnostics
+        second = upload_model(Device.mock(), package).run(
+            [-1, 0, 4, 127], diagnostics=DiagnosticsSettings()
+        ).diagnostics
+
+        divergence = second.first_divergence(first)
+        self.assertIsNotNone(divergence)
+        self.assertEqual(divergence[0].layer_index, 0)
+        self.assertNotEqual(
+            divergence[0].output_hash, divergence[1].output_hash
+        )
+        self.assertGreater(divergence[0].saturation_percent, 0)
+        self.assertIn("output_hash", second.to_csv())
 
 
 if __name__ == "__main__":

@@ -35,12 +35,35 @@ def main() -> None:
         for host_buffer, device_tensor in zip(package.buffers, model.tensors):
             if host_buffer.data is None:
                 continue
-            actual = device.read(device_tensor).tobytes()
+            actual = device.protocol.read(
+                device_tensor.buffer_id,
+                0,
+                device_tensor.size_bytes,
+            )
             if actual != host_buffer.data:
-                raise RuntimeError(f"DRAM payload mismatch for {host_buffer.name}")
+                first_difference = next(
+                    (
+                        index
+                        for index, (expected_byte, actual_byte) in enumerate(
+                            zip(host_buffer.data, actual)
+                        )
+                        if expected_byte != actual_byte
+                    ),
+                    min(len(host_buffer.data), len(actual)),
+                )
+                raise RuntimeError(
+                    f"DRAM payload mismatch for {host_buffer.name}: "
+                    f"expected_bytes={len(host_buffer.data)} actual_bytes={len(actual)} "
+                    f"first_difference={first_difference} "
+                    f"expected={host_buffer.data.hex()} actual={actual.hex()}"
+                )
 
-        result = model.run(np.arange(1, 10, dtype=np.int8).reshape(1, 1, 3, 3))
-        expected = np.array([0, 0, 2, 4], dtype=np.int32).reshape(1, 1, 2, 2)
+        input_values = np.array(
+            [1, 2, 3, 4, 5, 6, 7, 7, 7],
+            dtype=np.int8,
+        ).reshape(1, 1, 3, 3)
+        result = model.run(input_values)
+        expected = np.array([0, 0, 1, 2], dtype=np.int32).reshape(1, 1, 2, 2)
         if not np.array_equal(result, expected):
             raise RuntimeError(f"graph result mismatch: got {result.tolist()}, expected {expected.tolist()}")
         print(f"model load smoke passed: {len(model.tensors)} tensors and descriptor uploaded; output={result.reshape(-1).tolist()}")

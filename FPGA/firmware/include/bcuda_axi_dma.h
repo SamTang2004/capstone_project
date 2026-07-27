@@ -23,8 +23,26 @@ enum {
     BCUDA_PL_REG_ARRAY_COUNT = 0x30u,
     BCUDA_PL_REG_RQ_MULTIPLIER = 0x34u,
     BCUDA_PL_REG_RQ_RIGHT_SHIFT = 0x38u,
-    BCUDA_PL_REG_RQ_OUTPUT_ZERO_POINT = 0x3cu
+    BCUDA_PL_REG_RQ_OUTPUT_ZERO_POINT = 0x3cu,
+    BCUDA_PL_REG_DIAG_TOTAL_CYCLES = 0x40u,
+    BCUDA_PL_REG_DIAG_ENGINE_CYCLES = 0x44u,
+    BCUDA_PL_REG_DIAG_COMPUTE_CYCLES = 0x48u,
+    BCUDA_PL_REG_DIAG_LOAD_CYCLES = 0x4cu,
+    BCUDA_PL_REG_DIAG_CACHE_WAIT_CYCLES = 0x50u,
+    BCUDA_PL_REG_DIAG_CACHE_READY_CYCLES = 0x54u,
+    BCUDA_PL_REG_DIAG_DDR_READ_COMMANDS = 0x58u,
+    BCUDA_PL_REG_DIAG_DDR_READ_BEATS = 0x5cu,
+    BCUDA_PL_REG_DIAG_DDR_WRITE_COMMANDS = 0x60u,
+    BCUDA_PL_REG_DIAG_DDR_STALL_CYCLES = 0x64u,
+    BCUDA_PL_REG_DIAG_CORE_ROWS = 0x68u,
+    BCUDA_PL_REG_DIAG_OUTPUT_STALL_CYCLES = 0x6cu,
+    BCUDA_PL_REG_DIAG_DESCRIPTOR_COUNT = 0x70u,
+    BCUDA_PL_REG_DIAG_CACHE_FULL_CYCLES = 0x74u,
+    BCUDA_PL_REG_DIAG_CACHE_OCCUPANCY = 0x78u,
+    BCUDA_PL_REG_DIAG_MAGIC = 0x7cu
 };
+
+#define BCUDA_PL_DIAGNOSTICS_MAGIC 0x44494132u
 
 enum {
     BCUDA_PL_CONTROL_START = 0x00000001u,
@@ -36,6 +54,10 @@ enum {
     BCUDA_PL_CONTROL_UPSAMPLE = 0x00000040u,
     BCUDA_PL_CONTROL_CONCAT = 0x00000080u,
     BCUDA_PL_CONTROL_AVGPOOL = 0x00000200u,
+    BCUDA_PL_CONTROL_FUSED_OUTPUT = 0x00000400u,
+    BCUDA_PL_CONTROL_FUSION_CONFIG = 0x00000800u,
+    BCUDA_PL_CONTROL_FUSED_ACTIVATION = 0x00001000u,
+    BCUDA_PL_CONTROL_INT4 = 0x00000100u,
     BCUDA_PL_STATUS_BUSY = 0x00000001u,
     BCUDA_PL_STATUS_DONE = 0x00000002u,
     BCUDA_PL_STATUS_ERROR = 0x00000004u,
@@ -43,6 +65,9 @@ enum {
     BCUDA_PL_TILE_ELEMENTS = 256u,
     BCUDA_PL_ARRAY_COUNT = 1u
 };
+
+#define BCUDA_PL_INT4_TILE_DIM 8u
+#define BCUDA_PL_INT4_ARRAY_COUNT 2u
 
 typedef struct {
     uintptr_t register_base;
@@ -63,10 +88,32 @@ typedef struct {
     uint32_t last_memory_io_flags;
 } BcudaAxiDma;
 
+typedef struct {
+    uint32_t total_cycles;
+    uint32_t engine_cycles;
+    uint32_t compute_cycles;
+    uint32_t load_cycles;
+    uint32_t cache_wait_cycles;
+    uint32_t cache_ready_cycles;
+    uint32_t ddr_read_commands;
+    uint32_t ddr_read_beats;
+    uint32_t ddr_write_commands;
+    uint32_t ddr_stall_cycles;
+    uint32_t core_rows;
+    uint32_t output_stall_cycles;
+    uint32_t descriptor_count;
+    uint32_t cache_full_cycles;
+    uint8_t max_allocated_tiles;
+    uint8_t max_ready_tiles;
+    uint8_t allocated_tiles;
+    uint8_t ready_tiles;
+} BcudaPlDiagnostics;
+
 void bcuda_axi_dma_init(BcudaAxiDma *dma, uintptr_t register_base, uint32_t timeout_cycles);
 int bcuda_axi_dma_submit_gemm(BcudaAxiDma *dma, const BcudaGemmDesc *desc, BcudaBuffer *A, BcudaBuffer *B, BcudaBuffer *C);
 int bcuda_axi_dma_submit_requantize(BcudaAxiDma *dma, const BcudaRequantDesc *desc, BcudaBuffer *input, BcudaBuffer *output);
 int bcuda_axi_dma_submit_conv2d(BcudaAxiDma *dma, const BcudaLayerDesc *layer, BcudaBuffer *input, BcudaBuffer *weight, BcudaBuffer *bias, BcudaBuffer *output);
+int bcuda_axi_dma_submit_fused_conv2d(BcudaAxiDma *dma, const BcudaLayerDesc *layer, const BcudaRequantParams *params, const BcudaLayerDesc *activation, BcudaBuffer *input, BcudaBuffer *weight, BcudaBuffer *bias, BcudaBuffer *output);
 int bcuda_axi_dma_submit_activation(BcudaAxiDma *dma, const BcudaLayerDesc *layer, BcudaBuffer *input, BcudaBuffer *output);
 int bcuda_axi_dma_submit_maxpool(BcudaAxiDma *dma, const BcudaLayerDesc *layer, BcudaBuffer *input, BcudaBuffer *output);
 int bcuda_axi_dma_submit_avgpool(BcudaAxiDma *dma, const BcudaLayerDesc *layer, BcudaBuffer *input, BcudaBuffer *output);
@@ -77,5 +124,6 @@ int bcuda_axi_dma_submit_tiled_gemm(BcudaAxiDma *dma, const BcudaGemmDesc *desc,
 int bcuda_axi_dma_configure_accumulator(BcudaAxiDma *dma, const BcudaAccumulatorConfig *config);
 int bcuda_axi_dma_configure_memory_io(BcudaAxiDma *dma, const BcudaMemoryIoConfig *config);
 int bcuda_axi_dma_poll_done(BcudaAxiDma *dma);
+int bcuda_axi_dma_read_diagnostics(BcudaAxiDma *dma, BcudaPlDiagnostics *out);
 
 #endif

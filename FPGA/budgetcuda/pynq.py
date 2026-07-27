@@ -7,7 +7,7 @@ import struct
 
 from .compiler import ModelPackage, upload_model
 from .device import Device
-from .dtypes import DType, dtype_size, normalize_dtype
+from .dtypes import DType, dtype_nbytes, normalize_dtype
 
 
 PL_REGISTER_BASE = 0x43C80000
@@ -26,6 +26,7 @@ PL_K = 0x28
 PL_TILE_SIZE = 0x2C
 PL_ARRAY_COUNT = 0x30
 PL_START = 0x1
+PL_CONTROL_INT4 = 0x100
 PL_STATUS_DONE = 0x2
 PL_STATUS_ERROR = 0x4
 
@@ -45,6 +46,7 @@ class PynqBuffer:
     data: object
     dtype: DType
     nbytes: int
+    shape: tuple[int, ...]
 
     @property
     def physical_address(self) -> int:
@@ -92,7 +94,7 @@ class LegacyXlnkBuffer:
 class LegacyXlnkAllocator:
     """Allocator adapter matching PYNQ's ``allocate(shape, dtype)`` API."""
 
-    _DTYPE_BYTES = {"int8": 1, "int16": 2, "int32": 4}
+    _DTYPE_BYTES = {"uint8": 1, "int8": 1, "int16": 2, "int32": 4}
 
     def __init__(self, device: str = XLNK_DEVICE):
         self._fd = os.open(device, os.O_RDWR)
@@ -188,22 +190,43 @@ class PynqPlRuntime:
 
     def allocate(self, shape, dtype: str | int | DType) -> PynqBuffer:
         dtype = normalize_dtype(dtype)
-        numpy_dtype = {DType.INT8: "int8", DType.INT16: "int16", DType.INT32: "int32"}[dtype]
-        data = self.allocate_fn(shape=tuple(shape), dtype=numpy_dtype)
-        return PynqBuffer(data, dtype, int(data.nbytes))
+        shape = tuple(int(dimension) for dimension in shape)
+        if not shape or any(dimension <= 0 for dimension in shape):
+            raise ValueError("PYNQ buffer shape must contain positive dimensions")
+        element_count = 1
+        for dimension in shape:
+            element_count *= dimension
+        if dtype == DType.INT4:
+            physical_shape = (dtype_nbytes(dtype, element_count),)
+            numpy_dtype = "uint8"
+        else:
+            physical_shape = shape
+            numpy_dtype = {
+                DType.INT8: "int8",
+                DType.INT16: "int16",
+                DType.INT32: "int32",
+            }[dtype]
+        data = self.allocate_fn(shape=physical_shape, dtype=numpy_dtype)
+        return PynqBuffer(data, dtype, int(data.nbytes), shape)
 
     @staticmethod
     def _validate_buffer(buffer: PynqBuffer, minimum_bytes: int, alignment: int) -> None:
         if buffer.physical_address > 0xFFFFFFFF or buffer.physical_address % alignment or buffer.nbytes < minimum_bytes:
             raise ValueError("Buffer is not suitable for the 32-bit PL DDR path")
 
-    def submit_gemm(self, a: PynqBuffer, b: PynqBuffer, c: PynqBuffer, m: int, n: int, k: int, *, array_count: int = 1) -> None:
-        if a.dtype != DType.INT8 or b.dtype != DType.INT8 or c.dtype != DType.INT32:
-            raise ValueError("PL GEMM requires INT8 A/B and INT32 C")
-        if min(m, n, k) <= 0 or array_count != 1:
+    def submit_gemm(self, a: PynqBuffer, b: PynqBuffer, c: PynqBuffer, m: int, n: int, k: int, *, array_count: int | None = None) -> None:
+        if a.dtype != b.dtype or a.dtype not in (DType.INT4, DType.INT8) or c.dtype != DType.INT32:
+            raise ValueError("PL GEMM requires matching INT4/INT8 A/B and INT32 C")
+        is_int4 = a.dtype == DType.INT4
+        tile_size = 8 if is_int4 else 16
+        expected_arrays = 2 if is_int4 else 1
+        array_count = expected_arrays if array_count is None else int(array_count)
+        if min(m, n, k) <= 0 or any(value % tile_size for value in (m, n, k)) or array_count != expected_arrays:
             raise ValueError("Invalid GEMM dimensions or array count")
-        self._validate_buffer(a, m * k, 4)
-        self._validate_buffer(b, k * n, 4)
+        a_stride = (k + 1) // 2 if is_int4 else k
+        b_stride = (n + 1) // 2 if is_int4 else n
+        self._validate_buffer(a, m * a_stride, 4)
+        self._validate_buffer(b, k * b_stride, 4)
         self._validate_buffer(c, m * n * 4, 4)
         a.flush()
         b.flush()
@@ -211,15 +234,15 @@ class PynqPlRuntime:
         self.mmio.write(PL_A_BASE, a.physical_address)
         self.mmio.write(PL_B_BASE, b.physical_address)
         self.mmio.write(PL_C_BASE, c.physical_address)
-        self.mmio.write(PL_A_STRIDE, k)
-        self.mmio.write(PL_B_STRIDE, n)
+        self.mmio.write(PL_A_STRIDE, a_stride)
+        self.mmio.write(PL_B_STRIDE, b_stride)
         self.mmio.write(PL_C_STRIDE, n * 4)
         self.mmio.write(PL_M, m)
         self.mmio.write(PL_N, n)
         self.mmio.write(PL_K, k)
-        self.mmio.write(PL_TILE_SIZE, 16)
+        self.mmio.write(PL_TILE_SIZE, tile_size)
         self.mmio.write(PL_ARRAY_COUNT, array_count)
-        self.mmio.write(PL_CONTROL, PL_START)
+        self.mmio.write(PL_CONTROL, PL_START | (PL_CONTROL_INT4 if is_int4 else 0))
 
     def wait_gemm(self, output: PynqBuffer, timeout_polls: int = 1_000_000) -> None:
         for _ in range(timeout_polls):

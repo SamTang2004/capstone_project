@@ -3,8 +3,9 @@ from __future__ import annotations
 from functools import reduce
 from operator import mul
 
-from .dtypes import OpType, dtype_size, normalize_dtype, normalize_layout, normalize_usage
+from .dtypes import DType, OpType, dtype_nbytes, dtype_size, normalize_dtype, normalize_layout, normalize_usage
 from .mock import MockBackend
+from .packing import pack_int4, unpack_int4
 from .protocol import ProtocolClient
 from .serializer import pack_gemm_desc, pack_graph_exec_desc
 from .tensor import Tensor
@@ -23,7 +24,7 @@ class Device:
         layout_norm = normalize_layout(layout)
         usage_norm = normalize_usage(usage)
         shape = tuple(int(dim) for dim in shape)
-        size_bytes = reduce(mul, shape, 1) * dtype_size(dtype_norm)
+        size_bytes = dtype_nbytes(dtype_norm, reduce(mul, shape, 1))
         tensor_desc = self.protocol.tensor_desc(shape, dtype_norm, layout_norm)
         response = self.protocol.alloc(size_bytes, tensor_desc, usage_norm)
         fields = response.fields or {}
@@ -97,6 +98,8 @@ class Device:
     def _to_bytes(values, tensor: Tensor) -> bytes:
         if isinstance(values, (bytes, bytearray, memoryview)):
             return bytes(values)
+        if tensor.dtype == DType.INT4:
+            return pack_int4(values)
         if hasattr(values, "tobytes"):
             return values.tobytes(order="C")
 
@@ -115,6 +118,16 @@ class Device:
 
     @staticmethod
     def _from_bytes(raw: bytes, tensor: Tensor, offset_bytes: int, nbytes: int):
+        if tensor.dtype == DType.INT4:
+            if int(offset_bytes) != 0 or nbytes != tensor.size_bytes:
+                return raw
+            values = unpack_int4(raw, reduce(mul, tensor.shape, 1))
+            try:
+                import numpy as np
+
+                return np.asarray(values, dtype=np.int8).reshape(tensor.shape)
+            except ModuleNotFoundError:
+                return values
         try:
             import numpy as np
 

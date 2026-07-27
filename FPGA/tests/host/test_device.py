@@ -28,6 +28,17 @@ class DeviceTest(unittest.TestCase):
         out = dev.read(tensor)
         self.assertEqual(list(out.reshape(-1)) if hasattr(out, "reshape") else out, [1, -2, 3, -4])
 
+    def test_device_write_and_read_round_trip_packed_int4(self):
+        dev = Device.mock()
+        tensor = dev.alloc((1, 5), "int4")
+        self.assertEqual(tensor.nbytes, 3)
+        self.assertEqual(tensor.bits_per_element, 4)
+        with self.assertRaisesRegex(ValueError, "packed"):
+            _ = tensor.itemsize
+        dev.write(tensor, [[-8, -1, 0, 7, 3]])
+        out = dev.read(tensor)
+        self.assertEqual(list(out.reshape(-1)) if hasattr(out, "reshape") else out, [-8, -1, 0, 7, 3])
+
     def test_device_execute_gemm_matches_numpy_reference(self):
         dev = Device.mock()
         A_host = [[1, 2, 3], [4, 5, 6]]

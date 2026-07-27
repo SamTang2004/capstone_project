@@ -1,0 +1,212 @@
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2024 Advanced Micro Devices, Inc. All Rights Reserved.
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version : Vivado v.2024.2 (win64) Build 5239630 Fri Nov 08 22:35:27 MST 2024
+| Date         : Mon Jul 27 02:32:41 2026
+| Host         : Server_0 running 64-bit major release  (build 9200)
+| Command      : report_utilization -hierarchical -file C:/python_projects/capstone_project/FPGA/hardware/reports/dual_int4_ddr_top_ooc/utilization.rpt
+| Design       : bcuda_dual_int4_ddr_top
+| Device       : xc7z020clg400-1
+| Speed File   : -1
+| Design State : Synthesized
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Utilization Design Information
+
+Table of Contents
+-----------------
+1. Utilization by Hierarchy
+
+1. Utilization by Hierarchy
+---------------------------
+
++--------------------------------------+--------------------------------------+------------+------------+---------+------+-------+--------+--------+------------+
+|               Instance               |                Module                | Total LUTs | Logic LUTs | LUTRAMs | SRLs |  FFs  | RAMB36 | RAMB18 | DSP Blocks |
++--------------------------------------+--------------------------------------+------------+------------+---------+------+-------+--------+--------+------------+
+| bcuda_dual_int4_ddr_top              |                                (top) |      26266 |      25342 |     924 |    0 | 21016 |      5 |      3 |         50 |
+|   (bcuda_dual_int4_ddr_top)          |                                (top) |         43 |         43 |       0 |    0 |  1154 |      0 |      0 |          3 |
+|   activation                         |                  activation_int4_ddr |        246 |        246 |       0 |    0 |   209 |      0 |      0 |          0 |
+|   bias_loader                        |                conv_bias_preload_ddr |        128 |        128 |       0 |    0 |   141 |      0 |      0 |          0 |
+|   control                            |                     axi_lite_control |        637 |        637 |       0 |    0 |   557 |      0 |      0 |          0 |
+|   conv_loader                        |    conv2d_tile_group_loader_int4_ddr |       3497 |       3481 |      16 |    0 |  3911 |      0 |      0 |         19 |
+|     (conv_loader)                    |    conv2d_tile_group_loader_int4_ddr |         16 |         12 |       4 |    0 |    39 |      0 |      0 |          0 |
+|     gen_loaders[0].loader            |          conv2d_tile_loader_int4_ddr |        922 |        918 |       4 |    0 |   879 |      0 |      0 |          5 |
+|     gen_loaders[0].packer            |     int4_streaming_scalar_row_packer |        135 |        135 |       0 |    0 |   348 |      0 |      0 |          0 |
+|     gen_loaders[1].loader            |      conv2d_tile_loader_int4_ddr_146 |       1019 |       1015 |       4 |    0 |   973 |      0 |      0 |          7 |
+|     gen_loaders[1].packer            | int4_streaming_scalar_row_packer_147 |        139 |        139 |       0 |    0 |   349 |      0 |      0 |          0 |
+|     gen_loaders[2].loader            |      conv2d_tile_loader_int4_ddr_148 |       1077 |       1073 |       4 |    0 |   974 |      0 |      0 |          7 |
+|     gen_loaders[2].packer            | int4_streaming_scalar_row_packer_149 |        189 |        189 |       0 |    0 |   349 |      0 |      0 |          0 |
+|   conv_row_stream                    |    int4_dual_array_row_stream_buffer |        499 |        415 |      84 |    0 |    55 |      0 |      0 |          0 |
+|   conv_weight_cache                  |          int4_conv_weight_tile_cache |        449 |        449 |       0 |    0 |   287 |      5 |      0 |          0 |
+|   engine                             |              dual_int4_tiled_compute |      14516 |      14132 |     384 |    0 |  9446 |      0 |      0 |          0 |
+|     (engine)                         |              dual_int4_tiled_compute |         19 |         19 |       0 |    0 |    65 |      0 |      0 |          0 |
+|     accumulator                      |          parallel_accumulator_buffer |       1052 |        668 |     384 |    0 |   559 |      0 |      0 |          0 |
+|       (accumulator)                  |          parallel_accumulator_buffer |         14 |         14 |       0 |    0 |   559 |      0 |      0 |          0 |
+|       gen_accumulator_banks[0].bank0 |     parallel_accumulator_column_bank |         56 |         32 |      24 |    0 |     0 |      0 |      0 |          0 |
+|       gen_accumulator_banks[0].bank1 | parallel_accumulator_column_bank_131 |         60 |         36 |      24 |    0 |     0 |      0 |      0 |          0 |
+|       gen_accumulator_banks[1].bank0 | parallel_accumulator_column_bank_132 |         56 |         32 |      24 |    0 |     0 |      0 |      0 |          0 |
+|       gen_accumulator_banks[1].bank1 | parallel_accumulator_column_bank_133 |         56 |         32 |      24 |    0 |     0 |      0 |      0 |          0 |
+|       gen_accumulator_banks[2].bank0 | parallel_accumulator_column_bank_134 |         56 |         32 |      24 |    0 |     0 |      0 |      0 |          0 |
+|       gen_accumulator_banks[2].bank1 | parallel_accumulator_column_bank_135 |         56 |         32 |      24 |    0 |     0 |      0 |      0 |          0 |
+|       gen_accumulator_banks[3].bank0 | parallel_accumulator_column_bank_136 |         88 |         64 |      24 |    0 |     0 |      0 |      0 |          0 |
+|       gen_accumulator_banks[3].bank1 | parallel_accumulator_column_bank_137 |         88 |         64 |      24 |    0 |     0 |      0 |      0 |          0 |
+|       gen_accumulator_banks[4].bank0 | parallel_accumulator_column_bank_138 |         56 |         32 |      24 |    0 |     0 |      0 |      0 |          0 |
+|       gen_accumulator_banks[4].bank1 | parallel_accumulator_column_bank_139 |         56 |         32 |      24 |    0 |     0 |      0 |      0 |          0 |
+|       gen_accumulator_banks[5].bank0 | parallel_accumulator_column_bank_140 |         56 |         32 |      24 |    0 |     0 |      0 |      0 |          0 |
+|       gen_accumulator_banks[5].bank1 | parallel_accumulator_column_bank_141 |         56 |         32 |      24 |    0 |     0 |      0 |      0 |          0 |
+|       gen_accumulator_banks[6].bank0 | parallel_accumulator_column_bank_142 |         56 |         32 |      24 |    0 |     0 |      0 |      0 |          0 |
+|       gen_accumulator_banks[6].bank1 | parallel_accumulator_column_bank_143 |         56 |         32 |      24 |    0 |     0 |      0 |      0 |          0 |
+|       gen_accumulator_banks[7].bank0 | parallel_accumulator_column_bank_144 |         89 |         65 |      24 |    0 |     0 |      0 |      0 |          0 |
+|       gen_accumulator_banks[7].bank1 | parallel_accumulator_column_bank_145 |         97 |         73 |      24 |    0 |     0 |      0 |      0 |          0 |
+|     controller                       |                 gemm_controller_int4 |       1105 |       1105 |       0 |    0 |   101 |      0 |      0 |          0 |
+|     core                             |              gemm_dual_8x8_int4_core |      12340 |      12340 |       0 |    0 |  8721 |      0 |      0 |          0 |
+|       (core)                         |              gemm_dual_8x8_int4_core |       3676 |       3676 |       0 |    0 |  1427 |      0 |      0 |          0 |
+|       arrays                         |         dual_systolic_array_8x8_int4 |       8664 |       8664 |       0 |    0 |  7294 |      0 |      0 |          0 |
+|         array0                       |              systolic_array_8x8_int4 |       4304 |       4304 |       0 |    0 |  3648 |      0 |      0 |          0 |
+|           (array0)                   |              systolic_array_8x8_int4 |          1 |          1 |       0 |    0 |     0 |      0 |      0 |          0 |
+|           gen_rows[0].gen_cols[0].pe |                       pe_int4_mac_67 |         67 |         67 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[0].gen_cols[1].pe |                       pe_int4_mac_68 |         67 |         67 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[0].gen_cols[2].pe |                       pe_int4_mac_69 |         63 |         63 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[0].gen_cols[3].pe |                       pe_int4_mac_70 |         67 |         67 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[0].gen_cols[4].pe |                       pe_int4_mac_71 |         63 |         63 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[0].gen_cols[5].pe |                       pe_int4_mac_72 |         67 |         67 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[0].gen_cols[6].pe |                       pe_int4_mac_73 |         63 |         63 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[0].gen_cols[7].pe |                       pe_int4_mac_74 |         59 |         59 |       0 |    0 |    54 |      0 |      0 |          0 |
+|           gen_rows[1].gen_cols[0].pe |                       pe_int4_mac_75 |         61 |         61 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[1].gen_cols[1].pe |                       pe_int4_mac_76 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[1].gen_cols[2].pe |                       pe_int4_mac_77 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[1].gen_cols[3].pe |                       pe_int4_mac_78 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[1].gen_cols[4].pe |                       pe_int4_mac_79 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[1].gen_cols[5].pe |                       pe_int4_mac_80 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[1].gen_cols[6].pe |                       pe_int4_mac_81 |         57 |         57 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[1].gen_cols[7].pe |                       pe_int4_mac_82 |         57 |         57 |       0 |    0 |    54 |      0 |      0 |          0 |
+|           gen_rows[2].gen_cols[0].pe |                       pe_int4_mac_83 |         63 |         63 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[2].gen_cols[1].pe |                       pe_int4_mac_84 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[2].gen_cols[2].pe |                       pe_int4_mac_85 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[2].gen_cols[3].pe |                       pe_int4_mac_86 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[2].gen_cols[4].pe |                       pe_int4_mac_87 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[2].gen_cols[5].pe |                       pe_int4_mac_88 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[2].gen_cols[6].pe |                       pe_int4_mac_89 |         57 |         57 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[2].gen_cols[7].pe |                       pe_int4_mac_90 |         57 |         57 |       0 |    0 |    54 |      0 |      0 |          0 |
+|           gen_rows[3].gen_cols[0].pe |                       pe_int4_mac_91 |         94 |         94 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[3].gen_cols[1].pe |                       pe_int4_mac_92 |         92 |         92 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[3].gen_cols[2].pe |                       pe_int4_mac_93 |         92 |         92 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[3].gen_cols[3].pe |                       pe_int4_mac_94 |         92 |         92 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[3].gen_cols[4].pe |                       pe_int4_mac_95 |         92 |         92 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[3].gen_cols[5].pe |                       pe_int4_mac_96 |         92 |         92 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[3].gen_cols[6].pe |                       pe_int4_mac_97 |         90 |         90 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[3].gen_cols[7].pe |                       pe_int4_mac_98 |         90 |         90 |       0 |    0 |    54 |      0 |      0 |          0 |
+|           gen_rows[4].gen_cols[0].pe |                       pe_int4_mac_99 |         63 |         63 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[4].gen_cols[1].pe |                      pe_int4_mac_100 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[4].gen_cols[2].pe |                      pe_int4_mac_101 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[4].gen_cols[3].pe |                      pe_int4_mac_102 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[4].gen_cols[4].pe |                      pe_int4_mac_103 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[4].gen_cols[5].pe |                      pe_int4_mac_104 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[4].gen_cols[6].pe |                      pe_int4_mac_105 |         57 |         57 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[4].gen_cols[7].pe |                      pe_int4_mac_106 |         57 |         57 |       0 |    0 |    54 |      0 |      0 |          0 |
+|           gen_rows[5].gen_cols[0].pe |                      pe_int4_mac_107 |         61 |         61 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[5].gen_cols[1].pe |                      pe_int4_mac_108 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[5].gen_cols[2].pe |                      pe_int4_mac_109 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[5].gen_cols[3].pe |                      pe_int4_mac_110 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[5].gen_cols[4].pe |                      pe_int4_mac_111 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[5].gen_cols[5].pe |                      pe_int4_mac_112 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[5].gen_cols[6].pe |                      pe_int4_mac_113 |         57 |         57 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[5].gen_cols[7].pe |                      pe_int4_mac_114 |         57 |         57 |       0 |    0 |    54 |      0 |      0 |          0 |
+|           gen_rows[6].gen_cols[0].pe |                      pe_int4_mac_115 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[6].gen_cols[1].pe |                      pe_int4_mac_116 |         57 |         57 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[6].gen_cols[2].pe |                      pe_int4_mac_117 |         57 |         57 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[6].gen_cols[3].pe |                      pe_int4_mac_118 |         57 |         57 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[6].gen_cols[4].pe |                      pe_int4_mac_119 |         57 |         57 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[6].gen_cols[5].pe |                      pe_int4_mac_120 |         57 |         57 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[6].gen_cols[6].pe |                      pe_int4_mac_121 |         55 |         55 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[6].gen_cols[7].pe |                      pe_int4_mac_122 |         57 |         57 |       0 |    0 |    54 |      0 |      0 |          0 |
+|           gen_rows[7].gen_cols[0].pe |                      pe_int4_mac_123 |         91 |         91 |       0 |    0 |    54 |      0 |      0 |          0 |
+|           gen_rows[7].gen_cols[1].pe |                      pe_int4_mac_124 |         89 |         89 |       0 |    0 |    54 |      0 |      0 |          0 |
+|           gen_rows[7].gen_cols[2].pe |                      pe_int4_mac_125 |         89 |         89 |       0 |    0 |    54 |      0 |      0 |          0 |
+|           gen_rows[7].gen_cols[3].pe |                      pe_int4_mac_126 |         89 |         89 |       0 |    0 |    54 |      0 |      0 |          0 |
+|           gen_rows[7].gen_cols[4].pe |                      pe_int4_mac_127 |         89 |         89 |       0 |    0 |    54 |      0 |      0 |          0 |
+|           gen_rows[7].gen_cols[5].pe |                      pe_int4_mac_128 |         89 |         89 |       0 |    0 |    54 |      0 |      0 |          0 |
+|           gen_rows[7].gen_cols[6].pe |                      pe_int4_mac_129 |         89 |         89 |       0 |    0 |    54 |      0 |      0 |          0 |
+|           gen_rows[7].gen_cols[7].pe |                      pe_int4_mac_130 |         88 |         88 |       0 |    0 |    50 |      0 |      0 |          0 |
+|         array1                       |            systolic_array_8x8_int4_3 |       4360 |       4360 |       0 |    0 |  3646 |      0 |      0 |          0 |
+|           gen_rows[0].gen_cols[0].pe |                          pe_int4_mac |         70 |         70 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[0].gen_cols[1].pe |                        pe_int4_mac_4 |         67 |         67 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[0].gen_cols[2].pe |                        pe_int4_mac_5 |         64 |         64 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[0].gen_cols[3].pe |                        pe_int4_mac_6 |         67 |         67 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[0].gen_cols[4].pe |                        pe_int4_mac_7 |         64 |         64 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[0].gen_cols[5].pe |                        pe_int4_mac_8 |         67 |         67 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[0].gen_cols[6].pe |                        pe_int4_mac_9 |         63 |         63 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[0].gen_cols[7].pe |                       pe_int4_mac_10 |         59 |         59 |       0 |    0 |    54 |      0 |      0 |          0 |
+|           gen_rows[1].gen_cols[0].pe |                       pe_int4_mac_11 |         71 |         71 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[1].gen_cols[1].pe |                       pe_int4_mac_12 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[1].gen_cols[2].pe |                       pe_int4_mac_13 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[1].gen_cols[3].pe |                       pe_int4_mac_14 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[1].gen_cols[4].pe |                       pe_int4_mac_15 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[1].gen_cols[5].pe |                       pe_int4_mac_16 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[1].gen_cols[6].pe |                       pe_int4_mac_17 |         57 |         57 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[1].gen_cols[7].pe |                       pe_int4_mac_18 |         57 |         57 |       0 |    0 |    54 |      0 |      0 |          0 |
+|           gen_rows[2].gen_cols[0].pe |                       pe_int4_mac_19 |         67 |         67 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[2].gen_cols[1].pe |                       pe_int4_mac_20 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[2].gen_cols[2].pe |                       pe_int4_mac_21 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[2].gen_cols[3].pe |                       pe_int4_mac_22 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[2].gen_cols[4].pe |                       pe_int4_mac_23 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[2].gen_cols[5].pe |                       pe_int4_mac_24 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[2].gen_cols[6].pe |                       pe_int4_mac_25 |         57 |         57 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[2].gen_cols[7].pe |                       pe_int4_mac_26 |         57 |         57 |       0 |    0 |    54 |      0 |      0 |          0 |
+|           gen_rows[3].gen_cols[0].pe |                       pe_int4_mac_27 |        104 |        104 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[3].gen_cols[1].pe |                       pe_int4_mac_28 |         92 |         92 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[3].gen_cols[2].pe |                       pe_int4_mac_29 |         92 |         92 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[3].gen_cols[3].pe |                       pe_int4_mac_30 |         92 |         92 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[3].gen_cols[4].pe |                       pe_int4_mac_31 |         92 |         92 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[3].gen_cols[5].pe |                       pe_int4_mac_32 |         92 |         92 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[3].gen_cols[6].pe |                       pe_int4_mac_33 |         90 |         90 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[3].gen_cols[7].pe |                       pe_int4_mac_34 |         90 |         90 |       0 |    0 |    54 |      0 |      0 |          0 |
+|           gen_rows[4].gen_cols[0].pe |                       pe_int4_mac_35 |         67 |         67 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[4].gen_cols[1].pe |                       pe_int4_mac_36 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[4].gen_cols[2].pe |                       pe_int4_mac_37 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[4].gen_cols[3].pe |                       pe_int4_mac_38 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[4].gen_cols[4].pe |                       pe_int4_mac_39 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[4].gen_cols[5].pe |                       pe_int4_mac_40 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[4].gen_cols[6].pe |                       pe_int4_mac_41 |         57 |         57 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[4].gen_cols[7].pe |                       pe_int4_mac_42 |         57 |         57 |       0 |    0 |    54 |      0 |      0 |          0 |
+|           gen_rows[5].gen_cols[0].pe |                       pe_int4_mac_43 |         71 |         71 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[5].gen_cols[1].pe |                       pe_int4_mac_44 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[5].gen_cols[2].pe |                       pe_int4_mac_45 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[5].gen_cols[3].pe |                       pe_int4_mac_46 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[5].gen_cols[4].pe |                       pe_int4_mac_47 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[5].gen_cols[5].pe |                       pe_int4_mac_48 |         59 |         59 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[5].gen_cols[6].pe |                       pe_int4_mac_49 |         57 |         57 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[5].gen_cols[7].pe |                       pe_int4_mac_50 |         57 |         57 |       0 |    0 |    54 |      0 |      0 |          0 |
+|           gen_rows[6].gen_cols[0].pe |                       pe_int4_mac_51 |         70 |         70 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[6].gen_cols[1].pe |                       pe_int4_mac_52 |         57 |         57 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[6].gen_cols[2].pe |                       pe_int4_mac_53 |         57 |         57 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[6].gen_cols[3].pe |                       pe_int4_mac_54 |         57 |         57 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[6].gen_cols[4].pe |                       pe_int4_mac_55 |         57 |         57 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[6].gen_cols[5].pe |                       pe_int4_mac_56 |         57 |         57 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[6].gen_cols[6].pe |                       pe_int4_mac_57 |         55 |         55 |       0 |    0 |    58 |      0 |      0 |          0 |
+|           gen_rows[6].gen_cols[7].pe |                       pe_int4_mac_58 |         57 |         57 |       0 |    0 |    54 |      0 |      0 |          0 |
+|           gen_rows[7].gen_cols[0].pe |                       pe_int4_mac_59 |         95 |         95 |       0 |    0 |    54 |      0 |      0 |          0 |
+|           gen_rows[7].gen_cols[1].pe |                       pe_int4_mac_60 |         89 |         89 |       0 |    0 |    54 |      0 |      0 |          0 |
+|           gen_rows[7].gen_cols[2].pe |                       pe_int4_mac_61 |         89 |         89 |       0 |    0 |    54 |      0 |      0 |          0 |
+|           gen_rows[7].gen_cols[3].pe |                       pe_int4_mac_62 |         89 |         89 |       0 |    0 |    54 |      0 |      0 |          0 |
+|           gen_rows[7].gen_cols[4].pe |                       pe_int4_mac_63 |         89 |         89 |       0 |    0 |    54 |      0 |      0 |          0 |
+|           gen_rows[7].gen_cols[5].pe |                       pe_int4_mac_64 |         89 |         89 |       0 |    0 |    54 |      0 |      0 |          0 |
+|           gen_rows[7].gen_cols[6].pe |                       pe_int4_mac_65 |         89 |         89 |       0 |    0 |    54 |      0 |      0 |          0 |
+|           gen_rows[7].gen_cols[7].pe |                       pe_int4_mac_66 |         87 |         87 |       0 |    0 |    48 |      0 |      0 |          0 |
+|   fused_writer                       |       fused_conv_requant_int4_writer |        658 |        562 |      96 |    0 |   351 |      0 |      0 |          7 |
+|     (fused_writer)                   |       fused_conv_requant_int4_writer |        282 |        186 |      96 |    0 |   143 |      0 |      0 |          3 |
+|     requantize                       |           requantize_int4_pipeline_2 |        376 |        376 |       0 |    0 |   208 |      0 |      0 |          4 |
+|   memio                              |                     memory_io_driver |       2924 |       2854 |      70 |    0 |  3135 |      0 |      0 |          0 |
+|   requantizer                        |                  requantize_int4_ddr |        653 |        653 |       0 |    0 |   483 |      0 |      0 |          4 |
+|     (requantizer)                    |                  requantize_int4_ddr |        256 |        256 |       0 |    0 |   275 |      0 |      0 |          0 |
+|     quantizer                        |             requantize_int4_pipeline |        397 |        397 |       0 |    0 |   208 |      0 |      0 |          4 |
+|   tensor_ops                         |              cnn_tensor_ops_int4_ddr |       1062 |       1062 |       0 |    0 |   870 |      0 |      0 |         13 |
+|   tile_loader                        |           lookahead_tile_loader_int4 |        757 |        533 |     224 |    0 |   183 |      0 |      3 |          0 |
+|     (tile_loader)                    |           lookahead_tile_loader_int4 |        693 |        469 |     224 |    0 |   183 |      0 |      0 |          0 |
+|     a_storage                        |                  lookahead_tile_bram |          1 |          1 |       0 |    0 |     0 |      0 |      1 |          0 |
+|     b0_storage                       |                lookahead_tile_bram_0 |          1 |          1 |       0 |    0 |     0 |      0 |      1 |          0 |
+|     b1_storage                       |                lookahead_tile_bram_1 |         62 |         62 |       0 |    0 |     0 |      0 |      1 |          0 |
+|   write_command_fifo                 |             bcuda_write_command_fifo |         61 |         11 |      50 |    0 |     4 |      0 |      0 |          0 |
+|   writer                             |           int32_result_stream_writer |        139 |        139 |       0 |    0 |   230 |      0 |      0 |          4 |
++--------------------------------------+--------------------------------------+------------+------------+---------+------+-------+--------+--------+------------+
+
+

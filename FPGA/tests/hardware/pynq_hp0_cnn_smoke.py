@@ -11,6 +11,26 @@ import time
 
 PL_BASE = 0x43C80000
 XLNK_IOCALLOCBUF = 0xC0045802
+INT4_CONTROL = 0x100
+
+
+def pack_int4(values):
+    packed = bytearray((len(values) + 1) // 2)
+    for index, value in enumerate(values):
+        nibble = value & 0xF
+        if index & 1:
+            packed[index // 2] |= nibble << 4
+        else:
+            packed[index // 2] = nibble
+    return bytes(packed)
+
+
+def unpack_int4(data, count):
+    result = []
+    for index in range(count):
+        nibble = (data[index // 2] >> (4 if index & 1 else 0)) & 0xF
+        result.append(nibble - 16 if nibble & 8 else nibble)
+    return result
 
 
 class XlnkBuffer:
@@ -33,12 +53,12 @@ def main():
     fd = os.open("/dev/xlnk", os.O_RDWR)
     buffers = []
     try:
-        inp, weight, bias, conv, quant, relu = [XlnkBuffer(fd, size) for size in (9, 4, 4, 16, 4, 4)]
+        inp, weight, bias, conv, quant, relu = [XlnkBuffer(fd, size) for size in (5, 2, 4, 16, 2, 2)]
         buffers = [inp, weight, bias, conv, quant, relu]
         for buf in buffers:
             buf.data[:] = b"\x00" * buf.size
-        inp.data[:9] = bytes(range(1, 10))
-        weight.data[:4] = bytes((1, 0, 0, 1))
+        inp.data[:5] = pack_int4((1, 2, 3, 4, 5, 6, 7, 7, 7))
+        weight.data[:2] = pack_int4((1, 0, 0, 1))
         struct.pack_into("<i", bias.data, 0, -10)
 
         page = mmap.PAGESIZE
@@ -72,19 +92,19 @@ def main():
                 write(0x20, 1); write(0x24, 2); write(0x28, 2)
                 write(0x2C, 2); write(0x30, 2); write(0x34, 0x00000101); write(0x38, 0)
                 write(0x3C, bias.physical_address)
-                run(0x5)
+                run(INT4_CONTROL | 0x5)
                 got_conv = [struct.unpack_from("<i", conv.data, i * 4)[0] for i in range(4)]
-                if got_conv != [-4, -2, 2, 4]:
+                if got_conv != [-4, -2, 1, 2]:
                     raise RuntimeError("Conv2D mismatch: %r" % got_conv)
 
                 write(0x08, conv.physical_address); write(0x10, quant.physical_address); write(0x20, 4)
                 write(0x34, 1); write(0x38, 0); write(0x3C, 0)
-                run(0x3)
+                run(INT4_CONTROL | 0x3)
 
                 write(0x08, quant.physical_address); write(0x10, relu.physical_address); write(0x20, 4); write(0x38, 0)
-                run(0x9)
-                got_relu = [struct.unpack_from("<b", relu.data, i)[0] for i in range(4)]
-                if got_relu != [0, 0, 2, 4]:
+                run(INT4_CONTROL | 0x9)
+                got_relu = unpack_int4(relu.data, 4)
+                if got_relu != [0, 0, 1, 2]:
                     raise RuntimeError("ReLU mismatch: %r" % got_relu)
                 print("HP0 CNN smoke passed Conv=%r ReLU=%r" % (got_conv, got_relu))
             finally:

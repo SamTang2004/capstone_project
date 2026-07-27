@@ -1,0 +1,13 @@
+{
+  "format": "signed two's-complement INT4",
+  "shape": [
+    8,
+    8
+  ],
+  "accumulator": "signed INT32",
+  "share_modes": {
+    "independent": "C0=A0*B0, C1=A1*B1",
+    "shared_a": "C0=A0*B0, C1=A0*B1",
+    "shared_b": "C0=A0*B0, C1=A1*B0"
+  }
+}

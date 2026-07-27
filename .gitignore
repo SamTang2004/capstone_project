@@ -1,2 +1,30 @@
 /FPGA/dataset/
 /FPGA/train_model/models/
+
+# Local Python and IDE state
+/.venv/
+/.idea/
+**/.idea/
+**/__pycache__/
+**/.pytest_cache/
+
+# Vivado/XSim transient state
+/.Xil/
+**/.Xil/
+*.jou
+*.log
+*.pb
+*.backup.jou
+*.backup.log
+**/xsim.dir/
+**/xsim_*/
+**/int4_sim_temp/
+**/*.cache/
+**/*.gen/
+**/*.hw/
+**/*.runs/
+**/*.srcs/
+
+# Scratch output
+/NA/
+**/NA/

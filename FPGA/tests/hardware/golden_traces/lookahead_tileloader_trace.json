@@ -1,0 +1,118 @@
+{
+  "format": "BudgetCUDA deterministic look-ahead INT4 tile stream v2",
+  "tile_banks": 4,
+  "descriptor_count": 6,
+  "words_per_tile": 24,
+  "rows_per_tile": 8,
+  "request_count": 218,
+  "output_count": 48,
+  "descriptor_order": [
+    "A rows 0..7",
+    "B0 rows 0..7",
+    "B1 rows 0..7"
+  ],
+  "output_hex_layout": {
+    "175:160": "descriptor_id",
+    "159:157": "row",
+    "156:149": "A lane mask",
+    "148:141": "B0 lane mask",
+    "140:133": "B1 lane mask",
+    "95:64": "B1 data",
+    "63:32": "B0 data",
+    "31:0": "A data"
+  },
+  "requirements": [
+    "Descriptors and outputs remain ordered.",
+    "At most four tile descriptors are allocated at once.",
+    "DDR and output backpressure must not alter payloads.",
+    "Unaligned logical vectors are gathered from two aligned DDR words.",
+    "Inactive rows and lanes are emitted as masked zeroes.",
+    "The descriptor source must stall while all tile credits are allocated."
+  ],
+  "descriptors": [
+    {
+      "id": 64,
+      "a_base": 4096,
+      "b0_base": 4225,
+      "b1_base": 4354,
+      "a_stride": 4,
+      "b0_stride": 5,
+      "b1_stride": 6,
+      "a_row_mask": 255,
+      "b_row_mask": 127,
+      "a_lane_mask": 255,
+      "b0_lane_mask": 127,
+      "b1_lane_mask": 63
+    },
+    {
+      "id": 65,
+      "a_base": 4609,
+      "b0_base": 4738,
+      "b1_base": 4867,
+      "a_stride": 5,
+      "b0_stride": 6,
+      "b1_stride": 7,
+      "a_row_mask": 127,
+      "b_row_mask": 63,
+      "a_lane_mask": 127,
+      "b0_lane_mask": 63,
+      "b1_lane_mask": 31
+    },
+    {
+      "id": 66,
+      "a_base": 5122,
+      "b0_base": 5251,
+      "b1_base": 5376,
+      "a_stride": 6,
+      "b0_stride": 7,
+      "b1_stride": 4,
+      "a_row_mask": 63,
+      "b_row_mask": 255,
+      "a_lane_mask": 63,
+      "b0_lane_mask": 31,
+      "b1_lane_mask": 255
+    },
+    {
+      "id": 67,
+      "a_base": 5635,
+      "b0_base": 5760,
+      "b1_base": 5889,
+      "a_stride": 7,
+      "b0_stride": 4,
+      "b1_stride": 5,
+      "a_row_mask": 255,
+      "b_row_mask": 127,
+      "a_lane_mask": 31,
+      "b0_lane_mask": 255,
+      "b1_lane_mask": 127
+    },
+    {
+      "id": 68,
+      "a_base": 6144,
+      "b0_base": 6273,
+      "b1_base": 6402,
+      "a_stride": 4,
+      "b0_stride": 5,
+      "b1_stride": 6,
+      "a_row_mask": 127,
+      "b_row_mask": 63,
+      "a_lane_mask": 255,
+      "b0_lane_mask": 127,
+      "b1_lane_mask": 63
+    },
+    {
+      "id": 69,
+      "a_base": 6657,
+      "b0_base": 6786,
+      "b1_base": 6915,
+      "a_stride": 5,
+      "b0_stride": 6,
+      "b1_stride": 7,
+      "a_row_mask": 63,
+      "b_row_mask": 255,
+      "a_lane_mask": 127,
+      "b0_lane_mask": 63,
+      "b1_lane_mask": 31
+    }
+  ]
+}

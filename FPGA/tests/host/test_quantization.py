@@ -16,16 +16,37 @@ except ModuleNotFoundError:
     onnx = None
 
 from budgetcuda.quantization import (
+    Int4QuantizationParams,
     QuantizationParams,
+    dequantize_int4,
     dequantize_int8,
     dequantize_symmetric_int8,
     onnx_qdq_params,
     quantize_int8,
+    quantize_int4,
     quantize_symmetric_int8,
 )
 
 
 class QuantizationTest(unittest.TestCase):
+    def test_affine_int4_quantization_clamps_and_preserves_shape(self):
+        values = [[-10.0, -1.0], [0.0, 10.0]]
+        quantized = quantize_int4(values, scale=1.0, zero_point=0)
+        actual = quantized.tolist() if hasattr(quantized, "tolist") else quantized
+        self.assertEqual(actual, [[-8, -1], [0, 7]] if np is not None else [-8, -1, 0, 7])
+        restored = dequantize_int4(quantized, scale=0.5, zero_point=0)
+        actual = restored.tolist() if hasattr(restored, "tolist") else restored
+        self.assertEqual(actual, [[-4.0, -0.5], [0.0, 3.5]] if np is not None else [-4.0, -0.5, 0.0, 3.5])
+
+    def test_int4_params_validate_zero_point(self):
+        with self.assertRaisesRegex(ValueError, "-8..7"):
+            Int4QuantizationParams(0.25, 8)
+
+    def test_int4_quantization_truncates_toward_zero(self):
+        quantized = quantize_int4([-1.9, -0.9, 0.9, 1.9], scale=1.0)
+        actual = quantized.tolist() if hasattr(quantized, "tolist") else quantized
+        self.assertEqual(actual, [-1, 0, 0, 1])
+
     def test_quantize_symmetric_int8_computes_scale_when_missing(self):
         values = [-1.0, 0.0, 1.0]
         q, scale = quantize_symmetric_int8(values)
@@ -91,8 +112,12 @@ class QuantizationTest(unittest.TestCase):
 
         params = onnx_qdq_params(model)
         self.assertEqual((params.input_name, params.output_name), ("input", "output"))
-        self.assertEqual(params.input, QuantizationParams(0.25, -3))
-        self.assertEqual(params.output, QuantizationParams(0.5, 4))
+        self.assertEqual(params.input, Int4QuantizationParams(0.25, -3))
+        self.assertEqual(params.output, Int4QuantizationParams(0.5, 4))
+
+        legacy = onnx_qdq_params(model, target_dtype="int8")
+        self.assertEqual(legacy.input, QuantizationParams(0.25, -3))
+        self.assertEqual(legacy.output, QuantizationParams(0.5, 4))
 
 
 if __name__ == "__main__":

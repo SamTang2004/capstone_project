@@ -1,0 +1,35 @@
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2024 Advanced Micro Devices, Inc. All Rights Reserved.
+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version : Vivado v.2024.2 (win64) Build 5239630 Fri Nov 08 22:35:27 MST 2024
+| Date         : Fri Jul 24 22:24:02 2026
+| Host         : Server_0 running 64-bit major release  (build 9200)
+| Command      : report_utilization -hierarchical -file C:/python_projects/capstone_project/FPGA/hardware/reports/int4_tile_group_buffer_ooc/utilization.rpt
+| Design       : int4_tile_group_buffer
+| Device       : xc7z020clg400-1
+| Speed File   : -1
+| Design State : Synthesized
+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Utilization Design Information
+
+Table of Contents
+-----------------
+1. Utilization by Hierarchy
+
+1. Utilization by Hierarchy
+---------------------------
+
++----------------------------------+-------------------------+------------+------------+---------+------+-----+--------+--------+------------+
+|             Instance             |          Module         | Total LUTs | Logic LUTs | LUTRAMs | SRLs | FFs | RAMB36 | RAMB18 | DSP Blocks |
++----------------------------------+-------------------------+------------+------------+---------+------+-----+--------+--------+------------+
+| int4_tile_group_buffer           |                   (top) |        370 |        202 |     168 |    0 |  56 |      0 |      0 |          0 |
+|   (int4_tile_group_buffer)       |                   (top) |         83 |         83 |       0 |    0 |  56 |      0 |      0 |          0 |
+|   gen_slots[0].gen_banks[0].bank |   int4_tile_vector_bank |         29 |          1 |      28 |    0 |   0 |      0 |      0 |          0 |
+|   gen_slots[0].gen_banks[1].bank | int4_tile_vector_bank_0 |         30 |          2 |      28 |    0 |   0 |      0 |      0 |          0 |
+|   gen_slots[0].gen_banks[2].bank | int4_tile_vector_bank_1 |         29 |          1 |      28 |    0 |   0 |      0 |      0 |          0 |
+|   gen_slots[1].gen_banks[0].bank | int4_tile_vector_bank_2 |         66 |         38 |      28 |    0 |   0 |      0 |      0 |          0 |
+|   gen_slots[1].gen_banks[1].bank | int4_tile_vector_bank_3 |         67 |         39 |      28 |    0 |   0 |      0 |      0 |          0 |
+|   gen_slots[1].gen_banks[2].bank | int4_tile_vector_bank_4 |         66 |         38 |      28 |    0 |   0 |      0 |      0 |          0 |
++----------------------------------+-------------------------+------------+------------+---------+------+-----+--------+--------+------------+
+
+

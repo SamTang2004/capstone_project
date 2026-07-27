@@ -16,6 +16,7 @@ from budgetcuda.compiler import (
     ModelPackage,
     build_mlp_package,
     build_tiny_conv_relu_package,
+    build_tiny_int4_cnn_package,
     upload_model,
 )
 from budgetcuda.dtypes import BufferUsage, DType, OpType
@@ -26,6 +27,11 @@ class CompilerTest(unittest.TestCase):
         buffer = HostBuffer.from_values("w", (2, 2), "int8", [[1, -2], [3, -4]])
         self.assertEqual(buffer.size_bytes, 4)
         self.assertEqual(buffer.data, bytes([1, 254, 3, 252]))
+
+    def test_host_buffer_from_values_packs_signed_int4_nibbles(self):
+        buffer = HostBuffer.from_values("w4", (1, 5), "int4", [-8, -1, 0, 7, 3])
+        self.assertEqual(buffer.size_bytes, 3)
+        self.assertEqual(buffer.data, bytes([0xF8, 0x70, 0x03]))
 
     def test_layer_pack_matches_layer_desc_size(self):
         layer = Layer(OpType.GEMM, input0=1, output=2, weight=3, n=1, c=4, out_c=5)
@@ -41,6 +47,8 @@ class CompilerTest(unittest.TestCase):
 
     def test_build_mlp_package_uses_resident_weight_and_output_buffers(self):
         package = build_mlp_package(3, 2, [[1, 2], [3, 4], [5, 6]])
+        self.assertEqual(package.buffers[0].dtype, DType.INT4)
+        self.assertEqual(package.buffers[1].dtype, DType.INT4)
         self.assertEqual(len(package.buffers), 3)
         self.assertEqual(package.buffers[1].usage, BufferUsage.WEIGHT)
         self.assertEqual(package.buffers[2].dtype, DType.INT32)
@@ -72,9 +80,30 @@ class CompilerTest(unittest.TestCase):
     def test_build_tiny_conv_relu_package_uses_supported_ops(self):
         package = build_tiny_conv_relu_package((1, 1, 3, 3), [[[[1, 0], [0, 1]]]], bias_values=[-10])
         self.assertEqual(package.buffers[0].shape, (1, 1, 3, 3))
+        self.assertEqual(package.buffers[0].dtype, DType.INT4)
         self.assertEqual(package.buffers[1].usage, BufferUsage.WEIGHT)
         self.assertEqual(package.buffers[package.output_index].dtype, DType.INT32)
         self.assertEqual([layer.op_type for layer in package.layers], [OpType.CONV2D_GEMM, OpType.ACTIVATION])
+
+    def test_tiny_int4_cnn_runs_conv_requant_relu_end_to_end(self):
+        package = build_tiny_int4_cnn_package(
+            (1, 1, 3, 3),
+            [1, -1, 2, 0],
+            bias_values=[-1],
+            multiplier=1,
+            right_shift=0,
+        )
+        self.assertEqual(
+            [layer.op_type for layer in package.layers],
+            [OpType.CONV2D_GEMM, OpType.REQUANTIZE, OpType.ACTIVATION],
+        )
+        self.assertEqual(package.buffers[package.input_index].dtype, DType.INT4)
+        self.assertEqual(package.buffers[package.output_index].dtype, DType.INT4)
+
+        model = upload_model(Device.mock(), package)
+        output = model.run([[[[1, 2, 3], [4, 5, 6], [7, 0, -1]]]])
+        actual = output.reshape(-1).tolist() if hasattr(output, "reshape") else output
+        self.assertEqual(actual, [6, 7, 7, 0])
 
     def test_upload_model_allocates_buffers_and_descriptor_on_device(self):
         dev = Device.mock()

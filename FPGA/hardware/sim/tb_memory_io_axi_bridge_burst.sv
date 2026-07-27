@@ -7,9 +7,10 @@ module tb_memory_io_axi_bridge_burst;
     logic [2:0] awsize,arsize; logic [1:0] awburst,arburst,bresp=0,rresp=0;
     logic awvalid,awready=1,wlast,wvalid,wready=1,bvalid=0,bready;
     logic arvalid,arready=1,rvalid=0,rlast,rready;
+    logic [31:0] accepted_araddr;
     logic [31:0] mem[0:31]; integer wi,ri,errors=0;
     always #5 clk=~clk;
-    initial begin repeat(5000)@(posedge clk);$fatal(1,"AXI burst bridge timeout state=%0d",dut.state);end
+    initial begin repeat(5000)@(posedge clk);$fatal(1,"AXI burst bridge timeout write_state=%0d",dut.write_state);end
 
     memory_io_axi_bridge dut(.*,
         .aclk(clk),.aresetn(rst_n),.m_axi_awaddr(awaddr),.m_axi_awlen(awlen),
@@ -24,10 +25,16 @@ module tb_memory_io_axi_bridge_burst;
         if(!rst_n) begin bvalid<=0;rvalid<=0;rlast<=0;wi<=0;ri<=0; end else begin
             if(wvalid&&wready) begin mem[(awaddr>>2)+wi]<=wdata; if(wlast)bvalid<=1; else wi<=wi+1; end
             if(bvalid&&bready) begin bvalid<=0;wi<=0; end
-            if(arvalid&&arready) begin ri<=0;rdata<=mem[araddr>>2];rvalid<=1;rlast<=(arlen==0); end
+            if(arvalid&&arready) begin
+                accepted_araddr<=araddr;ri<=0;rdata<=mem[araddr>>2];
+                rvalid<=1;rlast<=(arlen==0);
+            end
             else if(rvalid&&rready) begin
                 if(rlast) begin rvalid<=0;rlast<=0; end
-                else begin ri<=ri+1;rdata<=mem[(araddr>>2)+ri+1];rlast<=(ri+1==arlen); end
+                else begin
+                    ri<=ri+1;rdata<=mem[(accepted_araddr>>2)+ri+1];
+                    rlast<=(ri+1==arlen);
+                end
             end
         end
     end

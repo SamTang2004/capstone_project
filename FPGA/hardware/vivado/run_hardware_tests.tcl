@@ -1,10 +1,49 @@
 set script_dir [file dirname [file normalize [info script]]]
 set hw_dir [file normalize [file join $script_dir ".."]]
 
-# Regression intentionally compiles all development RTL and benches. The
-# source set used for final bitstream creation lives in final_bitstream_sources.tcl.
-set rtl_files [glob [file join $hw_dir "rtl" "*.sv"]]
-set sim_files [glob [file join $hw_dir "sim" "*.sv"]]
+# The production regression is explicit. Legacy INT8 RTL remains available
+# for checkpoint testing but is not compiled into the active INT4 library.
+source [file join $script_dir "final_bitstream_sources.tcl"]
+set rtl_files [concat $final_rtl_files [list \
+    [file join $hw_dir "rtl" "memory_io_axi_bridge.sv"] \
+    [file join $hw_dir "rtl" "tile_loader_int4_ddr.sv"] \
+    [file join $hw_dir "rtl" "tile_writer_int4_ddr.sv"] \
+    [file join $hw_dir "rtl" "int4_output_postprocess.sv"] \
+    [file join $hw_dir "rtl" "int4_cnn_tile_pipeline.sv"] \
+]]
+set rtl_files [lsort -unique $rtl_files]
+set sim_files [list \
+    [file join $hw_dir "sim" "tb_pe_int4_mac.sv"] \
+    [file join $hw_dir "sim" "tb_systolic_array_8x8_int4.sv"] \
+    [file join $hw_dir "sim" "tb_dual_systolic_array_8x8_int4.sv"] \
+    [file join $hw_dir "sim" "tb_tile_loader_int4_ddr.sv"] \
+    [file join $hw_dir "sim" "tb_matrix_tile_loader_int4_ddr.sv"] \
+    [file join $hw_dir "sim" "tb_matrix_tile_group_loader_int4_ddr.sv"] \
+    [file join $hw_dir "sim" "tb_conv2d_tile_loader_int4_ddr.sv"] \
+    [file join $hw_dir "sim" "tb_conv2d_tile_group_loader_int4_ddr.sv"] \
+    [file join $hw_dir "sim" "tb_tile_writer_int4_ddr.sv"] \
+    [file join $hw_dir "sim" "tb_gemm_controller_int4.sv"] \
+    [file join $hw_dir "sim" "tb_gemm_dual_8x8_int4_core.sv"] \
+    [file join $hw_dir "sim" "tb_int4_scalar_vector_buffer.sv"] \
+    [file join $hw_dir "sim" "tb_int4_streaming_scalar_row_packer.sv"] \
+    [file join $hw_dir "sim" "tb_int4_dual_array_row_stream_buffer.sv"] \
+    [file join $hw_dir "sim" "tb_parallel_accumulator_buffer.sv"] \
+    [file join $hw_dir "sim" "tb_int4_tile_group_buffer.sv"] \
+    [file join $hw_dir "sim" "tb_int4_load_path_throughput.sv"] \
+    [file join $hw_dir "sim" "tb_memory_io_driver_burst.sv"] \
+    [file join $hw_dir "sim" "tb_memory_io_driver_multiread.sv"] \
+    [file join $hw_dir "sim" "tb_memory_io_driver_multiline.sv"] \
+    [file join $hw_dir "sim" "tb_memory_io_driver_strided_words.sv"] \
+    [file join $hw_dir "sim" "tb_memory_io_axi_bridge_burst.sv"] \
+    [file join $hw_dir "sim" "tb_memory_io_axi_bridge_outstanding.sv"] \
+    [file join $hw_dir "sim" "tb_dual_int4_tiled_compute.sv"] \
+    [file join $hw_dir "sim" "tb_activation_int4_parallel.sv"] \
+    [file join $hw_dir "sim" "tb_requantize_int4_pipeline.sv"] \
+    [file join $hw_dir "sim" "tb_fused_conv_requant_int4_writer.sv"] \
+    [file join $hw_dir "sim" "tb_int4_output_postprocess.sv"] \
+    [file join $hw_dir "sim" "tb_int4_cnn_tile_pipeline.sv"] \
+    [file join $hw_dir "sim" "tb_bcuda_dual_int4_ddr_top.sv"] \
+]
 
 if {[info exists ::env(BCUDA_XSIM_WORK)]} {
     set sim_work [file normalize $::env(BCUDA_XSIM_WORK)]
@@ -36,30 +75,48 @@ puts $compile_output
 
 # The active memory tests exercise cache-line reads and coalesced AXI bursts.
 set test_tops {
-    tb_pe_int8_mac
-    tb_tile_loader_ddr
-    tb_tile_writer_ddr
-    tb_conv2d_tile_loader_ddr
-    tb_gemm_array_cluster_8
-    tb_activation_unfold_parallel
-    tb_cnn_tensor_ops_ddr
-    tb_avgpool_ddr
-    tb_requantize_ddr
+    tb_pe_int4_mac
+    tb_systolic_array_8x8_int4
+    tb_dual_systolic_array_8x8_int4
+    tb_tile_loader_int4_ddr
+    tb_matrix_tile_loader_int4_ddr
+    tb_matrix_tile_group_loader_int4_ddr
+    tb_tile_writer_int4_ddr
+    tb_conv2d_tile_loader_int4_ddr
+    tb_conv2d_tile_group_loader_int4_ddr
+    tb_gemm_controller_int4
+    tb_gemm_dual_8x8_int4_core
+    tb_int4_scalar_vector_buffer
+    tb_int4_streaming_scalar_row_packer
+    tb_int4_dual_array_row_stream_buffer
+    tb_parallel_accumulator_buffer
+    tb_int4_tile_group_buffer
+    tb_int4_load_path_throughput
     tb_memory_io_driver_burst
+    tb_memory_io_driver_multiread
+    tb_memory_io_driver_multiline
+    tb_memory_io_driver_strided_words
     tb_memory_io_axi_bridge_burst
-    tb_ps_pl_mmio_control
-    tb_bcuda_tiled_systolic_ddr_top
-    tb_accumulator_buffer
-    tb_gemm_controller
-    tb_systolic_array_16x16
-    tb_gemm_16x16_core
+    tb_memory_io_axi_bridge_outstanding
+    tb_dual_int4_tiled_compute
+    tb_activation_int4_parallel
+    tb_requantize_int4_pipeline
+    tb_fused_conv_requant_int4_writer
+    tb_int4_output_postprocess
+    tb_int4_cnn_tile_pipeline
+    tb_bcuda_dual_int4_ddr_top
+}
+if {[info exists ::env(BCUDA_TEST_TOP)]} {
+    set test_tops [list $::env(BCUDA_TEST_TOP)]
+} elseif {$argc > 0} {
+    set test_tops [list [lindex $argv 0]]
 }
 
 foreach top $test_tops {
     puts "===== Running $top ====="
     set sim_name "${top}_sim"
 
-    if {[catch {exec $xelab $top "-s" $sim_name} elab_output elab_options]} {
+    if {[catch {exec $xelab $top "-s" $sim_name "-timescale" "1ns/1ps"} elab_output elab_options]} {
         puts $elab_output
         error "xelab failed for $top: $elab_options"
     }

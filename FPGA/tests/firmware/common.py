@@ -23,6 +23,7 @@ BC_STATUS_EXECUTION_FAILED = 7
 BC_CMD_ALLOC = 1
 BC_DTYPE_INT8 = 1
 BC_DTYPE_INT32 = 3
+BC_DTYPE_INT4 = 4
 BC_LAYOUT_ROW_MAJOR = 1
 BC_USAGE_ACTIVATION = 2
 BC_USAGE_OUTPUT = 4
@@ -42,12 +43,14 @@ BC_OP_DETECT_DECODE = 9
 BC_OP_NMS = 10
 BC_OP_REQUANTIZE = 11
 BCUDA_DIAGNOSTICS_MAGIC = 0x47444342
-BCUDA_DIAGNOSTICS_VERSION = 1
+BCUDA_DIAGNOSTICS_VERSION = 2
 BCUDA_DIAG_TIMING = 1
 BCUDA_DIAG_MEMORY = 2
 BCUDA_DIAG_OPERATIONS = 4
 BCUDA_DIAG_UTILIZATION = 8
-BCUDA_DIAG_ALL = 15
+BCUDA_DIAG_HARDWARE = 16
+BCUDA_DIAG_ACCURACY = 32
+BCUDA_DIAG_ALL = 63
 
 
 class BcudaHeader(ctypes.Structure):
@@ -214,6 +217,27 @@ class BcudaDiagnosticsRecord(ctypes.Structure):
         ("throughput_ops_per_second", ctypes.c_uint64),
         ("utilization_ppm", ctypes.c_uint32),
         ("reserved1", ctypes.c_uint32),
+        ("pl_total_cycles", ctypes.c_uint64),
+        ("pl_engine_cycles", ctypes.c_uint64),
+        ("pl_compute_cycles", ctypes.c_uint64),
+        ("pl_load_cycles", ctypes.c_uint64),
+        ("pl_cache_wait_cycles", ctypes.c_uint64),
+        ("pl_cache_ready_cycles", ctypes.c_uint64),
+        ("pl_ddr_read_commands", ctypes.c_uint64),
+        ("pl_ddr_read_beats", ctypes.c_uint64),
+        ("pl_ddr_write_commands", ctypes.c_uint64),
+        ("pl_ddr_stall_cycles", ctypes.c_uint64),
+        ("pl_core_rows", ctypes.c_uint64),
+        ("pl_output_stall_cycles", ctypes.c_uint64),
+        ("pl_descriptor_count", ctypes.c_uint64),
+        ("pl_cache_full_cycles", ctypes.c_uint64),
+        ("output_hash", ctypes.c_uint64),
+        ("output_sum", ctypes.c_int64),
+        ("output_elements", ctypes.c_uint64),
+        ("output_min", ctypes.c_int32),
+        ("output_max", ctypes.c_int32),
+        ("output_zero_count", ctypes.c_uint32),
+        ("output_saturation_count", ctypes.c_uint32),
     ]
 
 
@@ -281,6 +305,16 @@ class BcudaLayerDesc(ctypes.Structure):
     ]
 
 
+class BcudaRequantParams(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [
+        ("multiplier", ctypes.c_int32),
+        ("right_shift", ctypes.c_uint32),
+        ("input_zero_point", ctypes.c_int32),
+        ("output_zero_point", ctypes.c_int32),
+    ]
+
+
 class BcudaAxiDma(ctypes.Structure):
     _fields_ = [
         ("register_base", ctypes.c_size_t),
@@ -299,6 +333,29 @@ class BcudaAxiDma(ctypes.Structure):
         ("last_memory_base", ctypes.c_size_t),
         ("last_memory_bytes", ctypes.c_uint32),
         ("last_memory_io_flags", ctypes.c_uint32),
+    ]
+
+
+class BcudaPlDiagnostics(ctypes.Structure):
+    _fields_ = [
+        ("total_cycles", ctypes.c_uint32),
+        ("engine_cycles", ctypes.c_uint32),
+        ("compute_cycles", ctypes.c_uint32),
+        ("load_cycles", ctypes.c_uint32),
+        ("cache_wait_cycles", ctypes.c_uint32),
+        ("cache_ready_cycles", ctypes.c_uint32),
+        ("ddr_read_commands", ctypes.c_uint32),
+        ("ddr_read_beats", ctypes.c_uint32),
+        ("ddr_write_commands", ctypes.c_uint32),
+        ("ddr_stall_cycles", ctypes.c_uint32),
+        ("core_rows", ctypes.c_uint32),
+        ("output_stall_cycles", ctypes.c_uint32),
+        ("descriptor_count", ctypes.c_uint32),
+        ("cache_full_cycles", ctypes.c_uint32),
+        ("max_allocated_tiles", ctypes.c_uint8),
+        ("max_ready_tiles", ctypes.c_uint8),
+        ("allocated_tiles", ctypes.c_uint8),
+        ("ready_tiles", ctypes.c_uint8),
     ]
 
 

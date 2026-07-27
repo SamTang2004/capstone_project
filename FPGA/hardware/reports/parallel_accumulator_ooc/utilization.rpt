@@ -1,0 +1,45 @@
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2024 Advanced Micro Devices, Inc. All Rights Reserved.
+-----------------------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version : Vivado v.2024.2 (win64) Build 5239630 Fri Nov 08 22:35:27 MST 2024
+| Date         : Fri Jul 24 21:49:24 2026
+| Host         : Server_0 running 64-bit major release  (build 9200)
+| Command      : report_utilization -hierarchical -file C:/python_projects/capstone_project/FPGA/hardware/reports/parallel_accumulator_ooc/utilization.rpt
+| Design       : parallel_accumulator_buffer
+| Device       : xc7z020clg400-1
+| Speed File   : -1
+| Design State : Synthesized
+-----------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Utilization Design Information
+
+Table of Contents
+-----------------
+1. Utilization by Hierarchy
+
+1. Utilization by Hierarchy
+---------------------------
+
++----------------------------------+-------------------------------------+------------+------------+---------+------+-----+--------+--------+------------+
+|             Instance             |                Module               | Total LUTs | Logic LUTs | LUTRAMs | SRLs | FFs | RAMB36 | RAMB18 | DSP Blocks |
++----------------------------------+-------------------------------------+------------+------------+---------+------+-----+--------+--------+------------+
+| parallel_accumulator_buffer      |                               (top) |       1569 |       1185 |     384 |    0 | 561 |      0 |      0 |          0 |
+|   (parallel_accumulator_buffer)  |                               (top) |          2 |          2 |       0 |    0 | 561 |      0 |      0 |          0 |
+|   gen_accumulator_banks[0].bank0 |    parallel_accumulator_column_bank |         90 |         66 |      24 |    0 |   0 |      0 |      0 |          0 |
+|   gen_accumulator_banks[0].bank1 |  parallel_accumulator_column_bank_0 |         97 |         73 |      24 |    0 |   0 |      0 |      0 |          0 |
+|   gen_accumulator_banks[1].bank0 |  parallel_accumulator_column_bank_1 |         89 |         65 |      24 |    0 |   0 |      0 |      0 |          0 |
+|   gen_accumulator_banks[1].bank1 |  parallel_accumulator_column_bank_2 |         89 |         65 |      24 |    0 |   0 |      0 |      0 |          0 |
+|   gen_accumulator_banks[2].bank0 |  parallel_accumulator_column_bank_3 |         89 |         65 |      24 |    0 |   0 |      0 |      0 |          0 |
+|   gen_accumulator_banks[2].bank1 |  parallel_accumulator_column_bank_4 |         89 |         65 |      24 |    0 |   0 |      0 |      0 |          0 |
+|   gen_accumulator_banks[3].bank0 |  parallel_accumulator_column_bank_5 |        121 |         97 |      24 |    0 |   0 |      0 |      0 |          0 |
+|   gen_accumulator_banks[3].bank1 |  parallel_accumulator_column_bank_6 |        121 |         97 |      24 |    0 |   0 |      0 |      0 |          0 |
+|   gen_accumulator_banks[4].bank0 |  parallel_accumulator_column_bank_7 |         89 |         65 |      24 |    0 |   0 |      0 |      0 |          0 |
+|   gen_accumulator_banks[4].bank1 |  parallel_accumulator_column_bank_8 |         89 |         65 |      24 |    0 |   0 |      0 |      0 |          0 |
+|   gen_accumulator_banks[5].bank0 |  parallel_accumulator_column_bank_9 |         89 |         65 |      24 |    0 |   0 |      0 |      0 |          0 |
+|   gen_accumulator_banks[5].bank1 | parallel_accumulator_column_bank_10 |         89 |         65 |      24 |    0 |   0 |      0 |      0 |          0 |
+|   gen_accumulator_banks[6].bank0 | parallel_accumulator_column_bank_11 |         89 |         65 |      24 |    0 |   0 |      0 |      0 |          0 |
+|   gen_accumulator_banks[6].bank1 | parallel_accumulator_column_bank_12 |         89 |         65 |      24 |    0 |   0 |      0 |      0 |          0 |
+|   gen_accumulator_banks[7].bank0 | parallel_accumulator_column_bank_13 |        121 |         97 |      24 |    0 |   0 |      0 |      0 |          0 |
+|   gen_accumulator_banks[7].bank1 | parallel_accumulator_column_bank_14 |        127 |        103 |      24 |    0 |   0 |      0 |      0 |          0 |
++----------------------------------+-------------------------------------+------------+------------+---------+------+-----+--------+--------+------------+
+
+

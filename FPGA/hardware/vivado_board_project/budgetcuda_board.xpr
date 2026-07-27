@@ -7,7 +7,7 @@
 <Project Product="Vivado" Version="7" Minor="68" Path="C:/python_projects/capstone_project/FPGA/hardware/vivado_board_project/budgetcuda_board.xpr">
   <DefaultLaunch Dir="$PRUNDIR"/>
   <Configuration>
-    <Option Name="Id" Val="395a484065404a39a7eebfb4a989c561"/>
+    <Option Name="Id" Val="e77e0b9aacad4b83924d1f3b7cdd8e71"/>
     <Option Name="Part" Val="xc7z020clg400-1"/>
     <Option Name="CompiledLibDir" Val="$PCACHEDIR/compile_simlib"/>
     <Option Name="CompiledLibDirXSim" Val=""/>
@@ -91,28 +91,14 @@
   <FileSets Version="1" Minor="32">
     <FileSet Name="sources_1" Type="DesignSrcs" RelSrcDir="$PSRCDIR/sources_1" RelGenDir="$PGENDIR/sources_1">
       <Filter Type="Srcs"/>
-      <File Path="$PPRDIR/../rtl/accumulator_buffer.sv">
+      <File Path="$PPRDIR/../rtl/activation_int4_ddr.sv">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
-      <File Path="$PPRDIR/../rtl/activation_ddr_parallel.sv">
-        <FileInfo>
-          <Attr Name="UsedIn" Val="synthesis"/>
-          <Attr Name="UsedIn" Val="implementation"/>
-          <Attr Name="UsedIn" Val="simulation"/>
-        </FileInfo>
-      </File>
-      <File Path="$PPRDIR/../rtl/activation_unfold_parallel.sv">
-        <FileInfo>
-          <Attr Name="UsedIn" Val="synthesis"/>
-          <Attr Name="UsedIn" Val="implementation"/>
-          <Attr Name="UsedIn" Val="simulation"/>
-        </FileInfo>
-      </File>
-      <File Path="$PPRDIR/../rtl/avgpool_ddr.sv">
+      <File Path="$PPRDIR/../rtl/activation_int4_parallel.sv">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>
@@ -126,28 +112,35 @@
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
-      <File Path="$PPRDIR/../rtl/bcuda_tiled_systolic_ddr_top.sv">
+      <File Path="$PPRDIR/../rtl/bcuda_dual_int4_ddr_top.sv">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
-      <File Path="$PPRDIR/../rtl/cnn_tensor_ops_ddr.sv">
+      <File Path="$PPRDIR/../rtl/bcuda_write_command_fifo.sv">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
-      <File Path="$PPRDIR/../rtl/conv2d_tile_loader_ddr.sv">
+      <File Path="$PPRDIR/../rtl/cnn_tensor_ops_int4_ddr.sv">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
-      <File Path="$PPRDIR/../rtl/conv2d_tile_writer_ddr.sv">
+      <File Path="$PPRDIR/../rtl/conv2d_tile_group_loader_int4_ddr.sv">
+        <FileInfo>
+          <Attr Name="UsedIn" Val="synthesis"/>
+          <Attr Name="UsedIn" Val="implementation"/>
+          <Attr Name="UsedIn" Val="simulation"/>
+        </FileInfo>
+      </File>
+      <File Path="$PPRDIR/../rtl/conv2d_tile_loader_int4_ddr.sv">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>
@@ -161,21 +154,70 @@
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
-      <File Path="$PPRDIR/../rtl/gemm_16x16_core.sv">
+      <File Path="$PPRDIR/../rtl/dual_int4_tiled_compute.sv">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
-      <File Path="$PPRDIR/../rtl/gemm_array_cluster_8.sv">
+      <File Path="$PPRDIR/../rtl/dual_systolic_array_8x8_int4.sv">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
-      <File Path="$PPRDIR/../rtl/gemm_controller.sv">
+      <File Path="$PPRDIR/../rtl/fused_conv_requant_int4_writer.sv">
+        <FileInfo>
+          <Attr Name="UsedIn" Val="synthesis"/>
+          <Attr Name="UsedIn" Val="implementation"/>
+          <Attr Name="UsedIn" Val="simulation"/>
+        </FileInfo>
+      </File>
+      <File Path="$PPRDIR/../rtl/gemm_controller_int4.sv">
+        <FileInfo>
+          <Attr Name="UsedIn" Val="synthesis"/>
+          <Attr Name="UsedIn" Val="implementation"/>
+          <Attr Name="UsedIn" Val="simulation"/>
+        </FileInfo>
+      </File>
+      <File Path="$PPRDIR/../rtl/gemm_dual_8x8_int4_core.sv">
+        <FileInfo>
+          <Attr Name="UsedIn" Val="synthesis"/>
+          <Attr Name="UsedIn" Val="implementation"/>
+          <Attr Name="UsedIn" Val="simulation"/>
+        </FileInfo>
+      </File>
+      <File Path="$PPRDIR/../rtl/int32_result_stream_writer.sv">
+        <FileInfo>
+          <Attr Name="UsedIn" Val="synthesis"/>
+          <Attr Name="UsedIn" Val="implementation"/>
+          <Attr Name="UsedIn" Val="simulation"/>
+        </FileInfo>
+      </File>
+      <File Path="$PPRDIR/../rtl/int4_conv_weight_tile_cache.sv">
+        <FileInfo>
+          <Attr Name="UsedIn" Val="synthesis"/>
+          <Attr Name="UsedIn" Val="implementation"/>
+          <Attr Name="UsedIn" Val="simulation"/>
+        </FileInfo>
+      </File>
+      <File Path="$PPRDIR/../rtl/int4_dual_array_row_stream_buffer.sv">
+        <FileInfo>
+          <Attr Name="UsedIn" Val="synthesis"/>
+          <Attr Name="UsedIn" Val="implementation"/>
+          <Attr Name="UsedIn" Val="simulation"/>
+        </FileInfo>
+      </File>
+      <File Path="$PPRDIR/../rtl/int4_streaming_scalar_row_packer.sv">
+        <FileInfo>
+          <Attr Name="UsedIn" Val="synthesis"/>
+          <Attr Name="UsedIn" Val="implementation"/>
+          <Attr Name="UsedIn" Val="simulation"/>
+        </FileInfo>
+      </File>
+      <File Path="$PPRDIR/../rtl/lookahead_tile_loader_int4.sv">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>
@@ -189,21 +231,35 @@
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
-      <File Path="$PPRDIR/../rtl/pe_int8_mac.sv">
+      <File Path="$PPRDIR/../rtl/parallel_accumulator_buffer.sv">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
-      <File Path="$PPRDIR/../rtl/requantize_ddr.sv">
+      <File Path="$PPRDIR/../rtl/pe_int4_mac.sv">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
-      <File Path="$PPRDIR/../rtl/systolic_array_16x16.sv">
+      <File Path="$PPRDIR/../rtl/requantize_int4_ddr.sv">
+        <FileInfo>
+          <Attr Name="UsedIn" Val="synthesis"/>
+          <Attr Name="UsedIn" Val="implementation"/>
+          <Attr Name="UsedIn" Val="simulation"/>
+        </FileInfo>
+      </File>
+      <File Path="$PPRDIR/../rtl/requantize_int4_pipeline.sv">
+        <FileInfo>
+          <Attr Name="UsedIn" Val="synthesis"/>
+          <Attr Name="UsedIn" Val="implementation"/>
+          <Attr Name="UsedIn" Val="simulation"/>
+        </FileInfo>
+      </File>
+      <File Path="$PPRDIR/../rtl/systolic_array_8x8_int4.sv">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>
@@ -266,7 +322,7 @@
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
-      <File Path="$PPRDIR/../rtl/tile_loader_ddr.sv">
+      <File Path="$PPRDIR/../rtl/accumulator_buffer.sv">
         <FileInfo>
           <Attr Name="AutoDisabled" Val="1"/>
           <Attr Name="UsedIn" Val="synthesis"/>
@@ -274,7 +330,7 @@
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
-      <File Path="$PPRDIR/../rtl/tile_writer_ddr.sv">
+      <File Path="$PPRDIR/../rtl/int4_scalar_vector_buffer.sv">
         <FileInfo>
           <Attr Name="AutoDisabled" Val="1"/>
           <Attr Name="UsedIn" Val="synthesis"/>
@@ -322,9 +378,9 @@
         <Option Name="UseBlackboxStub" Val="1"/>
       </Config>
     </FileSet>
-    <FileSet Name="bcuda_ps_pl_axi_gp0_interconnect_imp_auto_pc_0" Type="BlockSrcs" RelSrcDir="$PSRCDIR/bcuda_ps_pl_axi_gp0_interconnect_imp_auto_pc_0" RelGenDir="$PGENDIR/bcuda_ps_pl_axi_gp0_interconnect_imp_auto_pc_0">
+    <FileSet Name="bcuda_ps_pl_ddr_bridge_0_0" Type="BlockSrcs" RelSrcDir="$PSRCDIR/bcuda_ps_pl_ddr_bridge_0_0" RelGenDir="$PGENDIR/bcuda_ps_pl_ddr_bridge_0_0">
       <Config>
-        <Option Name="TopModule" Val="bcuda_ps_pl_axi_gp0_interconnect_imp_auto_pc_0"/>
+        <Option Name="TopModule" Val="bcuda_ps_pl_ddr_bridge_0_0"/>
         <Option Name="UseBlackboxStub" Val="1"/>
       </Config>
     </FileSet>
@@ -334,27 +390,27 @@
         <Option Name="UseBlackboxStub" Val="1"/>
       </Config>
     </FileSet>
-    <FileSet Name="bcuda_ps_pl_rst_ps7_0_100M_0" Type="BlockSrcs" RelSrcDir="$PSRCDIR/bcuda_ps_pl_rst_ps7_0_100M_0" RelGenDir="$PGENDIR/bcuda_ps_pl_rst_ps7_0_100M_0">
-      <Config>
-        <Option Name="TopModule" Val="bcuda_ps_pl_rst_ps7_0_100M_0"/>
-        <Option Name="UseBlackboxStub" Val="1"/>
-      </Config>
-    </FileSet>
     <FileSet Name="bcuda_ps_pl_axi_hp0_interconnect_imp_auto_us_0" Type="BlockSrcs" RelSrcDir="$PSRCDIR/bcuda_ps_pl_axi_hp0_interconnect_imp_auto_us_0" RelGenDir="$PGENDIR/bcuda_ps_pl_axi_hp0_interconnect_imp_auto_us_0">
       <Config>
         <Option Name="TopModule" Val="bcuda_ps_pl_axi_hp0_interconnect_imp_auto_us_0"/>
         <Option Name="UseBlackboxStub" Val="1"/>
       </Config>
     </FileSet>
-    <FileSet Name="bcuda_ps_pl_bcuda_accelerator_0_0" Type="BlockSrcs" RelSrcDir="$PSRCDIR/bcuda_ps_pl_bcuda_accelerator_0_0" RelGenDir="$PGENDIR/bcuda_ps_pl_bcuda_accelerator_0_0">
+    <FileSet Name="bcuda_ps_pl_axi_gp0_interconnect_imp_auto_pc_0" Type="BlockSrcs" RelSrcDir="$PSRCDIR/bcuda_ps_pl_axi_gp0_interconnect_imp_auto_pc_0" RelGenDir="$PGENDIR/bcuda_ps_pl_axi_gp0_interconnect_imp_auto_pc_0">
       <Config>
-        <Option Name="TopModule" Val="bcuda_ps_pl_bcuda_accelerator_0_0"/>
+        <Option Name="TopModule" Val="bcuda_ps_pl_axi_gp0_interconnect_imp_auto_pc_0"/>
         <Option Name="UseBlackboxStub" Val="1"/>
       </Config>
     </FileSet>
-    <FileSet Name="bcuda_ps_pl_ddr_bridge_0_0" Type="BlockSrcs" RelSrcDir="$PSRCDIR/bcuda_ps_pl_ddr_bridge_0_0" RelGenDir="$PGENDIR/bcuda_ps_pl_ddr_bridge_0_0">
+    <FileSet Name="bcuda_ps_pl_rst_ps7_0_100M_0" Type="BlockSrcs" RelSrcDir="$PSRCDIR/bcuda_ps_pl_rst_ps7_0_100M_0" RelGenDir="$PGENDIR/bcuda_ps_pl_rst_ps7_0_100M_0">
       <Config>
-        <Option Name="TopModule" Val="bcuda_ps_pl_ddr_bridge_0_0"/>
+        <Option Name="TopModule" Val="bcuda_ps_pl_rst_ps7_0_100M_0"/>
+        <Option Name="UseBlackboxStub" Val="1"/>
+      </Config>
+    </FileSet>
+    <FileSet Name="bcuda_ps_pl_bcuda_accelerator_0_0" Type="BlockSrcs" RelSrcDir="$PSRCDIR/bcuda_ps_pl_bcuda_accelerator_0_0" RelGenDir="$PGENDIR/bcuda_ps_pl_bcuda_accelerator_0_0">
+      <Config>
+        <Option Name="TopModule" Val="bcuda_ps_pl_bcuda_accelerator_0_0"/>
         <Option Name="UseBlackboxStub" Val="1"/>
       </Config>
     </FileSet>
@@ -402,7 +458,7 @@
       <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
       <RQSFiles/>
     </Run>
-    <Run Id="bcuda_ps_pl_axi_gp0_interconnect_imp_auto_pc_0_synth_1" Type="Ft3:Synth" SrcSet="bcuda_ps_pl_axi_gp0_interconnect_imp_auto_pc_0" Part="xc7z020clg400-1" ConstrsSet="bcuda_ps_pl_axi_gp0_interconnect_imp_auto_pc_0" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/bcuda_ps_pl_axi_gp0_interconnect_imp_auto_pc_0_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/bcuda_ps_pl_axi_gp0_interconnect_imp_auto_pc_0_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/bcuda_ps_pl_axi_gp0_interconnect_imp_auto_pc_0_synth_1" ParallelReportGen="true">
+    <Run Id="bcuda_ps_pl_ddr_bridge_0_0_synth_1" Type="Ft3:Synth" SrcSet="bcuda_ps_pl_ddr_bridge_0_0" Part="xc7z020clg400-1" ConstrsSet="bcuda_ps_pl_ddr_bridge_0_0" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/bcuda_ps_pl_ddr_bridge_0_0_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/bcuda_ps_pl_ddr_bridge_0_0_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/bcuda_ps_pl_ddr_bridge_0_0_synth_1" ParallelReportGen="true">
       <Strategy Version="1" Minor="2">
         <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2024">
           <Desc>Vivado Synthesis Defaults</Desc>
@@ -426,7 +482,7 @@
       <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
       <RQSFiles/>
     </Run>
-    <Run Id="bcuda_ps_pl_rst_ps7_0_100M_0_synth_1" Type="Ft3:Synth" SrcSet="bcuda_ps_pl_rst_ps7_0_100M_0" Part="xc7z020clg400-1" ConstrsSet="bcuda_ps_pl_rst_ps7_0_100M_0" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/bcuda_ps_pl_rst_ps7_0_100M_0_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/bcuda_ps_pl_rst_ps7_0_100M_0_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/bcuda_ps_pl_rst_ps7_0_100M_0_synth_1" ParallelReportGen="true">
+    <Run Id="bcuda_ps_pl_axi_hp0_interconnect_imp_auto_us_0_synth_1" Type="Ft3:Synth" SrcSet="bcuda_ps_pl_axi_hp0_interconnect_imp_auto_us_0" Part="xc7z020clg400-1" ConstrsSet="bcuda_ps_pl_axi_hp0_interconnect_imp_auto_us_0" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/bcuda_ps_pl_axi_hp0_interconnect_imp_auto_us_0_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/bcuda_ps_pl_axi_hp0_interconnect_imp_auto_us_0_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/bcuda_ps_pl_axi_hp0_interconnect_imp_auto_us_0_synth_1" ParallelReportGen="true">
       <Strategy Version="1" Minor="2">
         <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2024">
           <Desc>Vivado Synthesis Defaults</Desc>
@@ -438,7 +494,19 @@
       <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
       <RQSFiles/>
     </Run>
-    <Run Id="bcuda_ps_pl_axi_hp0_interconnect_imp_auto_us_0_synth_1" Type="Ft3:Synth" SrcSet="bcuda_ps_pl_axi_hp0_interconnect_imp_auto_us_0" Part="xc7z020clg400-1" ConstrsSet="bcuda_ps_pl_axi_hp0_interconnect_imp_auto_us_0" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/bcuda_ps_pl_axi_hp0_interconnect_imp_auto_us_0_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/bcuda_ps_pl_axi_hp0_interconnect_imp_auto_us_0_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/bcuda_ps_pl_axi_hp0_interconnect_imp_auto_us_0_synth_1" ParallelReportGen="true">
+    <Run Id="bcuda_ps_pl_axi_gp0_interconnect_imp_auto_pc_0_synth_1" Type="Ft3:Synth" SrcSet="bcuda_ps_pl_axi_gp0_interconnect_imp_auto_pc_0" Part="xc7z020clg400-1" ConstrsSet="bcuda_ps_pl_axi_gp0_interconnect_imp_auto_pc_0" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/bcuda_ps_pl_axi_gp0_interconnect_imp_auto_pc_0_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/bcuda_ps_pl_axi_gp0_interconnect_imp_auto_pc_0_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/bcuda_ps_pl_axi_gp0_interconnect_imp_auto_pc_0_synth_1" ParallelReportGen="true">
+      <Strategy Version="1" Minor="2">
+        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2024">
+          <Desc>Vivado Synthesis Defaults</Desc>
+        </StratHandle>
+        <Step Id="synth_design"/>
+      </Strategy>
+      <GeneratedRun Dir="$PRUNDIR" File="gen_run.xml"/>
+      <ReportStrategy Name="Vivado Synthesis Default Reports" Flow="Vivado Synthesis 2024"/>
+      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
+      <RQSFiles/>
+    </Run>
+    <Run Id="bcuda_ps_pl_rst_ps7_0_100M_0_synth_1" Type="Ft3:Synth" SrcSet="bcuda_ps_pl_rst_ps7_0_100M_0" Part="xc7z020clg400-1" ConstrsSet="bcuda_ps_pl_rst_ps7_0_100M_0" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/bcuda_ps_pl_rst_ps7_0_100M_0_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/bcuda_ps_pl_rst_ps7_0_100M_0_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/bcuda_ps_pl_rst_ps7_0_100M_0_synth_1" ParallelReportGen="true">
       <Strategy Version="1" Minor="2">
         <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2024">
           <Desc>Vivado Synthesis Defaults</Desc>
@@ -462,19 +530,7 @@
       <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
       <RQSFiles/>
     </Run>
-    <Run Id="bcuda_ps_pl_ddr_bridge_0_0_synth_1" Type="Ft3:Synth" SrcSet="bcuda_ps_pl_ddr_bridge_0_0" Part="xc7z020clg400-1" ConstrsSet="bcuda_ps_pl_ddr_bridge_0_0" Description="Vivado Synthesis Defaults" AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" Dir="$PRUNDIR/bcuda_ps_pl_ddr_bridge_0_0_synth_1" IncludeInArchive="true" IsChild="false" AutoIncrementalDir="$PSRCDIR/utils_1/imports/bcuda_ps_pl_ddr_bridge_0_0_synth_1" AutoRQSDir="$PSRCDIR/utils_1/imports/bcuda_ps_pl_ddr_bridge_0_0_synth_1" ParallelReportGen="true">
-      <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Synthesis Defaults" Flow="Vivado Synthesis 2024">
-          <Desc>Vivado Synthesis Defaults</Desc>
-        </StratHandle>
-        <Step Id="synth_design"/>
-      </Strategy>
-      <GeneratedRun Dir="$PRUNDIR" File="gen_run.xml"/>
-      <ReportStrategy Name="Vivado Synthesis Default Reports" Flow="Vivado Synthesis 2024"/>
-      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
-      <RQSFiles/>
-    </Run>
-    <Run Id="impl_1" Type="Ft2:EntireDesign" Part="xc7z020clg400-1" ConstrsSet="constrs_1" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" State="current" Dir="$PRUNDIR/impl_1" SynthRun="synth_1" IncludeInArchive="true" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/impl_1" LaunchOptions="-jobs 8 " AutoRQSDir="$PSRCDIR/utils_1/imports/impl_1" ParallelReportGen="true">
+    <Run Id="impl_1" Type="Ft2:EntireDesign" Part="xc7z020clg400-1" ConstrsSet="constrs_1" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" State="current" Dir="$PRUNDIR/impl_1" SynthRun="synth_1" IncludeInArchive="true" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/impl_1" LaunchOptions="-jobs 2 " AutoRQSDir="$PSRCDIR/utils_1/imports/impl_1" ParallelReportGen="true">
       <Strategy Version="1" Minor="2">
         <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2024">
           <Desc>Default settings for Implementation.</Desc>
@@ -513,7 +569,7 @@
       <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
       <RQSFiles/>
     </Run>
-    <Run Id="bcuda_ps_pl_axi_gp0_interconnect_imp_auto_pc_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z020clg400-1" ConstrsSet="bcuda_ps_pl_axi_gp0_interconnect_imp_auto_pc_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="bcuda_ps_pl_axi_gp0_interconnect_imp_auto_pc_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/bcuda_ps_pl_axi_gp0_interconnect_imp_auto_pc_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/bcuda_ps_pl_axi_gp0_interconnect_imp_auto_pc_0_impl_1" ParallelReportGen="true">
+    <Run Id="bcuda_ps_pl_ddr_bridge_0_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z020clg400-1" ConstrsSet="bcuda_ps_pl_ddr_bridge_0_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="bcuda_ps_pl_ddr_bridge_0_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/bcuda_ps_pl_ddr_bridge_0_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/bcuda_ps_pl_ddr_bridge_0_0_impl_1" ParallelReportGen="true">
       <Strategy Version="1" Minor="2">
         <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2024">
           <Desc>Default settings for Implementation.</Desc>
@@ -551,25 +607,6 @@
       <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
       <RQSFiles/>
     </Run>
-    <Run Id="bcuda_ps_pl_rst_ps7_0_100M_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z020clg400-1" ConstrsSet="bcuda_ps_pl_rst_ps7_0_100M_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="bcuda_ps_pl_rst_ps7_0_100M_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/bcuda_ps_pl_rst_ps7_0_100M_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/bcuda_ps_pl_rst_ps7_0_100M_0_impl_1" ParallelReportGen="true">
-      <Strategy Version="1" Minor="2">
-        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2024">
-          <Desc>Default settings for Implementation.</Desc>
-        </StratHandle>
-        <Step Id="init_design"/>
-        <Step Id="opt_design"/>
-        <Step Id="power_opt_design"/>
-        <Step Id="place_design"/>
-        <Step Id="post_place_power_opt_design"/>
-        <Step Id="phys_opt_design"/>
-        <Step Id="route_design"/>
-        <Step Id="post_route_phys_opt_design"/>
-        <Step Id="write_bitstream"/>
-      </Strategy>
-      <ReportStrategy Name="Vivado Implementation Default Reports" Flow="Vivado Implementation 2024"/>
-      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
-      <RQSFiles/>
-    </Run>
     <Run Id="bcuda_ps_pl_axi_hp0_interconnect_imp_auto_us_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z020clg400-1" ConstrsSet="bcuda_ps_pl_axi_hp0_interconnect_imp_auto_us_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="bcuda_ps_pl_axi_hp0_interconnect_imp_auto_us_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/bcuda_ps_pl_axi_hp0_interconnect_imp_auto_us_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/bcuda_ps_pl_axi_hp0_interconnect_imp_auto_us_0_impl_1" ParallelReportGen="true">
       <Strategy Version="1" Minor="2">
         <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2024">
@@ -589,7 +626,7 @@
       <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
       <RQSFiles/>
     </Run>
-    <Run Id="bcuda_ps_pl_bcuda_accelerator_0_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z020clg400-1" ConstrsSet="bcuda_ps_pl_bcuda_accelerator_0_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="bcuda_ps_pl_bcuda_accelerator_0_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/bcuda_ps_pl_bcuda_accelerator_0_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/bcuda_ps_pl_bcuda_accelerator_0_0_impl_1" ParallelReportGen="true">
+    <Run Id="bcuda_ps_pl_axi_gp0_interconnect_imp_auto_pc_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z020clg400-1" ConstrsSet="bcuda_ps_pl_axi_gp0_interconnect_imp_auto_pc_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="bcuda_ps_pl_axi_gp0_interconnect_imp_auto_pc_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/bcuda_ps_pl_axi_gp0_interconnect_imp_auto_pc_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/bcuda_ps_pl_axi_gp0_interconnect_imp_auto_pc_0_impl_1" ParallelReportGen="true">
       <Strategy Version="1" Minor="2">
         <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2024">
           <Desc>Default settings for Implementation.</Desc>
@@ -608,7 +645,26 @@
       <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
       <RQSFiles/>
     </Run>
-    <Run Id="bcuda_ps_pl_ddr_bridge_0_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z020clg400-1" ConstrsSet="bcuda_ps_pl_ddr_bridge_0_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="bcuda_ps_pl_ddr_bridge_0_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/bcuda_ps_pl_ddr_bridge_0_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/bcuda_ps_pl_ddr_bridge_0_0_impl_1" ParallelReportGen="true">
+    <Run Id="bcuda_ps_pl_rst_ps7_0_100M_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z020clg400-1" ConstrsSet="bcuda_ps_pl_rst_ps7_0_100M_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="bcuda_ps_pl_rst_ps7_0_100M_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/bcuda_ps_pl_rst_ps7_0_100M_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/bcuda_ps_pl_rst_ps7_0_100M_0_impl_1" ParallelReportGen="true">
+      <Strategy Version="1" Minor="2">
+        <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2024">
+          <Desc>Default settings for Implementation.</Desc>
+        </StratHandle>
+        <Step Id="init_design"/>
+        <Step Id="opt_design"/>
+        <Step Id="power_opt_design"/>
+        <Step Id="place_design"/>
+        <Step Id="post_place_power_opt_design"/>
+        <Step Id="phys_opt_design"/>
+        <Step Id="route_design"/>
+        <Step Id="post_route_phys_opt_design"/>
+        <Step Id="write_bitstream"/>
+      </Strategy>
+      <ReportStrategy Name="Vivado Implementation Default Reports" Flow="Vivado Implementation 2024"/>
+      <Report Name="ROUTE_DESIGN.REPORT_METHODOLOGY" Enabled="1"/>
+      <RQSFiles/>
+    </Run>
+    <Run Id="bcuda_ps_pl_bcuda_accelerator_0_0_impl_1" Type="Ft2:EntireDesign" Part="xc7z020clg400-1" ConstrsSet="bcuda_ps_pl_bcuda_accelerator_0_0" Description="Default settings for Implementation." AutoIncrementalCheckpoint="false" WriteIncrSynthDcp="false" SynthRun="bcuda_ps_pl_bcuda_accelerator_0_0_synth_1" IncludeInArchive="false" IsChild="false" GenFullBitstream="true" AutoIncrementalDir="$PSRCDIR/utils_1/imports/bcuda_ps_pl_bcuda_accelerator_0_0_impl_1" AutoRQSDir="$PSRCDIR/utils_1/imports/bcuda_ps_pl_bcuda_accelerator_0_0_impl_1" ParallelReportGen="true">
       <Strategy Version="1" Minor="2">
         <StratHandle Name="Vivado Implementation Defaults" Flow="Vivado Implementation 2024">
           <Desc>Default settings for Implementation.</Desc>

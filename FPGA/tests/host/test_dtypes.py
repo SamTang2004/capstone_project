@@ -4,12 +4,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from budgetcuda.dtypes import DType, Layout, BufferUsage, dtype_size, normalize_dtype, normalize_layout, normalize_usage
+from budgetcuda.dtypes import DType, Layout, BufferUsage, dtype_bits, dtype_nbytes, dtype_size, normalize_dtype, normalize_layout, normalize_usage
 
 
 class DTypesTest(unittest.TestCase):
     def test_normalize_dtype_accepts_names_and_enum_values(self):
         self.assertEqual(normalize_dtype("int8"), DType.INT8)
+        self.assertEqual(normalize_dtype("int4"), DType.INT4)
         self.assertEqual(normalize_dtype(DType.INT32), DType.INT32)
         self.assertEqual(normalize_dtype(2), DType.INT16)
 
@@ -31,6 +32,15 @@ class DTypesTest(unittest.TestCase):
         self.assertEqual(dtype_size("int8"), 1)
         self.assertEqual(dtype_size("int16"), 2)
         self.assertEqual(dtype_size("int32"), 4)
+        with self.assertRaisesRegex(ValueError, "packed"):
+            dtype_size("int4")
+
+    def test_int4_storage_rounds_up_to_whole_bytes(self):
+        self.assertEqual(dtype_bits("int4"), 4)
+        self.assertEqual(dtype_nbytes("int4", 0), 0)
+        self.assertEqual(dtype_nbytes("int4", 1), 1)
+        self.assertEqual(dtype_nbytes("int4", 2), 1)
+        self.assertEqual(dtype_nbytes("int4", 3), 2)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""ONNX-to-BudgetCUDA lowering for the deployable INT8 inference subset.
+"""ONNX-to-BudgetCUDA lowering for the deployable signed inference subset.
 
 The importer intentionally accepts already-quantized, static-shape graphs.  It
 does not silently quantize float graphs: quantization belongs in the training
@@ -11,8 +11,8 @@ import math
 from pathlib import Path
 from typing import Mapping
 
-from .compiler import GraphBuilder, Layer, ModelPackage
-from .dtypes import BufferUsage, DType, Layout, OpType
+from .compiler import GraphBuilder, HostBuffer, Layer, ModelPackage
+from .dtypes import BufferUsage, DType, Layout, OpType, normalize_dtype
 
 
 class OnnxImportError(ValueError):
@@ -24,12 +24,17 @@ def import_onnx_model(
     *,
     name: str | None = None,
     input_shapes: Mapping[str, tuple[int, ...]] | None = None,
+    target_dtype: str | DType = DType.INT4,
 ) -> ModelPackage:
-    """Load a static, signed-INT8 ONNX inference graph into a ``ModelPackage``.
+    """Load a static signed Q/DQ ONNX graph into a ``ModelPackage``.
 
     ``source`` may be a path or an ``onnx.ModelProto``.  The optional
     ``input_shapes`` mapping supplies concrete dimensions for graph inputs that
     were exported with symbolic dimensions.
+
+    Packed INT4 is the production default. ONNX carries those values in signed
+    INT8 containers, and the importer verifies every constant is in ``[-8, 7]``
+    before packing it. Pass ``target_dtype="int8"`` only for legacy images.
 
     Supported nodes are ``QLinearConv``, INT8/INT32 ``Conv``, ``Relu``, a
     power-of-two ``LeakyRelu``, ``MaxPool``, ``Flatten``, shape-only
@@ -37,6 +42,12 @@ def import_onnx_model(
     signed INT8 activations and weights with zero point zero; it is lowered to
     INT32 convolution plus the existing fixed-point requantizer.
     """
+    try:
+        target_dtype = normalize_dtype(target_dtype)
+    except (TypeError, ValueError) as exc:
+        raise OnnxImportError("ONNX deployment target must be INT4 or INT8") from exc
+    if target_dtype not in (DType.INT4, DType.INT8):
+        raise OnnxImportError("ONNX deployment target must be INT4 or INT8")
     onnx, numpy_helper = _require_onnx()
     if isinstance(source, (str, Path)):
         model = onnx.load(str(source))
@@ -50,7 +61,10 @@ def import_onnx_model(
 
     graph_proto = model.graph
     if any(node.op_type == "DequantizeLinear" for node in graph_proto.node):
-        return _import_signed_qdq_model(model, package_name=name or graph_proto.name or "onnx_model", input_shapes=input_shapes or {})
+        package = _import_signed_qdq_model(model, package_name=name or graph_proto.name or "onnx_model", input_shapes=input_shapes or {})
+        return _convert_qdq_package_to_int4(package) if target_dtype == DType.INT4 else package
+    if target_dtype == DType.INT4:
+        raise OnnxImportError("INT4 deployment requires a signed Q/DQ QAT model with values already constrained to -8..7")
     package_name = name or graph_proto.name or "onnx_model"
     shapes = _collect_shapes(graph_proto, input_shapes or {})
     initializers = {tensor.name: numpy_helper.to_array(tensor) for tensor in graph_proto.initializer}
@@ -126,6 +140,48 @@ def import_onnx_model(
     return builder.package(buffers[input_name], buffers[output_name])
 
 
+def _convert_qdq_package_to_int4(package: ModelPackage) -> ModelPackage:
+    """Pack an INT8-container QAT graph whose quantized values are true INT4."""
+
+    converted = []
+    for buffer in package.buffers:
+        if buffer.dtype != DType.INT8:
+            converted.append(buffer)
+            continue
+        if buffer.data is None:
+            converted.append(
+                HostBuffer(buffer.name, buffer.shape, DType.INT4, buffer.layout, buffer.usage)
+            )
+            continue
+        values = [byte - 256 if byte & 0x80 else byte for byte in buffer.data]
+        out_of_range = next((value for value in values if value < -8 or value > 7), None)
+        if out_of_range is not None:
+            raise OnnxImportError(
+                f"QAT tensor {buffer.name!r} contains {out_of_range}, outside signed INT4; "
+                "export with a -8..7 fake-quant range"
+            )
+        converted.append(
+            HostBuffer.from_values(
+                buffer.name,
+                buffer.shape,
+                DType.INT4,
+                values,
+                usage=buffer.usage,
+                layout=buffer.layout,
+            )
+        )
+    return ModelPackage(
+        converted,
+        list(package.layers),
+        package.input_index,
+        package.output_index,
+        package.activation_arena_a,
+        package.activation_arena_b,
+        package.workspace_buffer,
+        package.flags,
+    )
+
+
 def _import_signed_qdq_model(model, *, package_name: str, input_shapes: Mapping[str, tuple[int, ...]]) -> ModelPackage:
     """Lower the zero-centered, per-tensor Q/DQ dialect used by deployable exports."""
     onnx, numpy_helper = _require_onnx()
@@ -171,7 +227,26 @@ def _import_signed_qdq_model(model, *, package_name: str, input_shapes: Mapping[
         node = nodes[0]
         if int(scalar(node.input[2], "zero point")) != 0:
             raise OnnxImportError("Q/DQ zero point must be zero for signed BudgetCUDA execution")
-        return node.output[0], scalar(node.input[1], "scale", positive=True)
+        quantized = node.output[0]
+        clips = [
+            consumer
+            for consumer in consumers.get(quantized, [])
+            if consumer.op_type == "Clip"
+        ]
+        if clips:
+            if len(clips) != 1 or len(clips[0].input) != 3:
+                raise OnnxImportError(
+                    "Q/DQ INT4 QuantizeLinear must feed one Clip with constant bounds"
+                )
+            clip = clips[0]
+            if int(scalar(clip.input[1], "INT4 clip minimum")) != -8 or int(
+                scalar(clip.input[2], "INT4 clip maximum")
+            ) != 7:
+                raise OnnxImportError(
+                    "Q/DQ INT4 Clip bounds must be exactly [-8, 7]"
+                )
+            quantized = clip.output[0]
+        return quantized, scalar(node.input[1], "scale", positive=True)
 
     builder = GraphBuilder(package_name)
     buffers: dict[str, int] = {}

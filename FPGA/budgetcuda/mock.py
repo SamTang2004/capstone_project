@@ -4,6 +4,7 @@ import struct
 import time
 
 from .diagnostics import (
+    DIAG_ACCURACY,
     DIAG_MEMORY,
     DIAG_OPERATIONS,
     DIAG_TIMING,
@@ -14,6 +15,7 @@ from .diagnostics import (
     DIAGNOSTICS_VERSION,
 )
 from .dtypes import Command, DType, OpType, Status
+from .packing import unpack_int4
 from .protocol import build_ok_response
 from .serializer import (
     EXECUTE_REQUEST_TAIL_STRUCT,
@@ -114,11 +116,15 @@ class MockBackend:
 
     def _execute_gemm(self, descriptor: bytes) -> None:
         desc = unpack_gemm_desc(descriptor)
-        if desc["A_dtype"] != DType.INT8 or desc["B_dtype"] != DType.INT8 or desc["C_dtype"] != DType.INT32:
-            raise ValueError("Mock GEMM only supports INT8 x INT8 -> INT32")
+        if not (
+            desc["A_dtype"] == desc["B_dtype"]
+            and desc["A_dtype"] in (DType.INT4, DType.INT8)
+            and desc["C_dtype"] == DType.INT32
+        ):
+            raise ValueError("Mock GEMM supports matching INT4/INT8 inputs and INT32 output")
         M, N, K = desc["M"], desc["N"], desc["K"]
-        A = self._read_int8_matrix(desc["A_buffer"], M, K)
-        B = self._read_int8_matrix(desc["B_buffer"], K, N)
+        A = self._read_matrix(desc["A_buffer"], M, K, desc["A_dtype"])
+        B = self._read_matrix(desc["B_buffer"], K, N, desc["B_dtype"])
         out = bytearray()
         for m in range(M):
             for n in range(N):
@@ -210,6 +216,7 @@ class MockBackend:
             operations = 0
         throughput = operations * 1_000_000_000 // elapsed_ns if elapsed_ns and operations else 0
         utilization_ppm = min(1_000_000, operations * 1_000_000 // (cycles * peak_ops)) if cycles and operations and flags & DIAG_UTILIZATION else 0
+        accuracy = self._diagnostics_accuracy(layer, table) if flags & DIAG_ACCURACY else (0,) * 7
         offset = DIAGNOSTICS_HEADER_STRUCT.size + index * DIAGNOSTICS_RECORD_STRUCT.size
         DIAGNOSTICS_RECORD_STRUCT.pack_into(
             raw,
@@ -227,9 +234,54 @@ class MockBackend:
             throughput,
             utilization_ppm,
             0,
+            *(0,) * 14,
+            *accuracy,
         )
         header[4] = index + 1
         DIAGNOSTICS_HEADER_STRUCT.pack_into(raw, 0, *header)
+
+    def _diagnostics_accuracy(self, layer, table):
+        entry = table[layer[4]]
+        buffer_id, dtype, _, _, size_bytes, *_ = entry
+        raw = bytes(self._get_buffer(buffer_id)[:size_bytes])
+        output_hash = 1469598103934665603
+        for value in raw:
+            output_hash ^= value
+            output_hash = (
+                output_hash * 1099511628211
+            ) & 0xFFFFFFFFFFFFFFFF
+        if dtype == DType.INT4:
+            values = [
+                nibble - 16 if nibble & 8 else nibble
+                for byte in raw
+                for nibble in (byte & 15, byte >> 4)
+            ]
+            low, high = -8, 7
+        elif dtype == DType.INT8:
+            values = [value - 256 if value & 128 else value for value in raw]
+            low, high = -128, 127
+        elif dtype == DType.INT16:
+            values = [
+                value[0] for value in struct.iter_unpack("<h", raw)
+            ]
+            low, high = -32768, 32767
+        elif dtype == DType.INT32:
+            values = [
+                value[0] for value in struct.iter_unpack("<i", raw)
+            ]
+            low, high = -2147483648, 2147483647
+        else:
+            values = []
+            low = high = 0
+        return (
+            output_hash,
+            sum(values),
+            len(values),
+            min(values, default=0),
+            max(values, default=0),
+            sum(value == 0 for value in values),
+            sum(value in (low, high) for value in values),
+        )
 
     def _diagnostics_finish(self, diagnostics, total_ns: int, layer_count: int) -> None:
         raw, header = diagnostics
@@ -261,8 +313,8 @@ class MockBackend:
         op_type = layer[0]
         n, c, h, w, out_c, out_h, out_w, kernel_h, kernel_w = layer[8:17]
         output_entry = table[layer[4]]
-        dtype_bytes = {int(DType.INT8): 1, int(DType.INT16): 2, int(DType.INT32): 4}.get(output_entry[1], 1)
-        output_elements = output_entry[4] // dtype_bytes
+        dtype_bits = {int(DType.INT4): 4, int(DType.INT8): 8, int(DType.INT16): 16, int(DType.INT32): 32}.get(output_entry[1], 8)
+        output_elements = output_entry[4] * 8 // dtype_bits
         if op_type == OpType.GEMM:
             return 2 * n * out_c * c
         if op_type == OpType.CONV2D_GEMM:
@@ -283,8 +335,8 @@ class MockBackend:
             n,
             out_c,
             c,
-            int(DType.INT8),
-            int(DType.INT8),
+            table[input0][1],
+            table[weight][1],
             int(DType.INT32),
             1,
             1,
@@ -300,7 +352,12 @@ class MockBackend:
         output_entry = table[output]
         src = self._get_buffer(input_entry[0])
         dst = self._get_buffer(output_entry[0])
-        if input_entry[1] == DType.INT8:
+        if input_entry[1] == DType.INT4:
+            for idx in range(input_entry[4] * 2):
+                value = self._read_signed(src, DType.INT4, idx)
+                result = value >> ((flags >> 8) & 7) if (flags & 1) and value < 0 else max(0, value)
+                self._write_signed(dst, DType.INT4, idx, result)
+        elif input_entry[1] == DType.INT8:
             for idx, byte in enumerate(src[: input_entry[4]]):
                 value = byte if byte < 128 else byte - 256
                 dst[idx] = (value >> ((flags >> 8) & 7) if (flags & 1) and value < 0 else max(0, value)) & 0xFF
@@ -310,15 +367,15 @@ class MockBackend:
                 value = value >> ((flags >> 8) & 7) if (flags & 1) and value < 0 else max(0, value)
                 dst[idx : idx + 4] = value.to_bytes(4, "little", signed=True)
         else:
-            raise ValueError("Mock ReLU supports INT8 and INT32")
+            raise ValueError("Mock ReLU supports INT4, INT8, and INT32")
 
     def _execute_graph_requantize(self, table, layer) -> None:
         _, input0, _, _, output, _, _, scale, *_ = layer
         input_entry = table[input0]
         output_entry = table[output]
         scale_entry = table[scale]
-        if input_entry[1] != DType.INT32 or output_entry[1] != DType.INT8 or scale_entry[1] != DType.INT32:
-            raise ValueError("Mock requantize requires INT32 input, INT8 output, and INT32 parameters")
+        if input_entry[1] != DType.INT32 or output_entry[1] not in (DType.INT4, DType.INT8) or scale_entry[1] != DType.INT32:
+            raise ValueError("Mock requantize requires INT32 input and parameters with INT4/INT8 output")
         if scale_entry[4] < 16:
             raise ValueError("Mock requantize parameter buffer is too small")
         src = self._get_buffer(input_entry[0])
@@ -328,13 +385,17 @@ class MockBackend:
         right_shift = int.from_bytes(params[4:8], "little", signed=False)
         input_zero_point = int.from_bytes(params[8:12], "little", signed=True)
         output_zero_point = int.from_bytes(params[12:16], "little", signed=True)
-        if right_shift > 31 or len(src) // 4 > len(dst):
+        output_capacity = len(dst) * (2 if output_entry[1] == DType.INT4 else 1)
+        if right_shift > 31 or len(src) // 4 > output_capacity:
             raise ValueError("Invalid mock requantize shape")
+        if output_entry[1] == DType.INT4:
+            dst[:] = bytes(len(dst))
         for idx in range(len(src) // 4):
             value = int.from_bytes(src[idx * 4 : idx * 4 + 4], "little", signed=True)
             value = ((value - input_zero_point) * multiplier) >> right_shift
-            value = max(-128, min(127, value + output_zero_point))
-            dst[idx] = value & 0xFF
+            low, high = (-8, 7) if output_entry[1] == DType.INT4 else (-128, 127)
+            value = max(low, min(high, value + output_zero_point))
+            self._write_signed(dst, output_entry[1], idx, value)
 
     def _execute_graph_reshape(self, table, layer) -> None:
         _, input0, _, _, output, *_ = layer
@@ -346,13 +407,20 @@ class MockBackend:
 
     def _execute_graph_pool(self, table, layer) -> None:
         _, input0, _, _, output, _, _, _, n, c, h, w, _, out_h, out_w, kernel_h, kernel_w, stride_h, stride_w, pad_h, pad_w, _, flags, _ = layer
-        src = self._get_buffer(table[input0][0])
-        dst = self._get_buffer(table[output][0])
+        input_entry = table[input0]
+        output_entry = table[output]
+        if input_entry[1] != output_entry[1] or input_entry[1] not in (DType.INT4, DType.INT8):
+            raise ValueError("Mock pool requires matching INT4 or INT8 tensors")
+        src = self._get_buffer(input_entry[0])
+        dst = self._get_buffer(output_entry[0])
+        if output_entry[1] == DType.INT4:
+            dst[:] = bytes(len(dst))
+        minimum = -8 if input_entry[1] == DType.INT4 else -128
         for batch in range(n):
             for channel in range(c):
                 for oh in range(out_h):
                     for ow in range(out_w):
-                        best = -128
+                        best = minimum
                         total = 0
                         count = 0
                         for kh in range(kernel_h):
@@ -364,23 +432,24 @@ class MockBackend:
                                 if iw < 0 or iw >= w:
                                     continue
                                 idx = ((batch * c + channel) * h + ih) * w + iw
-                                value = src[idx] if src[idx] < 128 else src[idx] - 256
+                                value = self._read_signed(src, input_entry[1], idx)
                                 best = max(best, value)
                                 total += value
                                 count += 1
                         out_idx = ((batch * c + channel) * out_h + oh) * out_w + ow
                         result = (-((-total) // count) if total < 0 else total // count) if flags & 1 else best
-                        dst[out_idx] = result & 0xFF
+                        self._write_signed(dst, output_entry[1], out_idx, result)
 
     def _execute_graph_upsample(self, table, layer) -> None:
         _, input0, _, _, output, _, _, _, n, c, h, w, _, out_h, out_w, *_ = layer
         input_entry = table[input0]
         output_entry = table[output]
-        elem_bytes = self._dtype_bytes(input_entry[1])
         if input_entry[1] != output_entry[1]:
             raise ValueError("Mock upsample requires matching dtypes")
         src = self._get_buffer(input_entry[0])
         dst = self._get_buffer(output_entry[0])
+        if output_entry[1] == DType.INT4:
+            dst[:] = bytes(len(dst))
         for batch in range(n):
             for channel in range(c):
                 for oh in range(out_h):
@@ -389,13 +458,15 @@ class MockBackend:
                         iw = (ow * w) // out_w
                         src_idx = ((batch * c + channel) * h + ih) * w + iw
                         dst_idx = ((batch * c + channel) * out_h + oh) * out_w + ow
-                        dst[dst_idx * elem_bytes : dst_idx * elem_bytes + elem_bytes] = src[src_idx * elem_bytes : src_idx * elem_bytes + elem_bytes]
+                        value = self._read_scalar(src, input_entry[1], src_idx)
+                        self._write_scalar(dst, output_entry[1], dst_idx, value)
 
     def _execute_graph_concat(self, table, layer) -> None:
         _, input0, input1, input2, output, _, _, _, n, _, h, w, out_c, *_ = layer
         output_entry = table[output]
-        elem_bytes = self._dtype_bytes(output_entry[1])
         dst = self._get_buffer(output_entry[0])
+        if output_entry[1] == DType.INT4:
+            dst[:] = bytes(len(dst))
         channel_offset = 0
         input_indexes = [input0] + ([input1] if input1 else []) + ([input2] if input2 else [])
         for input_index in input_indexes:
@@ -403,13 +474,15 @@ class MockBackend:
             if input_entry[1] != output_entry[1]:
                 raise ValueError("Mock concat requires matching dtypes")
             src = self._get_buffer(input_entry[0])
-            channels = len(src) // (n * h * w * elem_bytes)
+            logical_elements = len(src) * (2 if input_entry[1] == DType.INT4 else 1)
+            channels = logical_elements // (n * h * w)
             for batch in range(n):
                 for channel in range(channels):
-                    src_idx = ((batch * channels + channel) * h * w) * elem_bytes
-                    dst_idx = ((batch * out_c + channel_offset + channel) * h * w) * elem_bytes
-                    span = h * w * elem_bytes
-                    dst[dst_idx : dst_idx + span] = src[src_idx : src_idx + span]
+                    for position in range(h * w):
+                        src_idx = (batch * channels + channel) * h * w + position
+                        dst_idx = (batch * out_c + channel_offset + channel) * h * w + position
+                        value = self._read_scalar(src, input_entry[1], src_idx)
+                        self._write_scalar(dst, output_entry[1], dst_idx, value)
             channel_offset += channels
         if channel_offset != out_c:
             raise ValueError("Mock concat channel count mismatch")
@@ -418,8 +491,12 @@ class MockBackend:
         _, input0, _, _, output, weight, bias, _, n, c, h, w, out_c, out_h, out_w, kernel_h, kernel_w, stride_h, stride_w, pad_h, pad_w, groups, *_ = layer
         if groups != 1:
             raise ValueError("Mock Conv2D only supports groups=1")
-        src = self._get_buffer(table[input0][0])
-        wgt = self._get_buffer(table[weight][0])
+        input_entry = table[input0]
+        weight_entry = table[weight]
+        if input_entry[1] not in (DType.INT4, DType.INT8) or weight_entry[1] != input_entry[1]:
+            raise ValueError("Mock Conv2D requires matching INT4 or INT8 input and weight tensors")
+        src = self._get_buffer(input_entry[0])
+        wgt = self._get_buffer(weight_entry[0])
         dst = self._get_buffer(table[output][0])
         bias_buf = self._get_buffer(table[bias][0]) if bias else None
         for batch in range(n):
@@ -438,16 +515,53 @@ class MockBackend:
                                         continue
                                     input_idx = ((batch * c + ic) * h + ih) * w + iw
                                     weight_idx = ((oc * c + ic) * kernel_h + kh) * kernel_w + kw
-                                    a = src[input_idx] if src[input_idx] < 128 else src[input_idx] - 256
-                                    b = wgt[weight_idx] if wgt[weight_idx] < 128 else wgt[weight_idx] - 256
+                                    a = self._read_signed(src, input_entry[1], input_idx)
+                                    b = self._read_signed(wgt, weight_entry[1], weight_idx)
                                     acc += a * b
                         out_idx = ((batch * out_c + oc) * out_h + oh) * out_w + ow
                         dst[out_idx * 4 : out_idx * 4 + 4] = acc.to_bytes(4, "little", signed=True)
 
-    def _read_int8_matrix(self, buffer_id: int, rows: int, cols: int) -> list[list[int]]:
+    def _read_matrix(self, buffer_id: int, rows: int, cols: int, dtype: int) -> list[list[int]]:
         raw = self._get_buffer(buffer_id)
-        values = [byte if byte < 128 else byte - 256 for byte in raw[: rows * cols]]
+        if dtype == DType.INT4:
+            values = unpack_int4(raw, rows * cols)
+        else:
+            values = [byte if byte < 128 else byte - 256 for byte in raw[: rows * cols]]
         return [values[row * cols : (row + 1) * cols] for row in range(rows)]
+
+    @staticmethod
+    def _read_signed(raw, dtype: int, index: int) -> int:
+        if dtype == DType.INT4:
+            nibble = (raw[index // 2] >> (4 if index & 1 else 0)) & 0xF
+            return nibble - 16 if nibble & 0x8 else nibble
+        byte = raw[index]
+        return byte - 256 if byte & 0x80 else byte
+
+    @staticmethod
+    def _write_signed(raw, dtype: int, index: int, value: int) -> None:
+        if dtype == DType.INT4:
+            shift = 4 if index & 1 else 0
+            mask = 0xF << shift
+            raw[index // 2] = (raw[index // 2] & ~mask) | ((value & 0xF) << shift)
+        else:
+            raw[index] = value & 0xFF
+
+    @classmethod
+    def _read_scalar(cls, raw, dtype: int, index: int) -> int:
+        if dtype in (DType.INT4, DType.INT8):
+            return cls._read_signed(raw, dtype, index)
+        item_bytes = cls._dtype_bytes(dtype)
+        offset = index * item_bytes
+        return int.from_bytes(raw[offset : offset + item_bytes], "little", signed=True)
+
+    @classmethod
+    def _write_scalar(cls, raw, dtype: int, index: int, value: int) -> None:
+        if dtype in (DType.INT4, DType.INT8):
+            cls._write_signed(raw, dtype, index, value)
+            return
+        item_bytes = cls._dtype_bytes(dtype)
+        offset = index * item_bytes
+        raw[offset : offset + item_bytes] = int(value).to_bytes(item_bytes, "little", signed=True)
 
     def _get_buffer(self, buffer_id: int) -> bytearray:
         try:
@@ -457,6 +571,8 @@ class MockBackend:
 
     @staticmethod
     def _dtype_bytes(dtype: int) -> int:
+        if dtype == DType.INT4:
+            raise ValueError("Packed INT4 does not have an integral byte item size")
         if dtype == DType.INT8:
             return 1
         if dtype == DType.INT16:

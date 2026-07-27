@@ -1,0 +1,15 @@
+[Unit]
+Description=BudgetCUDA protocol service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/xilinx/budgetcuda-fw
+ExecStart=/home/xilinx/budgetcuda-fw/budgetcuda-server 9000 64
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

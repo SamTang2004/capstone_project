@@ -28,7 +28,7 @@ puts $compile_output
 
 set sim_name "${final_sim_top}_sim"
 puts "===== Elaborating $final_sim_top ====="
-if {[catch {exec $xelab $final_sim_top "-s" $sim_name} elab_output elab_options]} {
+if {[catch {exec $xelab $final_sim_top "-s" $sim_name "-timescale" "1ns/1ps"} elab_output elab_options]} {
     puts $elab_output
     error "xelab failed for $final_sim_top: $elab_options"
 }

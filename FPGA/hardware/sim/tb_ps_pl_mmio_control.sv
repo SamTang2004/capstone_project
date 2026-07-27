@@ -24,7 +24,7 @@ module tb_ps_pl_mmio_control;
 
     always #5 clk = ~clk;
 
-    axi_lite_control dut (
+    axi_lite_control #(.ADDR_WIDTH(6)) dut (
         .aclk(clk),
         .aresetn(rst_n),
         .s_axi_awaddr(awaddr),
@@ -45,6 +45,7 @@ module tb_ps_pl_mmio_control;
         .s_axi_rvalid(rvalid),
         .s_axi_rready(rready),
         .status_word(status_word),
+        .diagnostics_flat('0),
         .ctrl_word(ctrl_word)
     );
 

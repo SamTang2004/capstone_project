@@ -703,7 +703,7 @@ module bcuda_tiled_systolic_ddr_top #(
             endcase
         end
     end
-    axi_lite_control control (
+    axi_lite_control #(.ADDR_WIDTH(6)) control (
         .aclk(aclk),
         .aresetn(aresetn),
         .s_axi_awaddr(s_axi_awaddr),
@@ -724,6 +724,7 @@ module bcuda_tiled_systolic_ddr_top #(
         .s_axi_rvalid(s_axi_rvalid),
         .s_axi_rready(s_axi_rready),
         .status_word(status_word),
+        .diagnostics_flat('0),
         .ctrl_word(ctrl_word),
         .regs_flat(regs_flat)
     );
@@ -767,6 +768,7 @@ module bcuda_tiled_systolic_ddr_top #(
     memory_io_driver memio (
         .clk(aclk),
         .rst_n(aresetn),
+        .invalidate_cache(1'b0),
         .read_req_valid(memio_read_req_valid),
         .read_req_ready(memio_read_req_ready),
         .read_req_addr(memio_read_req_addr),

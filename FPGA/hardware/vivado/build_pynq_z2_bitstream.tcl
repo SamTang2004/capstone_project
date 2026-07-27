@@ -5,6 +5,17 @@ set hw_dir [file normalize [file join $script_dir ".."]]
 # design behind the newly generated bitstream.
 source [file join $script_dir "create_ps_pl_wrapper.tcl"]
 
+# Parallel OOC synthesis of the PS block design and the accelerator can exhaust
+# host memory before Vivado writes an error marker. Keep the release build
+# conservative by default; CI or a larger workstation may override it.
+set build_jobs 2
+if {[info exists ::env(BCUDA_VIVADO_JOBS)]} {
+    set build_jobs $::env(BCUDA_VIVADO_JOBS)
+}
+if {![string is integer -strict $build_jobs] || $build_jobs < 1} {
+    error "BCUDA_VIVADO_JOBS must be a positive integer"
+}
+
 # A stopped or failed run cannot be relaunched. Always rebuild the board
 # artifact from the current RTL and block design sources.
 if {[llength [get_runs -quiet impl_1]]} {
@@ -14,19 +25,23 @@ foreach run [get_runs -quiet *synth_1] {
     reset_run $run
 }
 
-launch_runs synth_1 -jobs 8
+launch_runs synth_1 -jobs $build_jobs
 wait_on_run synth_1
 open_run synth_1
 report_utilization -file [file join $hw_dir "pynq_z2_utilization_synth.rpt"]
 
-launch_runs impl_1 -to_step write_bitstream -jobs 8
+launch_runs impl_1 -to_step write_bitstream -jobs $build_jobs
 wait_on_run impl_1
 open_run impl_1
 set routed_wns [get_property SLACK [get_timing_paths -delay_type max -max_paths 1]]
 if {$routed_wns < 0.0} {
-    puts "Routed WNS is $routed_wns ns; running post-route physical optimization."
-    phys_opt_design -directive AggressiveExplore
-    write_checkpoint -force [file join $project_dir "budgetcuda_board.runs" "impl_1" "bcuda_ps_pl_wrapper_physopt.dcp"]
+    puts "Routed WNS is $routed_wns ns."
+    if {[info exists ::env(BCUDA_AGGRESSIVE_PHYS_OPT)] &&
+        $::env(BCUDA_AGGRESSIVE_PHYS_OPT) ne "0"} {
+        puts "Running opt-in post-route physical optimization."
+        phys_opt_design -directive AggressiveExplore
+        write_checkpoint -force [file join $project_dir "budgetcuda_board.runs" "impl_1" "bcuda_ps_pl_wrapper_physopt.dcp"]
+    }
 }
 report_utilization -file [file join $hw_dir "pynq_z2_utilization_impl.rpt"]
 report_timing_summary -file [file join $hw_dir "pynq_z2_timing_impl.rpt"]

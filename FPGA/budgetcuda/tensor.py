@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .dtypes import DType, Layout, dtype_size, normalize_dtype, normalize_layout
+from .dtypes import DType, Layout, dtype_bits, dtype_size, normalize_dtype, normalize_layout
 
 
 @dataclass(frozen=True)
@@ -29,6 +29,10 @@ class Tensor:
     @property
     def itemsize(self) -> int:
         return dtype_size(self.dtype)
+
+    @property
+    def bits_per_element(self) -> int:
+        return dtype_bits(self.dtype)
 
     @property
     def ndim(self) -> int:
