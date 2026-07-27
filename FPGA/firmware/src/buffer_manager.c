@@ -13,6 +13,9 @@ static uint64_t g_arena_bytes;
 static uint64_t g_arena_offset;
 static uint32_t g_next_buffer_id;
 static BcudaBuffer g_buffers[BCUDA_MAX_BUFFERS];
+static BcudaBufferSyncFn g_sync_to_device;
+static BcudaBufferSyncFn g_sync_from_device;
+static void *g_sync_context;
 
 static uint64_t align_up_u64(uint64_t value, uint64_t alignment) {
     return (value + alignment - 1u) & ~(alignment - 1u);
@@ -24,11 +27,24 @@ void bcuda_buffer_manager_init_with_physical(uint8_t *arena, uintptr_t physical_
     g_arena_bytes = arena_bytes;
     g_arena_offset = 0;
     g_next_buffer_id = 1;
+    g_sync_to_device = 0;
+    g_sync_from_device = 0;
+    g_sync_context = 0;
     memset(g_buffers, 0, sizeof(g_buffers));
 }
 
 void bcuda_buffer_manager_init(uint8_t *arena, uint64_t arena_bytes) {
     bcuda_buffer_manager_init_with_physical(arena, (uintptr_t)arena, arena_bytes);
+}
+
+void bcuda_buffer_manager_set_sync_hooks(
+    BcudaBufferSyncFn to_device,
+    BcudaBufferSyncFn from_device,
+    void *context
+) {
+    g_sync_to_device = to_device;
+    g_sync_from_device = from_device;
+    g_sync_context = context;
 }
 
 int bcuda_alloc_buffer(uint64_t size_bytes, BcudaTensorDesc desc, uint32_t usage, uint32_t *out_id) {
@@ -131,6 +147,12 @@ int bcuda_write_buffer(uint32_t buffer_id, uint64_t offset, const void *src, uin
         return BC_STATUS_GENERAL_ERROR;
     }
     memcpy((uint8_t *)buffer->virtual_address + offset, src, (size_t)bytes);
+    if (g_sync_to_device != 0) {
+        uint64_t arena_offset = (uint64_t)((uint8_t *)buffer->virtual_address - g_arena) + offset;
+        if (g_sync_to_device(arena_offset, bytes, g_sync_context) != 0) {
+            return BC_STATUS_GENERAL_ERROR;
+        }
+    }
     return BC_STATUS_OK;
 }
 
@@ -142,6 +164,12 @@ int bcuda_read_buffer(uint32_t buffer_id, uint64_t offset, void *dst, uint64_t b
     }
     if (dst == 0 || offset + bytes > buffer->size_bytes) {
         return BC_STATUS_GENERAL_ERROR;
+    }
+    if (g_sync_from_device != 0) {
+        uint64_t arena_offset = (uint64_t)((uint8_t *)buffer->virtual_address - g_arena) + offset;
+        if (g_sync_from_device(arena_offset, bytes, g_sync_context) != 0) {
+            return BC_STATUS_GENERAL_ERROR;
+        }
     }
     memcpy(dst, (const uint8_t *)buffer->virtual_address + offset, (size_t)bytes);
     return BC_STATUS_OK;

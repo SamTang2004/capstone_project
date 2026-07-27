@@ -8,7 +8,8 @@ Wants=network-online.target
 Type=simple
 User=root
 WorkingDirectory=/opt/budgetcuda
-ExecStart=/opt/budgetcuda/budgetcuda-server 9000 64
+Environment=XILINX_XRT=/usr
+ExecStart=/opt/budgetcuda/budgetcuda-server 9000 16
 Restart=on-failure
 RestartSec=2
 

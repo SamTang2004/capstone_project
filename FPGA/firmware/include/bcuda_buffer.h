@@ -8,6 +8,8 @@
 
 #define BCUDA_MAX_BUFFERS 128
 
+typedef int (*BcudaBufferSyncFn)(uint64_t offset, uint64_t bytes, void *context);
+
 typedef struct {
     uint32_t buffer_id;
     uintptr_t physical_address;
@@ -23,6 +25,11 @@ typedef struct {
 
 void bcuda_buffer_manager_init(uint8_t *arena, uint64_t arena_bytes);
 void bcuda_buffer_manager_init_with_physical(uint8_t *arena, uintptr_t physical_base, uint64_t arena_bytes);
+void bcuda_buffer_manager_set_sync_hooks(
+    BcudaBufferSyncFn to_device,
+    BcudaBufferSyncFn from_device,
+    void *context
+);
 int bcuda_alloc_buffer(uint64_t size_bytes, BcudaTensorDesc desc, uint32_t usage, uint32_t *out_id);
 int bcuda_free_buffer(uint32_t buffer_id);
 int bcuda_get_buffer(uint32_t buffer_id, BcudaBuffer **out);

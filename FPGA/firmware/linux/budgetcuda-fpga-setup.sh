@@ -1,17 +1,18 @@
 #!/bin/sh
 set -eu
 
-firmware_name=${BCUDA_FIRMWARE_NAME:-bcuda_pynq_z2_fpga_manager.bin}
-firmware_path=/lib/firmware/$firmware_name
+overlay_path=${BCUDA_OVERLAY_PATH:-/opt/budgetcuda/overlay/bcuda_pynq_z2.bit}
 manager=/sys/class/fpga_manager/fpga0
 clock_helper=/usr/local/lib/budgetcuda/pynq_fclk0.py
+overlay_helper=/usr/local/lib/budgetcuda/budgetcuda_overlay.py
+pynq_python=/usr/local/share/pynq-venv/bin/python3
 
-if [ ! -r "$firmware_path" ]; then
-    echo "BudgetCUDA FPGA payload is missing: $firmware_path" >&2
+if [ ! -r "$overlay_path" ] || [ ! -r "${overlay_path%.bit}.hwh" ]; then
+    echo "BudgetCUDA overlay pair is missing: $overlay_path" >&2
     exit 1
 fi
-if [ ! -x /usr/bin/python3 ] || [ ! -r "$clock_helper" ]; then
-    echo "BudgetCUDA FCLK0 helper is not installed: $clock_helper" >&2
+if [ ! -x "$pynq_python" ] || [ ! -r "$clock_helper" ] || [ ! -r "$overlay_helper" ]; then
+    echo "BudgetCUDA PYNQ helpers are not installed" >&2
     exit 1
 fi
 if [ ! -w "$manager/firmware" ]; then
@@ -33,9 +34,8 @@ if systemctl is-enabled bootpy.service >/dev/null 2>&1; then
     done
 fi
 
+XILINX_XRT=/usr "$pynq_python" "$overlay_helper" "$overlay_path"
 /usr/bin/python3 "$clock_helper" --mhz 100
-printf '%s\n' "$firmware_name" > "$manager/firmware"
-/bin/sleep 1
 
 state=$(cat "$manager/state")
 if [ "$state" != "operating" ]; then
@@ -43,4 +43,4 @@ if [ "$state" != "operating" ]; then
     exit 1
 fi
 
-echo "BudgetCUDA FPGA is operating at 100 MHz with $firmware_name"
+echo "BudgetCUDA FPGA is operating at 100 MHz with $overlay_path"

@@ -12,13 +12,16 @@ Clone this branch on the PYNQ-Z2 and run from the repository root:
 sudo ./install_budgetcuda_pynq.sh
 ```
 
-The installer builds the ARM daemon on the board, installs the FPGA payload,
-sets FCLK0 to 100 MHz, programs PL, and enables both services. On every later
-boot, `budgetcuda-fpga.service` programs PL before `budgetcuda.service` starts.
+The installer builds the ARM daemon on the board, installs the paired `.bit`
+and `.hwh` overlay, sets FCLK0 to 100 MHz, and enables both services. On every
+later boot, `budgetcuda-fpga.service` loads the overlay before
+`budgetcuda.service` starts.
 PYNQ's stock `bootpy.service` remains enabled because it participates in board
 and network initialization. The FPGA helper waits until boot.py has loaded
-`base.bin`, then programs BudgetCUDA afterward so it is the final PL image.
-The daemon cannot start until that sequence succeeds.
+`base.bin`, then loads BudgetCUDA through the PYNQ Overlay API so it is the
+final PL image and its PSDDR metadata is registered with XRT. The daemon
+reserves and retains a 16 MiB XRT arena. Older PYNQ images retain the legacy
+Xlnk allocator fallback.
 
 Verify a cold boot with:
 
@@ -46,6 +49,9 @@ board at `192.168.2.99`, then run from the repository root:
 The script first runs a full 17-layer smoke comparison and then evaluates the
 balanced 300-image FPGA subset. The validated release result is 99.0% FPGA
 accuracy and 99.3333% agreement with ONNX Runtime.
+
+The PYNQ 3.1.1 validation measured 270.714 ms mean and 285.892 ms p95 latency
+over the same 300 images.
 
 ## Release fingerprints
 

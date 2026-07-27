@@ -10,13 +10,18 @@ script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 fpga_dir=$script_dir/FPGA
 linux_dir=$fpga_dir/firmware/linux
 payload=$fpga_dir/hardware/bcuda_pynq_z2_fpga_manager.bin
+bitfile=$fpga_dir/hardware/bcuda_pynq_z2.bit
+hwh=$fpga_dir/hardware/bcuda_pynq_z2.hwh
 clock_helper=$fpga_dir/tests/hardware/pynq_fclk0.py
 
 for required in \
     "$payload" \
+    "$bitfile" \
+    "$hwh" \
     "$clock_helper" \
     "$linux_dir/build_server.sh" \
     "$linux_dir/budgetcuda-fpga-setup.sh" \
+    "$linux_dir/budgetcuda_overlay.py" \
     "$linux_dir/budgetcuda-fpga.service" \
     "$linux_dir/budgetcuda.service"
 do
@@ -39,10 +44,13 @@ systemctl stop budgetcuda.service 2>/dev/null || true
 # final BudgetCUDA image.
 systemctl unmask bootpy.service 2>/dev/null || true
 systemctl enable bootpy.service
-install -d /opt/budgetcuda /usr/local/lib/budgetcuda
+install -d /opt/budgetcuda/overlay /usr/local/lib/budgetcuda
 install -m 0755 "$build_dir/budgetcuda-server" /opt/budgetcuda/budgetcuda-server
 install -m 0644 "$payload" /lib/firmware/bcuda_pynq_z2_fpga_manager.bin
+install -m 0644 "$bitfile" /opt/budgetcuda/overlay/bcuda_pynq_z2.bit
+install -m 0644 "$hwh" /opt/budgetcuda/overlay/bcuda_pynq_z2.hwh
 install -m 0644 "$clock_helper" /usr/local/lib/budgetcuda/pynq_fclk0.py
+install -m 0644 "$linux_dir/budgetcuda_overlay.py" /usr/local/lib/budgetcuda/budgetcuda_overlay.py
 install -m 0755 "$linux_dir/budgetcuda-fpga-setup.sh" /usr/local/sbin/budgetcuda-fpga-setup
 install -m 0644 "$linux_dir/budgetcuda-fpga.service" /etc/systemd/system/budgetcuda-fpga.service
 install -m 0644 "$linux_dir/budgetcuda.service" /etc/systemd/system/budgetcuda.service
