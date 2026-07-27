@@ -43,6 +43,16 @@ ONNX Runtime installed. Connect the host at `192.168.2.1/24` directly to the
 board at `192.168.2.99`, then run from the repository root:
 
 ```powershell
+.\install_requirements.bat
+```
+
+This installs the validated non-Torch dependencies from `requirements.txt`.
+Torch and torchvision are deliberately excluded and must be installed
+separately using builds that match the host CUDA version.
+
+Then run:
+
+```powershell
 .\run_budgetcuda_demo.ps1
 ```
 

@@ -1,2 +1,3 @@
-# Optional host-side dependencies for model import and deployment.
-onnx>=1.14,<1.18
+# Compatibility entry point for host-side installation.
+# The canonical requirements intentionally exclude torch and torchvision.
+-r ../requirements.txt

@@ -13,6 +13,8 @@ DEMO_ROOT = FPGA_ROOT / "demo"
 DATASET_ROOT = DEMO_ROOT / "dataset" / "fruits-360-100x100"
 MODEL = DEMO_ROOT / "models" / "fruit3_budgetcuda_int8.onnx"
 MODEL_SHA256 = "a36f9701f126c6a76fb81366d4a384d9b920469749e5e32d2604e47e33a9b348"
+REQUIREMENTS = REPO_ROOT / "requirements.txt"
+REQUIREMENTS_INSTALLER = REPO_ROOT / "install_requirements.bat"
 
 
 def sha256(path: Path) -> str:
@@ -64,6 +66,25 @@ class DemoReleaseTests(unittest.TestCase):
         self.assertIn("bcuda_pynq_z2.hwh", installer)
         self.assertIn("systemctl unmask bootpy.service", installer)
         self.assertIn("systemctl enable bootpy.service", installer)
+
+    def test_host_requirements_exclude_cuda_specific_torch_packages(self):
+        requirements = REQUIREMENTS.read_text(encoding="utf-8").lower().splitlines()
+        packages = {
+            line.split("==", 1)[0].strip()
+            for line in requirements
+            if line.strip() and not line.lstrip().startswith("#")
+        }
+        self.assertIn("onnx", packages)
+        self.assertIn("onnxruntime", packages)
+        self.assertIn("numpy", packages)
+        self.assertNotIn("torch", packages)
+        self.assertNotIn("torchvision", packages)
+
+        installer = REQUIREMENTS_INSTALLER.read_text(encoding="utf-8").lower()
+        self.assertIn('-r "%requirements%"', installer)
+        self.assertIn('"setuptools<82"', installer)
+        self.assertNotIn("pip install torch", installer)
+        self.assertNotIn("pip install torchvision", installer)
 
 
 if __name__ == "__main__":
