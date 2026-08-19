@@ -51,6 +51,7 @@ class DemoReleaseTests(unittest.TestCase):
         fpga_unit = (FPGA_ROOT / "firmware" / "linux" / "budgetcuda-fpga.service").read_text(encoding="utf-8")
         fpga_setup = (FPGA_ROOT / "firmware" / "linux" / "budgetcuda-fpga-setup.sh").read_text(encoding="utf-8")
         overlay_helper = (FPGA_ROOT / "firmware" / "linux" / "budgetcuda_overlay.py").read_text(encoding="utf-8")
+        afi_helper = (FPGA_ROOT / "firmware" / "linux" / "pynq_afi_hp0.py").read_text(encoding="utf-8")
         build_script = (FPGA_ROOT / "firmware" / "linux" / "build_server.sh").read_text(encoding="utf-8")
         installer = (REPO_ROOT / "install_budgetcuda_pynq.sh").read_text(encoding="utf-8")
 
@@ -60,10 +61,14 @@ class DemoReleaseTests(unittest.TestCase):
         self.assertIn("Before=budgetcuda.service", fpga_unit)
         self.assertIn('dmesg | grep -q "writing base.bin"', fpga_setup)
         self.assertIn('XILINX_XRT=/usr "$pynq_python"', fpga_setup)
+        self.assertIn('"$afi_helper" --width 32', fpga_setup)
+        self.assertIn("AFI_HP0_BASE = 0xF8008000", afi_helper)
+        self.assertIn("ctypes.c_uint32.from_buffer", afi_helper)
         self.assertIn("Overlay(str(bitfile), download=True)", overlay_helper)
         self.assertIn('"PSDDR" not in overlay.mem_dict', overlay_helper)
         self.assertIn("-lxrt_coreutil", build_script)
         self.assertIn("bcuda_pynq_z2.hwh", installer)
+        self.assertIn("pynq_afi_hp0.py", installer)
         self.assertIn("systemctl unmask bootpy.service", installer)
         self.assertIn("systemctl enable bootpy.service", installer)
 

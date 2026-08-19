@@ -17,7 +17,7 @@ class DiagnosticsTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "At least one"):
             DiagnosticsSettings(timing=False, memory=False, operations=False, utilization=False)
         settings = DiagnosticsSettings()
-        self.assertEqual(settings.buffer_bytes(2), 48 + 2 * 80)
+        self.assertEqual(settings.buffer_bytes(2), 48 + 2 * 144)
         with self.assertRaisesRegex(ValueError, "daemon may not support"):
             parse_diagnostics(settings.initial_buffer(2), settings)
 

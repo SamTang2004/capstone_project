@@ -4,6 +4,10 @@
 
 Budget-CUDA is a lightweight FPGA-backed inference runtime for a Zynq platform. The system uses the Zynq PL as a fixed-function INT8 GEMM accelerator and uses the Zynq PS as the local device runtime. The host computer provides a Python API, model conversion tools, quantization utilities, and a protocol client.
 
+**Deployed PYNQ-Z2 configuration:** one 16x16 INT8 systolic array. Earlier
+eight-array diagrams described a scaling target that does not fit the
+Zynq-7020 and are not part of the production bitstream.
+
 The project goal is not to implement a full CUDA replacement. The goal is to build a small accelerator stack that behaves like a simple device runtime:
 
 ```text
@@ -49,7 +53,7 @@ The accelerator supports INT8 inference. Floating-point execution is not support
 |  GEMM Controller                                             |
 |  Tile Load/Store Engine                                      |
 |  BRAM/SRAM Tile Caches                                       |
-|  8 x 16x16 INT8 Systolic Arrays                              |
+|  1 x 16x16 INT8 Systolic Array                               |
 |  INT32 Accumulators                                          |
 |  Optional Requantization / Activation                        |
 |                                                              |
@@ -1417,7 +1421,7 @@ It handles:
 ```text
 - Loading A/B tiles from Zynq DRAM
 - Staging tiles into BRAM/SRAM-style caches
-- Running 8 parallel 16x16 systolic arrays
+- Running one 16x16 systolic array
 - INT8 x INT8 multiplication
 - INT32 accumulation
 - Writing C tiles back to Zynq DRAM
@@ -1470,7 +1474,7 @@ AXI read / DMA
 A/B tile caches
    |
    v
-8 x 16x16 INT8 systolic arrays
+1 x 16x16 INT8 systolic array
    |
    v
 INT32 accumulators
@@ -1502,7 +1506,7 @@ address_generator
 tile_loader
 tile_writer
 tile_cache
-8 x systolic_array_16x16
+1 x systolic_array_16x16
 accumulator_buffer
 optional postprocess
 ```
@@ -1590,7 +1594,7 @@ for m = 0 to M step 16:
         for k = 0 to K step Kt:
             load A tile
             load 8 B tiles
-            run 8 systolic arrays
+            run the single deployed systolic array
         write 8 C tiles
 ```
 
@@ -1738,14 +1742,14 @@ Required behavior:
 Purpose:
 
 ```text
-Store output accumulators for all 8 systolic arrays.
+Store output accumulators for the deployed systolic array.
 ```
 
 Capacity:
 
 ```text
-8 arrays x 16 x 16 accumulators = 2048 INT32 accumulators
-2048 x 4 bytes = 8192 bytes
+1 array x 16 x 16 accumulators = 256 INT32 accumulators
+256 x 4 bytes = 1024 bytes
 ```
 
 ### 7.14 `pl/rtl/postprocess.sv`
@@ -2088,8 +2092,8 @@ Shape restriction:
     M, N, K multiples of 16
 
 Hardware:
-    at least one working 16x16 systolic array
-    preferably scalable to 8 arrays
+    one working 16x16 systolic array on PYNQ-Z2
+    wider clusters are out of scope for this board
 ```
 
 MVP demo:
@@ -2142,7 +2146,7 @@ Model style:
     YOLO-like tiny detector, if schedule permits
 
 PL:
-    8 x 16x16 INT8 systolic arrays
+    1 x 16x16 INT8 systolic array
     INT32 accumulation
     optional postprocess path
 ```
@@ -2294,14 +2298,14 @@ Measure separately:
 
 Do not report only peak theoretical GOPS.
 
-Theoretical peak for 8 arrays:
+Theoretical peak for the deployed array:
 
 ```text
-8 arrays x 16 x 16 PEs = 2048 MACs/cycle
+1 array x 16 x 16 PEs = 256 MACs/cycle
 
 At 100 MHz:
-    204.8 GMAC/s
-    409.6 GOPS if multiply+add counted separately
+    25.6 GMAC/s
+    51.2 GOPS if multiply+add counted separately
 ```
 
 Actual performance must include:
@@ -2345,14 +2349,15 @@ Mitigation:
 
 ### 15.3 PL Resource Pressure
 
-8 x 16x16 arrays require 2048 PEs. This may exceed available resources depending on board size and implementation style.
+Eight 16x16 arrays require 2048 PEs and do not fit the PYNQ-Z2. The deployed
+configuration is fixed at one array; wider clusters are only a source-level
+scalability experiment for larger devices.
 
 Mitigation:
 
 ```text
-- build one array first
-- scale to 2, 4, then 8 arrays
-- reduce array count if timing/resources fail
+- keep the PYNQ-Z2 build at one array
+- evaluate wider clusters only on a larger FPGA target
 - use HLS/RTL resource reports early
 ```
 

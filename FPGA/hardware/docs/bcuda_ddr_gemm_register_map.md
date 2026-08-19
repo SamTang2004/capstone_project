@@ -1,7 +1,7 @@
 # Budget-CUDA Tiled Systolic DDR Register Map
 
-The final standalone PL top is `bcuda_tiled_systolic_ddr_top`. It exposes a
-16-register AXI-Lite control window. The PYNQ-Z2 PS/PL wrapper maps this
+The final standalone PL top is `bcuda_tiled_systolic_ddr_top`. It exposes 16
+writable control registers and 16 read-only Conv2D performance registers. The PYNQ-Z2 PS/PL wrapper maps this
 window at `0x43C80000`. This avoids the PYNQ base overlay's occupied
 `0x43C00000` through `0x43C70000` control range.
 
@@ -23,6 +23,11 @@ window at `0x43C80000`. This avoids the PYNQ base overlay's occupied
 | `0x34` | `RQ_MULTIPLIER` | RW | Signed Q-format scalar multiplier for `REQUANTIZE`. |
 | `0x38` | `RQ_RIGHT_SHIFT` | RW | Arithmetic right shift, `0..31`, for `REQUANTIZE`. |
 | `0x3c` | `RQ_OUTPUT_ZERO_POINT` | RW | Signed output zero point for `REQUANTIZE`. |
+
+Offsets `0x40` through `0x7c` are read-only counters for the most recently
+completed Conv2D command: total, zero-A, load-A, zero-B, load-B, bias, compute,
+accumulate, write, loader-address, loader-request, loader-receive, cache hits,
+cache misses, AXI line-fill cycles, and bytes delivered, in that order.
 
 `REQUANTIZE` uses `A_BASE` as aligned INT32 input, `C_BASE` as aligned INT8 output, and `M` as the contiguous element count. Its PL formula is `sat_int8(((x * RQ_MULTIPLIER) >>> RQ_RIGHT_SHIFT) + RQ_OUTPUT_ZERO_POINT)`. The output writer packs four INT8 values into each DDR write; the final partial word uses byte strobes. This MVP PL path requires symmetric INT32 accumulators (`input_zero_point = 0`).
 

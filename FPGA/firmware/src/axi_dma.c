@@ -24,6 +24,25 @@ static uint32_t bcuda_pl_read(BcudaAxiDma *dma, uint32_t offset) {
     return regs == 0 ? 0 : regs[offset / sizeof(uint32_t)];
 }
 
+static void bcuda_read_conv_profile(BcudaAxiDma *dma) {
+    dma->conv_cycles_total = bcuda_pl_read(dma, BCUDA_PL_REG_CONV_CYCLES_TOTAL);
+    dma->conv_cycles_zero_a = bcuda_pl_read(dma, BCUDA_PL_REG_CONV_CYCLES_ZERO_A);
+    dma->conv_cycles_load_a = bcuda_pl_read(dma, BCUDA_PL_REG_CONV_CYCLES_LOAD_A);
+    dma->conv_cycles_zero_b = bcuda_pl_read(dma, BCUDA_PL_REG_CONV_CYCLES_ZERO_B);
+    dma->conv_cycles_load_b = bcuda_pl_read(dma, BCUDA_PL_REG_CONV_CYCLES_LOAD_B);
+    dma->conv_cycles_bias = bcuda_pl_read(dma, BCUDA_PL_REG_CONV_CYCLES_BIAS);
+    dma->conv_cycles_compute = bcuda_pl_read(dma, BCUDA_PL_REG_CONV_CYCLES_COMPUTE);
+    dma->conv_cycles_accumulate = bcuda_pl_read(dma, BCUDA_PL_REG_CONV_CYCLES_ACCUMULATE);
+    dma->conv_cycles_write = bcuda_pl_read(dma, BCUDA_PL_REG_CONV_CYCLES_WRITE);
+    dma->conv_loader_address_cycles = bcuda_pl_read(dma, BCUDA_PL_REG_CONV_LOADER_ADDRESS);
+    dma->conv_loader_request_cycles = bcuda_pl_read(dma, BCUDA_PL_REG_CONV_LOADER_REQUEST);
+    dma->conv_loader_receive_cycles = bcuda_pl_read(dma, BCUDA_PL_REG_CONV_LOADER_RECEIVE);
+    dma->conv_cache_hits = bcuda_pl_read(dma, BCUDA_PL_REG_CONV_CACHE_HITS);
+    dma->conv_cache_misses = bcuda_pl_read(dma, BCUDA_PL_REG_CONV_CACHE_MISSES);
+    dma->conv_fill_cycles = bcuda_pl_read(dma, BCUDA_PL_REG_CONV_FILL_CYCLES);
+    dma->conv_bytes_delivered = bcuda_pl_read(dma, BCUDA_PL_REG_CONV_BYTES_DELIVERED);
+}
+
 static uint32_t bcuda_stride_bytes(const BcudaBuffer *buffer, uint32_t fallback) {
     if (buffer != 0 && buffer->rank >= 2 && buffer->shape[1] != 0) {
         uint32_t element_bytes = buffer->dtype == BC_DTYPE_INT32 ? 4u : 1u;
@@ -89,6 +108,11 @@ void bcuda_axi_dma_init(BcudaAxiDma *dma, uintptr_t register_base, uint32_t time
     dma->last_memory_base = 0;
     dma->last_memory_bytes = 0;
     dma->last_memory_io_flags = 0;
+    dma->conv_cycles_total = 0; dma->conv_cycles_zero_a = 0; dma->conv_cycles_load_a = 0;
+    dma->conv_cycles_zero_b = 0; dma->conv_cycles_load_b = 0; dma->conv_cycles_bias = 0;
+    dma->conv_cycles_compute = 0; dma->conv_cycles_accumulate = 0; dma->conv_cycles_write = 0;
+    dma->conv_loader_address_cycles = 0; dma->conv_loader_request_cycles = 0; dma->conv_loader_receive_cycles = 0;
+    dma->conv_cache_hits = 0; dma->conv_cache_misses = 0; dma->conv_fill_cycles = 0; dma->conv_bytes_delivered = 0;
 }
 
 int bcuda_axi_dma_submit_gemm(BcudaAxiDma *dma, const BcudaGemmDesc *desc, BcudaBuffer *A, BcudaBuffer *B, BcudaBuffer *C) {
@@ -168,12 +192,19 @@ int bcuda_axi_dma_submit_requantize(BcudaAxiDma *dma, const BcudaRequantDesc *de
 }
 
 int bcuda_axi_dma_submit_conv2d(BcudaAxiDma *dma, const BcudaLayerDesc *layer, BcudaBuffer *input, BcudaBuffer *weight, BcudaBuffer *bias, BcudaBuffer *output) {
+    uint64_t reduction;
+    uint64_t required_weight_bytes;
     if (dma == 0 || layer == 0 || input == 0 || weight == 0 || output == 0) return BC_STATUS_GENERAL_ERROR;
     if (input->dtype != BC_DTYPE_INT8 || weight->dtype != BC_DTYPE_INT8 || output->dtype != BC_DTYPE_INT32 ||
         layer->n != 1u || layer->groups != 1u || layer->c == 0u || layer->h == 0u || layer->w == 0u || layer->out_c == 0u ||
         layer->out_h == 0u || layer->out_w == 0u || layer->kernel_h == 0u || layer->kernel_h > 16u || layer->kernel_w == 0u ||
         layer->kernel_w > 16u || layer->stride_h == 0u || layer->stride_w == 0u || layer->stride_h > 255u || layer->stride_w > 255u ||
         layer->pad_h > 255u || layer->pad_w > 255u || (bias != 0 && (bias->dtype != BC_DTYPE_INT32 || bias->size_bytes < (uint64_t)layer->out_c * sizeof(int32_t)))) return BC_STATUS_SHAPE_MISMATCH;
+    reduction = (uint64_t)layer->c * layer->kernel_h * layer->kernel_w;
+    required_weight_bytes = (layer->flags & BCUDA_CONV_PRESLICED_WEIGHTS) != 0u
+        ? ((layer->out_c + 15u) / 16u) * ((reduction + 15u) / 16u) * 256u
+        : (uint64_t)layer->out_c * reduction;
+    if (weight->size_bytes < required_weight_bytes) return BC_STATUS_SHAPE_MISMATCH;
     if (dma->register_base == 0) return BC_STATUS_EXECUTION_FAILED;
     bcuda_pl_write(dma, BCUDA_PL_REG_CONTROL, 0u);
     bcuda_pl_write(dma, BCUDA_PL_REG_A_BASE, (uint32_t)input->physical_address);
@@ -191,6 +222,7 @@ int bcuda_axi_dma_submit_conv2d(BcudaAxiDma *dma, const BcudaLayerDesc *layer, B
     bcuda_pl_write(dma, BCUDA_PL_REG_RQ_RIGHT_SHIFT, layer->pad_h | (layer->pad_w << 8));
     bcuda_pl_write(dma, BCUDA_PL_REG_RQ_OUTPUT_ZERO_POINT, bias == 0 ? 0u : (uint32_t)bias->physical_address);
     dma->last_control_word = BCUDA_PL_CONTROL_START | BCUDA_PL_CONTROL_CONV2D;
+    if ((layer->flags & BCUDA_CONV_PRESLICED_WEIGHTS) != 0u) dma->last_control_word |= BCUDA_PL_CONTROL_CONV_PRESLICED_WEIGHTS;
     bcuda_pl_write(dma, BCUDA_PL_REG_CONTROL, dma->last_control_word);
     return BC_STATUS_OK;
 }
@@ -394,6 +426,7 @@ int bcuda_axi_dma_poll_done(BcudaAxiDma *dma) {
         /* DONE marks the producer's final request; BUSY remains asserted
          * until the shared HP0 write path has drained it. */
         if ((status & (BCUDA_PL_STATUS_DONE | BCUDA_PL_STATUS_BUSY)) == BCUDA_PL_STATUS_DONE) {
+            bcuda_read_conv_profile(dma);
             bcuda_pl_write(dma, BCUDA_PL_REG_CONTROL, 0u);
             return BC_STATUS_OK;
         }

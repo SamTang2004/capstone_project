@@ -8,7 +8,7 @@ module bcuda_tiled_systolic_ddr_top #(
     input  logic        aresetn,
 
     (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 S_AXI AWADDR" *)
-    input  logic [5:0]  s_axi_awaddr,
+    input  logic [7:0]  s_axi_awaddr,
     (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 S_AXI AWVALID" *)
     input  logic        s_axi_awvalid,
     (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 S_AXI AWREADY" *)
@@ -29,7 +29,7 @@ module bcuda_tiled_systolic_ddr_top #(
     input  logic        s_axi_bready,
 
     (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 S_AXI ARADDR" *)
-    input  logic [5:0]  s_axi_araddr,
+    input  logic [7:0]  s_axi_araddr,
     (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 S_AXI ARVALID" *)
     input  logic        s_axi_arvalid,
     (* X_INTERFACE_INFO = "xilinx.com:interface:aximm:1.0 S_AXI ARREADY" *)
@@ -109,6 +109,7 @@ module bcuda_tiled_systolic_ddr_top #(
     logic [31:0] ctrl_word;
     logic [31:0] status_word;
     logic [32*16-1:0] regs_flat;
+    logic [32*16-1:0] perf_regs_flat;
     logic ctrl_start_d;
     logic start_pulse;
     logic command_stage1_valid;
@@ -143,7 +144,7 @@ module bcuda_tiled_systolic_ddr_top #(
     logic signed [31:0] rq_multiplier;
     logic [31:0] rq_right_shift;
     logic signed [31:0] rq_output_zero_point;
-    logic requantize_mode, conv2d_mode, activation_mode, activation_leaky_mode;
+    logic requantize_mode, conv2d_mode, conv_presliced_weights_mode, activation_mode, activation_leaky_mode;
     logic maxpool_mode, upsample_mode, concat_mode, avgpool_mode;
     wire tensor_mode = maxpool_mode || upsample_mode || concat_mode;
     wire [31:0] conv_bias_base = rq_output_zero_point;
@@ -159,6 +160,7 @@ module bcuda_tiled_systolic_ddr_top #(
     wire [15:0] conv_out_w = dim_k;
     logic [31:0] conv_spatial_r;
     logic [12:0] conv_kernel_area_r;
+    logic [31:0] conv_weight_tile_stride_r;
     logic [15:0] controller_dim_m, controller_dim_n, controller_dim_k;
     logic [4:0] controller_tile_size;
     logic [7:0] controller_array_count;
@@ -223,6 +225,8 @@ module bcuda_tiled_systolic_ddr_top #(
     logic [2:0] core_result_array;
     logic [7:0] core_result_addr;
     logic [31:0] core_result_data;
+    logic [31:0] core_result_data_r;
+    logic accum_data_valid_r;
 
     logic [7:0] zero_idx;
     logic [7:0] accum_idx;
@@ -328,7 +332,18 @@ module bcuda_tiled_systolic_ddr_top #(
     logic [7:0] memio_read_data;
     logic memio_busy;
     logic memio_error;
+    logic [2:0] memio_error_code;
+    logic [7:0] memio_debug_first_byte;
+    logic [4:0] memio_debug_fill_beats;
     logic memio_write_req_ready;
+    logic loader_profile_address, loader_profile_request, loader_profile_receive;
+    logic [31:0] memio_stats_cache_hits, memio_stats_cache_misses;
+    logic [31:0] memio_stats_fill_cycles, memio_stats_bytes_delivered;
+    logic conv_profile_active;
+    logic [31:0] conv_cycles_total, conv_cycles_zero_a, conv_cycles_load_a;
+    logic [31:0] conv_cycles_zero_b, conv_cycles_load_b, conv_cycles_bias;
+    logic [31:0] conv_cycles_compute, conv_cycles_accumulate, conv_cycles_write;
+    logic [31:0] conv_cycles_loader_address, conv_cycles_loader_request, conv_cycles_loader_receive;
 
     // DDR read data can return after the issuing operator changes state.
     // Keep its destination stable from request acceptance through response
@@ -354,6 +369,58 @@ module bcuda_tiled_systolic_ddr_top #(
     assign activation_start = dispatch_pulse && activation_mode;
     assign tensor_start = dispatch_pulse && tensor_mode;
     assign avgpool_start = dispatch_pulse && avgpool_mode;
+
+    assign perf_regs_flat[0*32 +: 32] = conv_cycles_total;
+    assign perf_regs_flat[1*32 +: 32] = conv_cycles_zero_a;
+    assign perf_regs_flat[2*32 +: 32] = conv_cycles_load_a;
+    assign perf_regs_flat[3*32 +: 32] = conv_cycles_zero_b;
+    assign perf_regs_flat[4*32 +: 32] = conv_cycles_load_b;
+    assign perf_regs_flat[5*32 +: 32] = conv_cycles_bias;
+    assign perf_regs_flat[6*32 +: 32] = conv_cycles_compute;
+    assign perf_regs_flat[7*32 +: 32] = conv_cycles_accumulate;
+    assign perf_regs_flat[8*32 +: 32] = conv_cycles_write;
+    assign perf_regs_flat[9*32 +: 32] = conv_cycles_loader_address;
+    assign perf_regs_flat[10*32 +: 32] = conv_cycles_loader_request;
+    assign perf_regs_flat[11*32 +: 32] = conv_cycles_loader_receive;
+    assign perf_regs_flat[12*32 +: 32] = memio_stats_cache_hits;
+    assign perf_regs_flat[13*32 +: 32] = memio_stats_cache_misses;
+    assign perf_regs_flat[14*32 +: 32] = memio_stats_fill_cycles;
+    assign perf_regs_flat[15*32 +: 32] = memio_stats_bytes_delivered;
+
+    always_ff @(posedge aclk) begin
+        if (!aresetn) begin
+            conv_profile_active <= 1'b0;
+            conv_cycles_total <= '0; conv_cycles_zero_a <= '0; conv_cycles_load_a <= '0;
+            conv_cycles_zero_b <= '0; conv_cycles_load_b <= '0; conv_cycles_bias <= '0;
+            conv_cycles_compute <= '0; conv_cycles_accumulate <= '0; conv_cycles_write <= '0;
+            conv_cycles_loader_address <= '0; conv_cycles_loader_request <= '0; conv_cycles_loader_receive <= '0;
+        end else begin
+            if (dispatch_pulse && conv2d_mode) begin
+                conv_profile_active <= 1'b1;
+                conv_cycles_total <= '0; conv_cycles_zero_a <= '0; conv_cycles_load_a <= '0;
+                conv_cycles_zero_b <= '0; conv_cycles_load_b <= '0; conv_cycles_bias <= '0;
+                conv_cycles_compute <= '0; conv_cycles_accumulate <= '0; conv_cycles_write <= '0;
+                conv_cycles_loader_address <= '0; conv_cycles_loader_request <= '0; conv_cycles_loader_receive <= '0;
+            end else if (conv_profile_active) begin
+                conv_cycles_total <= conv_cycles_total + 1'b1;
+                case (op_state)
+                    OP_ZERO_A: conv_cycles_zero_a <= conv_cycles_zero_a + 1'b1;
+                    OP_LOAD_A: conv_cycles_load_a <= conv_cycles_load_a + 1'b1;
+                    OP_ZERO_B: conv_cycles_zero_b <= conv_cycles_zero_b + 1'b1;
+                    OP_LOAD_B, OP_LOAD_B_NEXT: conv_cycles_load_b <= conv_cycles_load_b + 1'b1;
+                    OP_BIAS_PRELOAD: conv_cycles_bias <= conv_cycles_bias + 1'b1;
+                    OP_COMPUTE_WAIT: conv_cycles_compute <= conv_cycles_compute + 1'b1;
+                    OP_ACCUMULATE: conv_cycles_accumulate <= conv_cycles_accumulate + 1'b1;
+                    OP_WRITE_C: conv_cycles_write <= conv_cycles_write + 1'b1;
+                    default: begin end
+                endcase
+                if (loader_profile_address) conv_cycles_loader_address <= conv_cycles_loader_address + 1'b1;
+                if (loader_profile_request) conv_cycles_loader_request <= conv_cycles_loader_request + 1'b1;
+                if (loader_profile_receive) conv_cycles_loader_receive <= conv_cycles_loader_receive + 1'b1;
+                if (controller_done) conv_profile_active <= 1'b0;
+            end
+        end
+    end
 
     // MMIO decode pipeline:
     //   1. atomically snapshot the register file and operation mode;
@@ -381,6 +448,7 @@ module bcuda_tiled_systolic_ddr_top #(
             rq_output_zero_point <= '0;
             requantize_mode <= 1'b0;
             conv2d_mode <= 1'b0;
+            conv_presliced_weights_mode <= 1'b0;
             activation_mode <= 1'b0;
             activation_leaky_mode <= 1'b0;
             maxpool_mode <= 1'b0;
@@ -389,6 +457,7 @@ module bcuda_tiled_systolic_ddr_top #(
             avgpool_mode <= 1'b0;
             conv_spatial_r <= '0;
             conv_kernel_area_r <= '0;
+            conv_weight_tile_stride_r <= '0;
             controller_dim_m <= '0;
             controller_dim_n <= '0;
             controller_dim_k <= '0;
@@ -416,6 +485,7 @@ module bcuda_tiled_systolic_ddr_top #(
                 rq_output_zero_point <= mmio_rq_output_zero_point;
                 requantize_mode <= ctrl_word[1];
                 conv2d_mode <= ctrl_word[2];
+                conv_presliced_weights_mode <= ctrl_word[10];
                 activation_mode <= ctrl_word[3];
                 activation_leaky_mode <= ctrl_word[4];
                 maxpool_mode <= ctrl_word[5];
@@ -433,6 +503,7 @@ module bcuda_tiled_systolic_ddr_top #(
                 controller_dim_m <= conv2d_mode ? conv_spatial_r[15:0] : dim_m;
                 controller_dim_n <= conv2d_mode ? dim_m : dim_n;
                 controller_dim_k <= conv2d_mode ? conv_input_c * conv_kernel_area_r : dim_k;
+                conv_weight_tile_stride_r <= (((conv_input_c * conv_kernel_area_r) + 15) >> 4) << 8;
                 controller_tile_size <= conv2d_mode ? 5'd16 : tile_size;
                 controller_array_count <= conv2d_mode ? 8'd1 : array_count;
             end
@@ -441,7 +512,7 @@ module bcuda_tiled_systolic_ddr_top #(
     // Bits 2:0 retain the firmware ABI. Upper bits expose live board-level
     // progress so an HP0 handshake stall can be diagnosed through AXI-Lite.
     assign status_word = {
-        14'd0,
+        1'd0, memio_debug_fill_beats, memio_debug_first_byte,
         loader_read_req_valid, loader_read_req_ready,
         loader_read_data_valid, loader_read_data_ready,
         mem_cmd_ready, mem_cmd_valid, memio_busy,
@@ -492,7 +563,9 @@ module bcuda_tiled_systolic_ddr_top #(
                     if (loader_start_request) begin
                         loader_matrix_select <= (op_state == OP_ZERO_B) || (op_state == OP_LOAD_B) || (op_state == OP_LOAD_B_NEXT);
                         loader_base_seed_r <= ((op_state == OP_ZERO_B) || (op_state == OP_LOAD_B) || (op_state == OP_LOAD_B_NEXT)) ? b_base : a_base;
-                        loader_row_stride <= ((op_state == OP_ZERO_B) || (op_state == OP_LOAD_B) || (op_state == OP_LOAD_B_NEXT)) ? b_stride : a_stride;
+                        loader_row_stride <= conv2d_mode && conv_presliced_weights_mode
+                            ? conv_weight_tile_stride_r
+                            : (((op_state == OP_ZERO_B) || (op_state == OP_LOAD_B) || (op_state == OP_LOAD_B_NEXT)) ? b_stride : a_stride);
                         loader_rows <= ((op_state == OP_ZERO_B) || (op_state == OP_LOAD_B) || (op_state == OP_LOAD_B_NEXT)) ? k_len : m_len;
                         loader_cols <= ((op_state == OP_ZERO_B) || (op_state == OP_LOAD_B) || (op_state == OP_LOAD_B_NEXT)) ? b_len : k_len;
                         if ((op_state == OP_ZERO_B) || (op_state == OP_LOAD_B) || (op_state == OP_LOAD_B_NEXT)) begin
@@ -504,7 +577,12 @@ module bcuda_tiled_systolic_ddr_top #(
                             loader_offset_stride_r <= a_stride;
                             loader_column_offset_r <= k0;
                         end
-                        loader_launch_state <= LOADER_LAUNCH_MUL0;
+                        if (conv2d_mode) begin
+                            // Conv activation and weight paths own their DDR
+                            // address generation; the generic GEMM base is unused.
+                            loader_base_addr <= ((op_state == OP_ZERO_B) || (op_state == OP_LOAD_B) || (op_state == OP_LOAD_B_NEXT)) ? b_base : a_base;
+                            loader_launch_state <= LOADER_LAUNCH_FINAL;
+                        end else loader_launch_state <= LOADER_LAUNCH_MUL0;
                     end
                 end
                 LOADER_LAUNCH_MUL0: begin
@@ -590,13 +668,28 @@ module bcuda_tiled_systolic_ddr_top #(
     assign avgpool_read_data = memio_read_data;
     assign bias_read_data = memio_read_data;
 
-    assign accum_op_valid = (op_state == OP_ACCUMULATE);
+    assign accum_op_valid = (op_state == OP_ACCUMULATE) && accum_data_valid_r;
     // A biased Conv2D tile has already been initialized by the preload engine;
     // its first systolic pass must add, not clear that seeded accumulator state.
     assign accum_op_clear = (op_state == OP_BIAS_PRELOAD) ? 1'b1 :
                             ((conv2d_mode && conv_bias_base != 0) ? 1'b0 : clear_accumulators);
     assign core_result_addr = (op_state == OP_BIAS_PRELOAD) ? bias_accum_addr : accum_idx;
     assign core_result_array = accum_array_idx;
+
+    // Isolate the 256-entry core-result selector from the accumulator write
+    // handshake. The selected value gets a full cycle to settle before the
+    // corresponding address is accepted by the BRAM read-modify-write port.
+    always_ff @(posedge aclk) begin
+        if (!aresetn) begin
+            core_result_data_r <= '0;
+            accum_data_valid_r <= 1'b0;
+        end else if (op_state != OP_ACCUMULATE) begin
+            accum_data_valid_r <= 1'b0;
+        end else begin
+            core_result_data_r <= core_result_data;
+            accum_data_valid_r <= 1'b1;
+        end
+    end
     assign accum_read_addr = writer_tile_read_addr;
     assign accum_read_req = writer_tile_read_req;
     assign writer_tile_read_data = accum_read_data[write_array_idx];
@@ -724,6 +817,7 @@ module bcuda_tiled_systolic_ddr_top #(
         .s_axi_rvalid(s_axi_rvalid),
         .s_axi_rready(s_axi_rready),
         .status_word(status_word),
+        .perf_regs_flat(perf_regs_flat),
         .ctrl_word(ctrl_word),
         .regs_flat(regs_flat)
     );
@@ -798,7 +892,15 @@ module bcuda_tiled_systolic_ddr_top #(
         .mem_read_data(mem_read_data),
         .mem_read_last(mem_read_last),
         .busy(memio_busy),
-        .error(memio_error)
+        .error(memio_error),
+        .error_code(memio_error_code),
+        .debug_first_byte(memio_debug_first_byte),
+        .debug_fill_beats(memio_debug_fill_beats),
+        .stats_reset(dispatch_pulse && conv2d_mode),
+        .stats_cache_hits(memio_stats_cache_hits),
+        .stats_cache_misses(memio_stats_cache_misses),
+        .stats_fill_cycles(memio_stats_fill_cycles),
+        .stats_bytes_delivered(memio_stats_bytes_delivered)
     );
 
     assign writer_write_req_ready = !avgpool_busy && !tensor_busy && !activation_busy && !rq_busy && memio_write_req_ready;
@@ -813,6 +915,7 @@ module bcuda_tiled_systolic_ddr_top #(
         .start(loader_start),
         .matrix_select(loader_matrix_select),
         .conv_mode(conv2d_mode),
+        .presliced_weights(conv_presliced_weights_mode),
         .base_addr(loader_base_addr),
         .row_stride(loader_row_stride),
         .input_base_addr(a_base),
@@ -838,7 +941,10 @@ module bcuda_tiled_systolic_ddr_top #(
         .cache_we(loader_cache_we),
         .cache_matrix(loader_cache_matrix),
         .cache_addr(loader_cache_addr),
-        .cache_wdata(loader_cache_wdata)
+        .cache_wdata(loader_cache_wdata),
+        .profile_address_phase(loader_profile_address),
+        .profile_request_phase(loader_profile_request),
+        .profile_receive_phase(loader_profile_receive)
     );
 
     gemm_array_cluster_8 #(
@@ -869,7 +975,7 @@ module bcuda_tiled_systolic_ddr_top #(
                 .op_ready(accum_op_ready_array[array_idx]),
                 .op_clear(accum_op_clear),
                 .op_addr(accum_idx),
-                .op_data((op_state == OP_BIAS_PRELOAD) ? bias_accum_data : core_result_data),
+                .op_data((op_state == OP_BIAS_PRELOAD) ? bias_accum_data : core_result_data_r),
                 .op_result(),
                 .seed_valid(op_state == OP_BIAS_PRELOAD && bias_accum_valid && accum_array_idx == array_idx),
                 .seed_ready(),
@@ -1123,7 +1229,7 @@ module bcuda_tiled_systolic_ddr_top #(
                 end
 
                 OP_ACCUMULATE: begin
-                    if (accum_op_ready) begin
+                    if (accum_op_valid && accum_op_ready) begin
                         if (accum_idx == 8'hff) begin
                             accum_idx <= '0;
                             if (accum_array_idx + 1'b1 < active_arrays) begin

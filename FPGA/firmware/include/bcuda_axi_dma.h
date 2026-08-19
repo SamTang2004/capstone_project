@@ -23,7 +23,23 @@ enum {
     BCUDA_PL_REG_ARRAY_COUNT = 0x30u,
     BCUDA_PL_REG_RQ_MULTIPLIER = 0x34u,
     BCUDA_PL_REG_RQ_RIGHT_SHIFT = 0x38u,
-    BCUDA_PL_REG_RQ_OUTPUT_ZERO_POINT = 0x3cu
+    BCUDA_PL_REG_RQ_OUTPUT_ZERO_POINT = 0x3cu,
+    BCUDA_PL_REG_CONV_CYCLES_TOTAL = 0x40u,
+    BCUDA_PL_REG_CONV_CYCLES_ZERO_A = 0x44u,
+    BCUDA_PL_REG_CONV_CYCLES_LOAD_A = 0x48u,
+    BCUDA_PL_REG_CONV_CYCLES_ZERO_B = 0x4cu,
+    BCUDA_PL_REG_CONV_CYCLES_LOAD_B = 0x50u,
+    BCUDA_PL_REG_CONV_CYCLES_BIAS = 0x54u,
+    BCUDA_PL_REG_CONV_CYCLES_COMPUTE = 0x58u,
+    BCUDA_PL_REG_CONV_CYCLES_ACCUMULATE = 0x5cu,
+    BCUDA_PL_REG_CONV_CYCLES_WRITE = 0x60u,
+    BCUDA_PL_REG_CONV_LOADER_ADDRESS = 0x64u,
+    BCUDA_PL_REG_CONV_LOADER_REQUEST = 0x68u,
+    BCUDA_PL_REG_CONV_LOADER_RECEIVE = 0x6cu,
+    BCUDA_PL_REG_CONV_CACHE_HITS = 0x70u,
+    BCUDA_PL_REG_CONV_CACHE_MISSES = 0x74u,
+    BCUDA_PL_REG_CONV_FILL_CYCLES = 0x78u,
+    BCUDA_PL_REG_CONV_BYTES_DELIVERED = 0x7cu
 };
 
 enum {
@@ -36,6 +52,7 @@ enum {
     BCUDA_PL_CONTROL_UPSAMPLE = 0x00000040u,
     BCUDA_PL_CONTROL_CONCAT = 0x00000080u,
     BCUDA_PL_CONTROL_AVGPOOL = 0x00000200u,
+    BCUDA_PL_CONTROL_CONV_PRESLICED_WEIGHTS = 0x00000400u,
     BCUDA_PL_STATUS_BUSY = 0x00000001u,
     BCUDA_PL_STATUS_DONE = 0x00000002u,
     BCUDA_PL_STATUS_ERROR = 0x00000004u,
@@ -61,6 +78,22 @@ typedef struct {
     uintptr_t last_memory_base;
     uint32_t last_memory_bytes;
     uint32_t last_memory_io_flags;
+    uint32_t conv_cycles_total;
+    uint32_t conv_cycles_zero_a;
+    uint32_t conv_cycles_load_a;
+    uint32_t conv_cycles_zero_b;
+    uint32_t conv_cycles_load_b;
+    uint32_t conv_cycles_bias;
+    uint32_t conv_cycles_compute;
+    uint32_t conv_cycles_accumulate;
+    uint32_t conv_cycles_write;
+    uint32_t conv_loader_address_cycles;
+    uint32_t conv_loader_request_cycles;
+    uint32_t conv_loader_receive_cycles;
+    uint32_t conv_cache_hits;
+    uint32_t conv_cache_misses;
+    uint32_t conv_fill_cycles;
+    uint32_t conv_bytes_delivered;
 } BcudaAxiDma;
 
 void bcuda_axi_dma_init(BcudaAxiDma *dma, uintptr_t register_base, uint32_t timeout_cycles);

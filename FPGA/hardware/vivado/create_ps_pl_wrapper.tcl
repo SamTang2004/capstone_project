@@ -17,9 +17,7 @@ create_project budgetcuda_board $project_dir -part xc7z020clg400-1 -force
 set_property target_language Verilog [current_project]
 set_property board_part tul.com.tw:pynq-z2:part0:1.0 [current_project]
 add_files -norecurse $final_rtl_files
-add_files -norecurse [file join $hw_dir "rtl" "bcuda_tiled_systolic_ddr_ip.v"]
-add_files -norecurse [file join $hw_dir "rtl" "memory_io_axi_bridge.sv"]
-add_files -norecurse [file join $hw_dir "rtl" "memory_io_axi_bridge_ip.v"]
+add_files -norecurse $board_wrapper_rtl_files
 set_property file_type SystemVerilog [get_files *.sv]
 
 create_bd_design "bcuda_ps_pl"
@@ -33,6 +31,7 @@ apply_bd_automation -rule xilinx.com:bd_rule:processing_system7 \
 set_property -dict [list \
     CONFIG.PCW_USE_M_AXI_GP0 {1} \
     CONFIG.PCW_USE_S_AXI_HP0 {1} \
+    CONFIG.PCW_S_AXI_HP0_DATA_WIDTH {32} \
     CONFIG.PCW_M_AXI_GP0_ENABLE_STATIC_REMAP {0} \
     CONFIG.PCW_FPGA0_PERIPHERAL_FREQMHZ {100.0} \
 ] $ps7
@@ -41,14 +40,11 @@ set reset [create_bd_cell -type ip -vlnv xilinx.com:ip:proc_sys_reset:5.0 rst_ps
 set interconnect [create_bd_cell -type ip -vlnv xilinx.com:ip:axi_interconnect:2.1 axi_gp0_interconnect]
 set_property -dict [list CONFIG.NUM_SI {1} CONFIG.NUM_MI {1}] $interconnect
 set accelerator [create_bd_cell -type module -reference bcuda_tiled_systolic_ddr_ip bcuda_accelerator_0]
-set ddr_bridge [create_bd_cell -type module -reference memory_io_axi_bridge_ip ddr_bridge_0]
-set hp_interconnect [create_bd_cell -type ip -vlnv xilinx.com:ip:axi_interconnect:2.1 axi_hp0_interconnect]
-set_property -dict [list CONFIG.NUM_SI {1} CONFIG.NUM_MI {1}] $hp_interconnect
+set ddr_bridge [create_bd_cell -type module -reference memory_io_axi3_bridge_ip ddr_bridge_0]
 
 connect_bd_intf_net [get_bd_intf_pins processing_system7_0/M_AXI_GP0] [get_bd_intf_pins axi_gp0_interconnect/S00_AXI]
 connect_bd_intf_net [get_bd_intf_pins axi_gp0_interconnect/M00_AXI] [get_bd_intf_pins bcuda_accelerator_0/S_AXI]
-connect_bd_intf_net [get_bd_intf_pins ddr_bridge_0/M_AXI] [get_bd_intf_pins axi_hp0_interconnect/S00_AXI]
-connect_bd_intf_net [get_bd_intf_pins axi_hp0_interconnect/M00_AXI] [get_bd_intf_pins processing_system7_0/S_AXI_HP0]
+connect_bd_intf_net [get_bd_intf_pins ddr_bridge_0/M_AXI] [get_bd_intf_pins processing_system7_0/S_AXI_HP0]
 
 connect_bd_net [get_bd_pins processing_system7_0/FCLK_CLK0] \
     [get_bd_pins processing_system7_0/M_AXI_GP0_ACLK] \
@@ -57,9 +53,6 @@ connect_bd_net [get_bd_pins processing_system7_0/FCLK_CLK0] \
     [get_bd_pins axi_gp0_interconnect/M00_ACLK] \
     [get_bd_pins bcuda_accelerator_0/aclk] \
     [get_bd_pins processing_system7_0/S_AXI_HP0_ACLK] \
-    [get_bd_pins axi_hp0_interconnect/ACLK] \
-    [get_bd_pins axi_hp0_interconnect/S00_ACLK] \
-    [get_bd_pins axi_hp0_interconnect/M00_ACLK] \
     [get_bd_pins ddr_bridge_0/aclk] \
     [get_bd_pins rst_ps7_0_100M/slowest_sync_clk]
 connect_bd_net [get_bd_pins processing_system7_0/FCLK_RESET0_N] [get_bd_pins rst_ps7_0_100M/ext_reset_in]
@@ -69,9 +62,6 @@ connect_bd_net [get_bd_pins rst_ps7_0_100M/peripheral_aresetn] \
     [get_bd_pins axi_gp0_interconnect/M00_ARESETN] \
     [get_bd_pins bcuda_accelerator_0/aresetn]
 connect_bd_net [get_bd_pins rst_ps7_0_100M/peripheral_aresetn] \
-    [get_bd_pins axi_hp0_interconnect/ARESETN] \
-    [get_bd_pins axi_hp0_interconnect/S00_ARESETN] \
-    [get_bd_pins axi_hp0_interconnect/M00_ARESETN] \
     [get_bd_pins ddr_bridge_0/aresetn]
 
 connect_bd_net [get_bd_pins bcuda_accelerator_0/mem_cmd_valid] [get_bd_pins ddr_bridge_0/cmd_valid]

@@ -737,7 +737,10 @@ static int bcuda_execute_conv2d_layer(BcudaGraphRuntime *runtime, const BcudaBuf
     }
 
     uint64_t input_elements = (uint64_t)layer->n * layer->c * layer->h * layer->w;
-    uint64_t weight_elements = (uint64_t)layer->out_c * layer->c * layer->kernel_h * layer->kernel_w;
+    uint64_t reduction = (uint64_t)layer->c * layer->kernel_h * layer->kernel_w;
+    uint64_t weight_elements = (layer->flags & BCUDA_CONV_PRESLICED_WEIGHTS) != 0u
+        ? ((layer->out_c + 15u) / 16u) * ((reduction + 15u) / 16u) * 256u
+        : (uint64_t)layer->out_c * reduction;
     uint64_t output_bytes = (uint64_t)layer->n * layer->out_c * layer->out_h * layer->out_w * sizeof(int32_t);
     if (input_elements > input->size_bytes || weight_elements > weight->size_bytes || output_bytes > output->size_bytes ||
         (bias != 0 && (uint64_t)layer->out_c * sizeof(int32_t) > bias->size_bytes)) {
@@ -765,7 +768,10 @@ static int bcuda_execute_conv2d_layer(BcudaGraphRuntime *runtime, const BcudaBuf
                                     continue;
                                 }
                                 uint64_t input_idx = (((uint64_t)n * layer->c + ic) * layer->h + (uint32_t)ih) * layer->w + (uint32_t)iw;
-                                uint64_t weight_idx = (((uint64_t)oc * layer->c + ic) * layer->kernel_h + kh) * layer->kernel_w + kw;
+                                uint64_t k = ((uint64_t)ic * layer->kernel_h + kh) * layer->kernel_w + kw;
+                                uint64_t weight_idx = (layer->flags & BCUDA_CONV_PRESLICED_WEIGHTS) != 0u
+                                    ? ((((uint64_t)oc / 16u) * ((reduction + 15u) / 16u) + k / 16u) * 256u) + (k & 15u) * 16u + (oc & 15u)
+                                    : (uint64_t)oc * reduction + k;
                                 acc += (int32_t)src[input_idx] * (int32_t)wgt[weight_idx];
                             }
                         }
@@ -941,6 +947,24 @@ int bcuda_execute_graph(BcudaGraphRuntime *runtime, const BcudaGraphExecDesc *de
                     record->cycles,
                     diagnostics_header->peak_operations_per_cycle
                 );
+            }
+            if (layer.op_type == BC_OP_CONV2D_GEMM && runtime != 0 && runtime->dma != 0 && runtime->dma->register_base != 0) {
+                record->conv_cycles_total = runtime->dma->conv_cycles_total;
+                record->conv_cycles_zero_a = runtime->dma->conv_cycles_zero_a;
+                record->conv_cycles_load_a = runtime->dma->conv_cycles_load_a;
+                record->conv_cycles_zero_b = runtime->dma->conv_cycles_zero_b;
+                record->conv_cycles_load_b = runtime->dma->conv_cycles_load_b;
+                record->conv_cycles_bias = runtime->dma->conv_cycles_bias;
+                record->conv_cycles_compute = runtime->dma->conv_cycles_compute;
+                record->conv_cycles_accumulate = runtime->dma->conv_cycles_accumulate;
+                record->conv_cycles_write = runtime->dma->conv_cycles_write;
+                record->conv_loader_address_cycles = runtime->dma->conv_loader_address_cycles;
+                record->conv_loader_request_cycles = runtime->dma->conv_loader_request_cycles;
+                record->conv_loader_receive_cycles = runtime->dma->conv_loader_receive_cycles;
+                record->conv_cache_hits = runtime->dma->conv_cache_hits;
+                record->conv_cache_misses = runtime->dma->conv_cache_misses;
+                record->conv_fill_cycles = runtime->dma->conv_fill_cycles;
+                record->conv_bytes_delivered = runtime->dma->conv_bytes_delivered;
             }
             diagnostics_header->layer_count = i + 1;
         }

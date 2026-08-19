@@ -10,6 +10,8 @@ from .model import Model
 
 MODEL_MAGIC = 0x444D4342
 MODEL_VERSION = 1
+CONV_FLAG_PRESLICED_WEIGHTS = 0x00000001
+CONV_WEIGHT_TILE_DIM = 16
 MODEL_DESC_STRUCT = struct.Struct("<IIIIIIIIIIIIII")
 LAYER_DESC_STRUCT = struct.Struct("<IIIIIIIIIIIIIIIIIIIIIIII")
 BUFFER_DESC_STRUCT = struct.Struct("<IIIIIIII")
@@ -196,7 +198,39 @@ class GraphBuilder:
         pad_h: int = 0,
         pad_w: int = 0,
         bias_idx: int = 0,
+        preslice_weights: bool = True,
     ) -> None:
+        flags = 0
+        if preslice_weights:
+            weight = self.buffers[weight_idx]
+            reduction = c * kernel_h * kernel_w
+            tiled_shape = (
+                _ceil_div(out_c, CONV_WEIGHT_TILE_DIM),
+                _ceil_div(reduction, CONV_WEIGHT_TILE_DIM),
+                CONV_WEIGHT_TILE_DIM,
+                CONV_WEIGHT_TILE_DIM,
+            )
+            if weight.layout == Layout.CONV_WEIGHT_TILED_INT8:
+                if weight.shape != tiled_shape:
+                    raise ValueError(f"Presliced Conv2D weight {weight.name} has incompatible shape {weight.shape}")
+            else:
+                if weight.dtype != DType.INT8 or weight.data is None:
+                    raise ValueError("Host Conv2D preslicing requires constant INT8 weights")
+                self.buffers[weight_idx] = HostBuffer(
+                    weight.name,
+                    tiled_shape,
+                    weight.dtype,
+                    Layout.CONV_WEIGHT_TILED_INT8,
+                    weight.usage,
+                    preslice_conv2d_weights_int8(
+                        weight.data,
+                        out_channels=out_c,
+                        input_channels=c,
+                        kernel_h=kernel_h,
+                        kernel_w=kernel_w,
+                    ),
+                )
+            flags |= CONV_FLAG_PRESLICED_WEIGHTS
         self.layers.append(
             Layer(
                 OpType.CONV2D_GEMM,
@@ -217,6 +251,7 @@ class GraphBuilder:
                 stride_w=stride_w,
                 pad_h=pad_h,
                 pad_w=pad_w,
+                flags=flags,
             )
         )
 
@@ -393,6 +428,7 @@ def build_tiny_conv_relu_package(
     kernel_shape: tuple[int, int] = (2, 2),
     out_channels: int = 1,
     name: str = "tiny_cnn",
+    preslice_weights: bool = True,
 ) -> ModelPackage:
     n, c, h, w = input_shape
     kernel_h, kernel_w = kernel_shape
@@ -430,6 +466,7 @@ def build_tiny_conv_relu_package(
         kernel_h=kernel_h,
         kernel_w=kernel_w,
         bias_idx=bias_idx,
+        preslice_weights=preslice_weights,
     )
     graph.relu(conv_out_idx, output_idx)
     return graph.package(input_idx, output_idx)
@@ -458,3 +495,41 @@ def _num_elements(shape: Iterable[int]) -> int:
     for dim in shape:
         total *= int(dim)
     return total
+
+
+def _ceil_div(value: int, divisor: int) -> int:
+    return (int(value) + divisor - 1) // divisor
+
+
+def preslice_conv2d_weights_int8(
+    values,
+    *,
+    out_channels: int,
+    input_channels: int,
+    kernel_h: int,
+    kernel_w: int,
+    tile_dim: int = CONV_WEIGHT_TILE_DIM,
+) -> bytes:
+    """Pack OIHW INT8 weights into tile-major B[K lane][N lane] order."""
+    if min(out_channels, input_channels, kernel_h, kernel_w, tile_dim) <= 0:
+        raise ValueError("Conv2D preslice dimensions must be positive")
+    raw = bytes(values) if isinstance(values, (bytes, bytearray, memoryview)) else bytes(
+        int(value) & 0xFF for value in _flatten(values)
+    )
+    reduction = input_channels * kernel_h * kernel_w
+    expected = out_channels * reduction
+    if len(raw) != expected:
+        raise ValueError(f"Conv2D weight has {len(raw)} bytes, expected {expected}")
+
+    packed = bytearray(_ceil_div(out_channels, tile_dim) * _ceil_div(reduction, tile_dim) * tile_dim * tile_dim)
+    dst = 0
+    for n_tile in range(_ceil_div(out_channels, tile_dim)):
+        for k_tile in range(_ceil_div(reduction, tile_dim)):
+            for k_lane in range(tile_dim):
+                k = k_tile * tile_dim + k_lane
+                for n_lane in range(tile_dim):
+                    oc = n_tile * tile_dim + n_lane
+                    if oc < out_channels and k < reduction:
+                        packed[dst] = raw[oc * reduction + k]
+                    dst += 1
+    return bytes(packed)

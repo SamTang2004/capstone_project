@@ -1,4 +1,7 @@
 module tb_memory_io_driver_burst;
+    logic [2:0] error_code;
+    logic [7:0] debug_first_byte;
+    logic [4:0] debug_fill_beats;
     logic clk=0,rst_n=0,read_req_valid,read_req_ready,read_data_valid,read_data_ready;
     logic [31:0] read_req_addr; logic [4:0] read_req_len; logic [7:0] read_data; logic read_data_last;
     logic write_req_valid,write_req_ready,write_req_last; logic [31:0] write_req_addr,write_req_data;
@@ -6,6 +9,7 @@ module tb_memory_io_driver_burst;
     logic mem_cmd_valid,mem_cmd_ready=1,mem_cmd_write,mem_write_valid,mem_write_ready=1,mem_write_last;
     logic [31:0] mem_cmd_addr,mem_cmd_wdata,mem_write_data,mem_read_data;
     logic mem_read_valid=0,mem_read_ready,mem_read_last=0,busy,error;
+    logic stats_reset=0; logic [31:0] stats_cache_hits,stats_cache_misses,stats_fill_cycles,stats_bytes_delivered;
     integer beat,reads,errors=0; logic [31:0] mem[0:63]; logic [31:0] active_base; logic [3:0] active_len;
     always #5 clk=~clk;
     initial begin repeat(5000)@(posedge clk);$fatal(1,"memory IO burst timeout busy=%0b read_pending=%0b fill=%0b deliver=%0b write_count=%0d flush=%0b send=%0b inflight=%0b",busy,dut.read_pending,dut.fill_active,dut.deliver_active,dut.write_count,dut.write_flush_pending,dut.write_send_active,dut.write_inflight);end
@@ -64,6 +68,10 @@ module tb_memory_io_driver_burst;
         if(reads!=1)errors++;
         get_run(32'h44,16);
         if(reads!=2)errors++;
+        // The second line must not evict the first one from the multi-line
+        // cache. The old one-line implementation issued a third AXI burst.
+        get_byte(32'h04,8'h04);
+        if(reads!=2 || stats_cache_hits!=3 || stats_cache_misses!=2)errors++;
         for(int i=0;i<4;i++) begin @(negedge clk);write_req_valid=1;write_req_addr=32'h80+i*4;write_req_data=32'habc00000+i;write_req_last=(i==3);wait(write_req_ready);end
         @(negedge clk);write_req_valid=0;write_req_last=0;wait(!busy);
         for(int i=0;i<4;i++)if(mem[32+i]!==32'habc00000+i)errors++;

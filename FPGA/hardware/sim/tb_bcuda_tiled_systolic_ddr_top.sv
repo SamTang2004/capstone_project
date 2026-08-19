@@ -23,7 +23,7 @@ module tb_bcuda_tiled_systolic_ddr_top;
 
     logic clk = 1'b0;
     logic rst_n = 1'b0;
-    logic [5:0] awaddr;
+    logic [7:0] awaddr;
     logic awvalid;
     logic awready;
     logic [31:0] wdata;
@@ -33,7 +33,7 @@ module tb_bcuda_tiled_systolic_ddr_top;
     logic [1:0] bresp;
     logic bvalid;
     logic bready;
-    logic [5:0] araddr;
+    logic [7:0] araddr;
     logic arvalid;
     logic arready;
     logic [31:0] rdata;
@@ -138,7 +138,7 @@ module tb_bcuda_tiled_systolic_ddr_top;
         end
     endtask
 
-    task automatic axi_write(input logic [5:0] addr, input logic [31:0] data);
+    task automatic axi_write(input logic [7:0] addr, input logic [31:0] data);
         begin
             @(negedge clk);
             awaddr = addr;
@@ -156,7 +156,7 @@ module tb_bcuda_tiled_systolic_ddr_top;
         end
     endtask
 
-    task automatic axi_read(input logic [5:0] addr, output logic [31:0] data);
+    task automatic axi_read(input logic [7:0] addr, output logic [31:0] data);
         begin
             @(negedge clk);
             araddr = addr;
@@ -198,7 +198,11 @@ module tb_bcuda_tiled_systolic_ddr_top;
             else if (loader_request_cycle >= 0) loader_request_cycle <= loader_request_cycle + 1;
             if (dut.loader_start) begin
                 loader_launch_cycle <= loader_request_cycle;
-                if (loader_request_cycle < 11) $fatal(1, "TileLoader launch pipeline latency was %0d cycles, expected at least 11", loader_request_cycle);
+                if (dut.conv2d_mode) begin
+                    if (loader_request_cycle != 2) $fatal(1, "Conv TileLoader launch latency was %0d cycles, expected 2", loader_request_cycle);
+                end else if (loader_request_cycle < 11) begin
+                    $fatal(1, "GEMM TileLoader launch pipeline latency was %0d cycles, expected at least 11", loader_request_cycle);
+                end
             end
         end
         if (!rst_n) begin
@@ -255,6 +259,9 @@ module tb_bcuda_tiled_systolic_ddr_top;
 
     initial begin
         logic [31:0] status;
+        logic [31:0] profile_total, profile_zero_a, profile_load_a, profile_zero_b;
+        logic [31:0] profile_load_b, profile_compute, profile_accumulate, profile_write;
+        logic [31:0] profile_cache_misses, profile_bytes_delivered;
         errors = 0;
         read_cmd_count = 0;
         write_cmd_count = 0;
@@ -389,8 +396,12 @@ module tb_bcuda_tiled_systolic_ddr_top;
 
         /* Full PL path: NCHW/OIHW Conv2D with INT32 bias -> requantize -> ReLU. */
         for (int i = 0; i < 9; i++) ddr[CONV_A_BASE + i] = i + 1;
-        ddr[CONV_B_BASE] = 8'sd1; ddr[CONV_B_BASE + 1] = 8'sd0;
-        ddr[CONV_B_BASE + 2] = 8'sd0; ddr[CONV_B_BASE + 3] = 8'sd1;
+        // Host-presliced B[K lane][output-channel lane] tile.
+        for (int i = 0; i < 256; i++) ddr[CONV_B_BASE + i] = 0;
+        ddr[CONV_B_BASE] = 8'sd1;
+        ddr[CONV_B_BASE + 16] = 8'sd0;
+        ddr[CONV_B_BASE + 32] = 8'sd0;
+        ddr[CONV_B_BASE + 48] = 8'sd1;
         ddr[CONV_BIAS_BASE] = 8'hf6; ddr[CONV_BIAS_BASE + 1] = 8'hff;
         ddr[CONV_BIAS_BASE + 2] = 8'hff; ddr[CONV_BIAS_BASE + 3] = 8'hff;
         axi_write(6'h00, 32'h0);
@@ -408,7 +419,7 @@ module tb_bcuda_tiled_systolic_ddr_top;
         axi_write(6'h34, 32'h00000101); // stride H/W
         axi_write(6'h38, 32'd0);       // padding H/W
         axi_write(6'h3C, CONV_BIAS_BASE);
-        axi_write(6'h00, 32'h5);       // START | CONV2D
+        axi_write(6'h00, 32'h405);     // START | CONV2D | PRESLICED_WEIGHTS
         repeat (5000) begin
             axi_read(6'h04, status);
             if (status[1] && !status[0]) break;
@@ -423,6 +434,23 @@ module tb_bcuda_tiled_systolic_ddr_top;
                      $signed(dut.accumulator_banks[0].accumulator.mem[16]), $signed(dut.accumulator_banks[0].accumulator.mem[32]),
                      $signed(dut.accumulator_banks[0].accumulator.mem[48]));
             $display("Bias preload geometry rows=%0d cols=%0d", dut.bias_preloader.rows_r, dut.bias_preloader.cols_r);
+            errors++;
+        end
+        axi_read(8'h40, profile_total);
+        axi_read(8'h44, profile_zero_a);
+        axi_read(8'h48, profile_load_a);
+        axi_read(8'h4c, profile_zero_b);
+        axi_read(8'h50, profile_load_b);
+        axi_read(8'h58, profile_compute);
+        axi_read(8'h5c, profile_accumulate);
+        axi_read(8'h60, profile_write);
+        axi_read(8'h74, profile_cache_misses);
+        axi_read(8'h7c, profile_bytes_delivered);
+        if (profile_total == 0 || profile_cache_misses == 0 || profile_bytes_delivered == 0 ||
+            profile_zero_a + profile_load_a + profile_zero_b + profile_load_b +
+            profile_compute + profile_accumulate + profile_write > profile_total) begin
+            $error("Conv profile counters invalid total=%0d misses=%0d bytes=%0d", profile_total,
+                   profile_cache_misses, profile_bytes_delivered);
             errors++;
         end
 

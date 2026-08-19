@@ -17,6 +17,7 @@ class Layout(IntEnum):
     ROW_MAJOR = 1
     NCHW = 2
     NHWC = 3
+    CONV_WEIGHT_TILED_INT8 = 4
 
 
 class BufferUsage(IntEnum):
@@ -70,6 +71,7 @@ LAYOUT_ALIASES = {
     "row_major": Layout.ROW_MAJOR,
     "nchw": Layout.NCHW,
     "nhwc": Layout.NHWC,
+    "conv_weight_tiled_int8": Layout.CONV_WEIGHT_TILED_INT8,
 }
 
 USAGE_ALIASES = {

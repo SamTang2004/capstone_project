@@ -18,6 +18,7 @@ from pynq_full_cnn_inference import DEFAULT_MODEL
 
 
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "diagnostics"
+DEFAULT_CLOCK_HZ = 100_000_000
 
 
 def main() -> None:
@@ -29,6 +30,7 @@ def main() -> None:
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--clock-hz", type=float, default=DEFAULT_CLOCK_HZ)
     args = parser.parse_args()
     if args.warmup < 0:
         raise ValueError("warmup must be nonnegative")
@@ -42,7 +44,7 @@ def main() -> None:
         memory=True,
         operations=True,
         utilization=True,
-        clock_hz=100_000_000,
+        clock_hz=int(round(args.clock_hz)),
         peak_operations_per_cycle=512,
     )
 

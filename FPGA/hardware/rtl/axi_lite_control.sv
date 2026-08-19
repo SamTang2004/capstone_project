@@ -1,5 +1,5 @@
 module axi_lite_control #(
-    parameter int ADDR_WIDTH = 6
+    parameter int ADDR_WIDTH = 8
 ) (
     input  logic                  aclk,
     input  logic                  aresetn,
@@ -24,12 +24,13 @@ module axi_lite_control #(
     input  logic                  s_axi_rready,
 
     input  logic [31:0]           status_word,
+    input  logic [32*16-1:0]      perf_regs_flat,
     output logic [31:0]           ctrl_word,
     output logic [32*16-1:0]      regs_flat
 );
 
     logic [31:0] regs [0:15];
-    logic [3:0] read_index;
+    logic [5:0] read_index;
     logic                    aw_holding;
     logic                    w_holding;
     logic [ADDR_WIDTH-1:0]   awaddr_holding;
@@ -39,7 +40,7 @@ module axi_lite_control #(
     logic [31:0]             write_data_selected;
     logic [3:0]              write_strb_selected;
 
-    assign read_index = s_axi_araddr[5:2];
+    assign read_index = s_axi_araddr[7:2];
     assign ctrl_word = regs[0];
     // AXI-Lite permits AW and W to arrive in different cycles.  Hold each
     // channel until its peer arrives, then produce exactly one write response.
@@ -102,7 +103,10 @@ module axi_lite_control #(
             end
 
             if (s_axi_arvalid && s_axi_arready) begin
-                s_axi_rdata <= (read_index == 4'd1) ? status_word : regs[read_index];
+                if (read_index == 6'd1) s_axi_rdata <= status_word;
+                else if (read_index < 16) s_axi_rdata <= regs[read_index[3:0]];
+                else if (read_index < 32) s_axi_rdata <= perf_regs_flat[(read_index - 16)*32 +: 32];
+                else s_axi_rdata <= '0;
                 s_axi_rvalid <= 1'b1;
                 s_axi_rresp <= 2'b00;
             end else if (s_axi_rvalid && s_axi_rready) begin

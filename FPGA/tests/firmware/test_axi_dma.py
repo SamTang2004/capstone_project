@@ -13,6 +13,7 @@ from common import (
     BcudaBuffer,
     BcudaGemmDesc,
     BcudaMemoryIoConfig,
+    BcudaLayerDesc,
     BcudaTileLoadDesc,
     BcudaTiledGemmConfig,
     compile_firmware_library,
@@ -25,6 +26,7 @@ class FirmwareAxiDmaTest(unittest.TestCase):
         cls.lib = compile_firmware_library("axi_dma")
         cls.lib.bcuda_axi_dma_init.argtypes = [ctypes.POINTER(BcudaAxiDma), ctypes.c_size_t, ctypes.c_uint32]
         cls.lib.bcuda_axi_dma_submit_gemm.restype = ctypes.c_int
+        cls.lib.bcuda_axi_dma_submit_conv2d.restype = ctypes.c_int
         cls.lib.bcuda_axi_dma_submit_tile_load.restype = ctypes.c_int
         cls.lib.bcuda_axi_dma_submit_tiled_gemm.restype = ctypes.c_int
         cls.lib.bcuda_axi_dma_configure_accumulator.restype = ctypes.c_int
@@ -47,6 +49,22 @@ class FirmwareAxiDmaTest(unittest.TestCase):
         C = BcudaBuffer(3, 0x3000, None, 1024, BC_DTYPE_INT32, 1, 4, 2, (ctypes.c_uint32 * 4)(16, 16, 1, 1), 1)
         self.assertEqual(self.lib.bcuda_axi_dma_submit_gemm(ctypes.byref(dma), ctypes.byref(desc), ctypes.byref(A), ctypes.byref(B), ctypes.byref(C)), BC_STATUS_OK)
         self.assertNotEqual(dma.last_control_word, 0)
+
+    def test_bcuda_axi_dma_submit_conv2d_programs_presliced_weight_stride(self):
+        regs = (ctypes.c_uint32 * 16)()
+        dma = BcudaAxiDma(ctypes.addressof(regs), 8, 0)
+        layer = BcudaLayerDesc()
+        layer.n, layer.c, layer.h, layer.w = 1, 1, 3, 3
+        layer.out_c, layer.out_h, layer.out_w = 1, 2, 2
+        layer.kernel_h, layer.kernel_w = 2, 2
+        layer.stride_h = layer.stride_w = 1
+        layer.groups, layer.flags = 1, 1
+        inp = BcudaBuffer(1, 0x1000, None, 9, BC_DTYPE_INT8, 2, 4, 4, (ctypes.c_uint32 * 4)(1, 1, 3, 3), 1)
+        weight = BcudaBuffer(2, 0x2000, None, 256, BC_DTYPE_INT8, 4, 4, 4, (ctypes.c_uint32 * 4)(1, 1, 16, 16), 1)
+        out = BcudaBuffer(3, 0x3000, None, 16, BC_DTYPE_INT32, 2, 4, 4, (ctypes.c_uint32 * 4)(1, 1, 2, 2), 1)
+        self.assertEqual(self.lib.bcuda_axi_dma_submit_conv2d(ctypes.byref(dma), ctypes.byref(layer), ctypes.byref(inp), ctypes.byref(weight), None, ctypes.byref(out)), BC_STATUS_OK)
+        self.assertEqual(regs[6], 3)
+        self.assertEqual(regs[0], 0x405)
 
     def test_bcuda_axi_dma_submit_gemm_programs_final_pl_register_map(self):
         regs = (ctypes.c_uint32 * 16)()

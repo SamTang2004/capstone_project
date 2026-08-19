@@ -1,8 +1,6 @@
 # Canonical source list for the current deployable PL bitstream.
 #
-# Regression benches may still compile every RTL module in hardware/rtl, but
-# project/bitstream creation should consume only this manifest so older
-# development wrappers cannot accidentally become part of the final image.
+# Every production build and regression source list derives from this manifest.
 
 set final_top bcuda_tiled_systolic_ddr_top
 set final_sim_top tb_bcuda_tiled_systolic_ddr_top
@@ -32,4 +30,10 @@ set final_rtl_files [list \
 
 set final_sim_files [list \
     [file join $hw_dir "sim" "tb_bcuda_tiled_systolic_ddr_top.sv"] \
+]
+
+set board_wrapper_rtl_files [list \
+    [file join $hw_dir "rtl" "bcuda_tiled_systolic_ddr_ip.v"] \
+    [file join $hw_dir "rtl" "memory_io_axi3_bridge.sv"] \
+    [file join $hw_dir "rtl" "memory_io_axi3_bridge_ip.v"] \
 ]

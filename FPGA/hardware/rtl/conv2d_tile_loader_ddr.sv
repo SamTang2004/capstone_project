@@ -5,6 +5,7 @@ module conv2d_tile_loader_ddr #(
     parameter int TILE_SIZE = 16
 ) (
     input logic clk, input logic rst_n, input logic start, input logic matrix_select, input logic conv_mode,
+    input logic presliced_weights,
     input logic [31:0] base_addr, input logic [31:0] row_stride,
     input logic [31:0] input_base_addr, input logic [31:0] weight_base_addr,
     input logic [15:0] input_c, input logic [15:0] input_h, input logic [15:0] input_w,
@@ -17,7 +18,9 @@ module conv2d_tile_loader_ddr #(
     output logic [4:0] read_req_len,
     input logic read_data_valid, output logic read_data_ready, input logic [7:0] read_data,
     input logic read_data_last,
-    output logic cache_we, output logic cache_matrix, output logic [7:0] cache_addr, output logic [7:0] cache_wdata
+    output logic cache_we, output logic cache_matrix, output logic [7:0] cache_addr, output logic [7:0] cache_wdata,
+    output logic profile_address_phase, output logic profile_request_phase,
+    output logic profile_receive_phase
 );
     typedef enum logic [5:0] {
         IDLE, DECODE_M, DECODE_K_IC, DECODE_K_KH, BUILD,
@@ -29,10 +32,11 @@ module conv2d_tile_loader_ddr #(
         ADDR_MUL2_PREP, ADDR_MUL2_MUL0, ADDR_MUL2_MUL1, ADDR_MUL2_ADD01,
         ADDR_MUL2_MUL2, ADDR_MUL2_MUL3, ADDR_MUL2_ADD23, ADDR_MUL2_COMBINE,
         ADDR_ADD2, ADDR_BASE, BURST_CALC, BURST_PREP,
+        PRESLICE_TILE_MUL, PRESLICE_TILE_BASE,
         REQUEST, RECEIVE, ADVANCE, FINISH, FAIL
     } state_t;
     state_t state;
-    logic matrix_r, conv_r, pad_r;
+    logic matrix_r, conv_r, presliced_r, pad_r;
     logic [4:0] row_r, col_r, rows_r, cols_r;
     logic [31:0] normal_base_r, normal_stride_r, request_addr_r;
     logic [15:0] in_c_r, in_h_r, in_w_r, out_c_r, out_w_r, n0_r;
@@ -44,6 +48,8 @@ module conv2d_tile_loader_ddr #(
     // Each address stage owns its output register. Reusing two temporaries
     // created a large state-controlled mux on addr_term0_r in routed logic.
     logic [31:0] normal_mul_r, normal_base_sum_r;
+    (* use_dsp = "yes" *) logic [31:0] preslice_tile_index_r;
+    logic [31:0] preslice_tile_base_r;
     logic [31:0] seed_product_r, addr_add0_r, addr_mul1_r, addr_add1_r;
     logic [31:0] addr_mul2_r, addr_add2_r;
     logic [15:0] addr_mul1_rhs_r;
@@ -68,6 +74,9 @@ module conv2d_tile_loader_ddr #(
     assign cache_matrix = matrix_r;
     assign cache_addr = row_r * TILE_SIZE + col_r;
     assign cache_wdata = pad_r ? 8'h00 : read_data;
+    assign profile_request_phase = state == REQUEST;
+    assign profile_receive_phase = state == RECEIVE;
+    assign profile_address_phase = busy && state != REQUEST && state != RECEIVE;
 
     function automatic logic [4:0] min_run_len(
         input logic [16:0] first,
@@ -85,7 +94,7 @@ module conv2d_tile_loader_ddr #(
         end
     endfunction
 
-    wire [16:0] burst_tile_left = matrix_r ? rows_r - row_r : cols_r - col_r;
+    wire [16:0] burst_tile_left = (matrix_r && !presliced_r) ? rows_r - row_r : cols_r - col_r;
     wire [16:0] burst_kernel_left = matrix_r ? TILE_SIZE : kw_size_r - k_kw_r;
     wire [16:0] burst_input_left = matrix_r ? TILE_SIZE : in_w_r - addr_iw_r;
     wire [16:0] burst_line_left = 17'd64 - {11'd0, request_addr_r[5:0]};
@@ -110,10 +119,10 @@ module conv2d_tile_loader_ddr #(
     always_ff @(posedge clk) begin
         integer ih, iw, oc;
         if (!rst_n) begin
-            state <= IDLE; done <= 0; error <= 0; matrix_r <= 0; conv_r <= 0; pad_r <= 0; row_r <= 0; col_r <= 0;
+            state <= IDLE; done <= 0; error <= 0; matrix_r <= 0; conv_r <= 0; presliced_r <= 0; pad_r <= 0; row_r <= 0; col_r <= 0;
             rows_r <= 0; cols_r <= 0; request_addr_r <= 0; m_remaining <= 0; k_remaining <= 0;
             row_oh_r <= 0; row_ow_r <= 0; base_oh_r <= 0; base_ow_r <= 0; k_ic_r <= 0; k_kh_r <= 0; k_kw_r <= 0; base_ic_r <= 0; base_kh_r <= 0; base_kw_r <= 0;
-            normal_mul_r <= 0; normal_base_sum_r <= 0; seed_product_r <= 0; addr_add0_r <= 0; addr_mul1_r <= 0; addr_add1_r <= 0; addr_mul2_r <= 0; addr_add2_r <= 0;
+            normal_mul_r <= 0; normal_base_sum_r <= 0; preslice_tile_index_r <= 0; preslice_tile_base_r <= 0; seed_product_r <= 0; addr_add0_r <= 0; addr_mul1_r <= 0; addr_add1_r <= 0; addr_mul2_r <= 0; addr_add2_r <= 0;
             addr_mul1_rhs_r <= 0; addr_mul1_chunk0_r <= 0; addr_mul1_chunk1_r <= 0; addr_mul1_pair_low_r <= 0; addr_mul1_pair_high_r <= 0;
             addr_seed_lhs_r <= 0; addr_seed_rhs_r <= 0; addr_ih_r <= 0; addr_iw_r <= 0; addr_weight_r <= 0; addr_oc_r <= 0; coord_h_product_r <= 0; coord_w_product_r <= 0;
             burst_len_calc_r <= 5'd1; run_len_r <= 5'd1; run_remaining_r <= 5'd1; final_row_r <= 1'b0; final_col_r <= 1'b0;
@@ -121,7 +130,7 @@ module conv2d_tile_loader_ddr #(
             done <= 0;
             case (state)
                 IDLE: if (start) begin
-                    matrix_r<=matrix_select; conv_r<=conv_mode; row_r<=0; col_r<=0; rows_r<=tile_rows; cols_r<=tile_cols; error<=0;
+                    matrix_r<=matrix_select; conv_r<=conv_mode; presliced_r<=presliced_weights; row_r<=0; col_r<=0; rows_r<=tile_rows; cols_r<=tile_cols; error<=0;
                     normal_base_r<=base_addr; normal_stride_r<=row_stride; input_base_r<=input_base_addr; weight_base_r<=weight_base_addr;
                     in_c_r<=input_c; in_h_r<=input_h; in_w_r<=input_w; out_c_r<=out_c; out_w_r<=out_w; n0_r<=n0;
                     kh_size_r<=kernel_h; kw_size_r<=kernel_w; sh_r<=stride_h; sw_r<=stride_w; ph_r<=pad_h; pw_r<=pad_w; kernel_area_r<=kernel_h*kernel_w;
@@ -129,7 +138,20 @@ module conv2d_tile_loader_ddr #(
                     base_oh_r<=0; base_ow_r<=0; row_oh_r<=0; row_ow_r<=0;
                     base_ic_r<=0; base_kh_r<=0; base_kw_r<=0; k_ic_r<=0; k_kh_r<=0; k_kw_r<=0;
                     if (tile_rows==0 || tile_rows>TILE_SIZE || tile_cols==0 || tile_cols>TILE_SIZE || (conv_mode && (out_w==0 || kernel_h==0 || kernel_w==0))) begin error<=1; state<=FAIL; end
-                    else if (!conv_mode) state<=BUILD; else state<=DECODE_M;
+                    else if (!conv_mode) state<=BUILD;
+                    else if (matrix_select && presliced_weights) state<=PRESLICE_TILE_MUL;
+                    else state<=DECODE_M;
+                end
+                PRESLICE_TILE_MUL: begin
+                    // row_stride is K-tile count times 256 bytes. Multiply in
+                    // tile units so this maps to one bounded 16x16 DSP stage.
+                    preslice_tile_index_r <= {4'd0, n0_r[15:4]} * normal_stride_r[23:8];
+                    state <= PRESLICE_TILE_BASE;
+                end
+                PRESLICE_TILE_BASE: begin
+                    // k0 is tile aligned, so (k0 / 16) * 256 == k0 * 16.
+                    preslice_tile_base_r <= weight_base_r + (preslice_tile_index_r << 8) + ({16'd0, k_remaining} << 4);
+                    state <= BUILD;
                 end
                 DECODE_M: if (m_remaining >= out_w_r) begin m_remaining<=m_remaining-out_w_r; base_oh_r<=base_oh_r+1'b1; end
                           else begin base_ow_r<=m_remaining; row_oh_r<=base_oh_r; row_ow_r<=m_remaining; state<=DECODE_K_IC; end
@@ -144,6 +166,9 @@ module conv2d_tile_loader_ddr #(
                     end else if (!matrix_r) begin
                         addr_weight_r <= 1'b0;
                         state <= COORD_MUL;
+                    end else if (presliced_r) begin
+                        request_addr_r <= preslice_tile_base_r + ({27'd0, row_r} << 4) + col_r;
+                        state <= BURST_CALC;
                     end else begin
                         addr_weight_r <= 1'b1;
                         addr_oc_r <= n0_r + col_r;
@@ -283,9 +308,10 @@ module conv2d_tile_loader_ddr #(
                             state <= FAIL;
                         end else if (conv_r && run_remaining_r > 1) begin
                             run_remaining_r <= run_remaining_r - 1'b1;
-                            increment_k();
-                            if (matrix_r) row_r <= row_r + 1'b1;
-                            else col_r <= col_r + 1'b1;
+                            if (matrix_r && presliced_r) col_r <= col_r + 1'b1;
+                            else increment_k();
+                            if (matrix_r && !presliced_r) row_r <= row_r + 1'b1;
+                            else if (!(matrix_r && presliced_r)) col_r <= col_r + 1'b1;
                         end else begin
                             final_row_r <= row_r == rows_r - 1'b1;
                             final_col_r <= col_r == cols_r - 1'b1;
@@ -318,6 +344,12 @@ module conv2d_tile_loader_ddr #(
                             col_r <= col_r + 1'b1;
                             increment_k();
                         end
+                        state <= BUILD;
+                    end else if (presliced_r) begin
+                        if (final_col_r) begin
+                            col_r <= '0;
+                            row_r <= row_r + 1'b1;
+                        end else col_r <= col_r + 1'b1;
                         state <= BUILD;
                     end else if (final_row_r) begin
                         col_r <= col_r + 1'b1;

@@ -4,6 +4,10 @@
 **Deployment profile:** signed INT8 CNN inference, 100 MHz PL clock  
 **Document status:** current implementation guide and maintenance reference, July 2026
 
+Implementation history, rejected variants, and benchmark discoveries are
+tracked in [IMPLEMENTATION_TIMELINE.md](IMPLEMENTATION_TIMELINE.md). Update the
+timeline in the same commit as every architectural change or mass test.
+
 This document explains how to reproduce BudgetCUDA, deploy a model, and safely
 change the system. It describes the current PYNQ-Z2 implementation, not every
 idea retained in the design history. The deployable image contains one 16x16
@@ -332,8 +336,9 @@ cat /sys/class/fpga_manager/fpga0/state
 sudo systemctl restart budgetcuda.service
 ```
 
-The state must read `operating`. Confirm that FCLK0 is 100 MHz before loading
-the 100 MHz image. `tests/hardware/pynq_fclk0.py` and the helper in
+The state must read `operating`. Confirm the live FCLK0 divisor before loading
+the image. For 90.91 MHz the register must be `0x00100b00` (divisors 1 and 11),
+not `0x00200b00`, which is only 45.45 MHz. `tests/hardware/pynq_fclk0.py` and the helper in
 `budgetcuda/pynq.py` implement the validated divider programming sequence.
 
 Do not add a large CMA override to `/boot/uEnv.txt` on the current image. A
@@ -1123,6 +1128,29 @@ GEMM K = input channels/groups * kernel height * kernel width
 `conv2d_tile_loader_ddr.sv` computes the source NCHW coordinate for each logical
 im2col element. Padding positions inject zero; valid positions issue DDR reads.
 This avoids allocating and writing a complete unfolded activation matrix.
+
+Constant INT8 Conv weights are presliced by the host importer before upload.
+The physical layout is:
+
+```text
+[output-channel tile][K tile][K lane][output-channel lane]
+```
+
+Each inner tile is a 16x16-byte B tile in the exact order consumed by the
+systolic array. Out-of-range K and output-channel lanes are zero padded. A
+Conv layer sets `BCUDA_CONV_PRESLICED_WEIGHTS`, and its weight buffer uses the
+`CONV_WEIGHT_TILED_INT8` layout. The PL derives the byte distance between
+output-channel tiles from the registered Conv K dimension, then calculates one
+tile base and reads contiguous rows instead of rebuilding an OIHW address for
+every weight. This can increase persistent model size for irregular or very small
+layers; the physical byte count is:
+
+```text
+ceil(output_channels / 16) * ceil(K / 16) * 256
+```
+
+`GraphBuilder.conv2d(..., preslice_weights=False)` retains the raw OIHW path for
+regression comparisons. New deployments should use the default presliced path.
 
 `conv_bias_preload_ddr.sv` initializes each output-channel accumulator lane with
 its INT32 bias before K-tile accumulation. The writer stores valid output

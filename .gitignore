@@ -12,11 +12,7 @@ __pycache__/
 xsim.dir/
 FPGA/hardware/xsim_*/
 FPGA/hardware/vivado_*_project/
-FPGA/hardware/vivado_board_project/*.cache/
-FPGA/hardware/vivado_board_project/*.gen/
-FPGA/hardware/vivado_board_project/*.hw/
-FPGA/hardware/vivado_board_project/*.runs/
-FPGA/hardware/vivado_board_project/*.srcs/
+FPGA/hardware/vivado_board_project/
 FPGA/hardware/vivado_project/
 FPGA/hardware/bcuda_pynq_z2.bin
 FPGA/hardware/bcuda_pynq_z2.prm
@@ -26,3 +22,4 @@ FPGA/hardware/pynq_z2_axi_smoke_fpga_manager.bin
 FPGA/train_model/hls_fruit_cnn/
 FPGA/hardware/NA/
 NA/
+FPGA/firmware_*_deploy.tar.gz

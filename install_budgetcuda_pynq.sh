@@ -22,6 +22,7 @@ for required in \
     "$linux_dir/build_server.sh" \
     "$linux_dir/budgetcuda-fpga-setup.sh" \
     "$linux_dir/budgetcuda_overlay.py" \
+    "$linux_dir/pynq_afi_hp0.py" \
     "$linux_dir/budgetcuda-fpga.service" \
     "$linux_dir/budgetcuda.service"
 do
@@ -51,6 +52,7 @@ install -m 0644 "$bitfile" /opt/budgetcuda/overlay/bcuda_pynq_z2.bit
 install -m 0644 "$hwh" /opt/budgetcuda/overlay/bcuda_pynq_z2.hwh
 install -m 0644 "$clock_helper" /usr/local/lib/budgetcuda/pynq_fclk0.py
 install -m 0644 "$linux_dir/budgetcuda_overlay.py" /usr/local/lib/budgetcuda/budgetcuda_overlay.py
+install -m 0644 "$linux_dir/pynq_afi_hp0.py" /usr/local/lib/budgetcuda/pynq_afi_hp0.py
 install -m 0755 "$linux_dir/budgetcuda-fpga-setup.sh" /usr/local/sbin/budgetcuda-fpga-setup
 install -m 0644 "$linux_dir/budgetcuda-fpga.service" /etc/systemd/system/budgetcuda-fpga.service
 install -m 0644 "$linux_dir/budgetcuda.service" /etc/systemd/system/budgetcuda.service

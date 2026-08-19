@@ -87,6 +87,12 @@ module tb_accumulator_buffer;
             read_req = 1'b1;
             @(posedge clk);
             #1;
+            read_req = 1'b0;
+            repeat (4) begin
+                if (read_valid) $fatal(1, "accumulator read response arrived before the stabilized BRAM contract at %0d", i);
+                @(posedge clk);
+                #1;
+            end
             if (!read_valid) $fatal(1, "accumulator read response missing at %0d", i);
             if (read_data !== signed'(final_words[i]) || model[i] !== signed'(final_words[i])) begin
                 $fatal(1, "accumulator final mismatch addr=%0d expected=%0d read=%0d model=%0d",

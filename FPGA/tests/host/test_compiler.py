@@ -10,15 +10,17 @@ from budgetcuda.compiler import (
     LAYER_DESC_STRUCT,
     MODEL_DESC_STRUCT,
     MODEL_MAGIC,
+    CONV_FLAG_PRESLICED_WEIGHTS,
     HostBuffer,
     GraphBuilder,
     Layer,
     ModelPackage,
     build_mlp_package,
     build_tiny_conv_relu_package,
+    preslice_conv2d_weights_int8,
     upload_model,
 )
-from budgetcuda.dtypes import BufferUsage, DType, OpType
+from budgetcuda.dtypes import BufferUsage, DType, Layout, OpType
 
 
 class CompilerTest(unittest.TestCase):
@@ -75,6 +77,45 @@ class CompilerTest(unittest.TestCase):
         self.assertEqual(package.buffers[1].usage, BufferUsage.WEIGHT)
         self.assertEqual(package.buffers[package.output_index].dtype, DType.INT32)
         self.assertEqual([layer.op_type for layer in package.layers], [OpType.CONV2D_GEMM, OpType.ACTIVATION])
+
+    def test_conv_weights_are_presliced_into_array_consumption_order(self):
+        raw = bytes(range(18))  # O=2, I=1, KH=3, KW=3
+        packed = preslice_conv2d_weights_int8(
+            raw, out_channels=2, input_channels=1, kernel_h=3, kernel_w=3
+        )
+        self.assertEqual(len(packed), 256)
+        self.assertEqual(list(packed[0:2]), [0, 9])
+        self.assertEqual(list(packed[16:18]), [1, 10])
+        self.assertEqual(list(packed[8 * 16 : 8 * 16 + 2]), [8, 17])
+        self.assertEqual(set(packed[9 * 16 :]), {0})
+
+    def test_graph_builder_marks_and_physically_sizes_presliced_conv_weights(self):
+        graph = GraphBuilder("presliced")
+        inp = graph.add_buffer("input", (1, 1, 4, 4), DType.INT8, layout=Layout.NCHW)
+        weight = graph.add_buffer("weight", (2, 1, 3, 3), DType.INT8, BufferUsage.WEIGHT, data=list(range(18)), layout=Layout.NCHW)
+        out = graph.add_buffer("output", (1, 2, 2, 2), DType.INT32, BufferUsage.OUTPUT, layout=Layout.NCHW)
+        graph.conv2d(inp, weight, out, n=1, c=1, h=4, w=4, out_c=2, out_h=2, out_w=2, kernel_h=3, kernel_w=3)
+        self.assertEqual(graph.buffers[weight].layout, Layout.CONV_WEIGHT_TILED_INT8)
+        self.assertEqual(graph.buffers[weight].shape, (1, 1, 16, 16))
+        self.assertEqual(graph.layers[0].flags, CONV_FLAG_PRESLICED_WEIGHTS)
+
+    def test_presliced_conv_matches_raw_conv_in_mock_backend(self):
+        input_values = bytes(range(1, 17))
+        weights = [[[[1, -1], [2, 0]]], [[[0, 2], [-1, 1]]]]
+        expected = None
+        for preslice in (False, True):
+            graph = GraphBuilder(f"compare_{preslice}")
+            inp = graph.add_buffer("input", (1, 1, 4, 4), DType.INT8, BufferUsage.ACTIVATION, layout=Layout.NCHW)
+            weight = graph.add_buffer("weight", (2, 1, 2, 2), DType.INT8, BufferUsage.WEIGHT, data=weights, layout=Layout.NCHW)
+            out = graph.add_buffer("output", (1, 2, 3, 3), DType.INT32, BufferUsage.OUTPUT, layout=Layout.NCHW)
+            graph.conv2d(inp, weight, out, n=1, c=1, h=4, w=4, out_c=2, out_h=3, out_w=3, kernel_h=2, kernel_w=2, preslice_weights=preslice)
+            model = upload_model(Device.mock(), graph.package(inp, out))
+            model.run(input_values)
+            result = bytes(model.device.read(model.output_tensor))
+            if expected is None:
+                expected = result
+            else:
+                self.assertEqual(result, expected)
 
     def test_upload_model_allocates_buffers_and_descriptor_on_device(self):
         dev = Device.mock()

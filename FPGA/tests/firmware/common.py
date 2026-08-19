@@ -42,7 +42,7 @@ BC_OP_DETECT_DECODE = 9
 BC_OP_NMS = 10
 BC_OP_REQUANTIZE = 11
 BCUDA_DIAGNOSTICS_MAGIC = 0x47444342
-BCUDA_DIAGNOSTICS_VERSION = 1
+BCUDA_DIAGNOSTICS_VERSION = 2
 BCUDA_DIAG_TIMING = 1
 BCUDA_DIAG_MEMORY = 2
 BCUDA_DIAG_OPERATIONS = 4
@@ -214,6 +214,22 @@ class BcudaDiagnosticsRecord(ctypes.Structure):
         ("throughput_ops_per_second", ctypes.c_uint64),
         ("utilization_ppm", ctypes.c_uint32),
         ("reserved1", ctypes.c_uint32),
+        ("conv_cycles_total", ctypes.c_uint32),
+        ("conv_cycles_zero_a", ctypes.c_uint32),
+        ("conv_cycles_load_a", ctypes.c_uint32),
+        ("conv_cycles_zero_b", ctypes.c_uint32),
+        ("conv_cycles_load_b", ctypes.c_uint32),
+        ("conv_cycles_bias", ctypes.c_uint32),
+        ("conv_cycles_compute", ctypes.c_uint32),
+        ("conv_cycles_accumulate", ctypes.c_uint32),
+        ("conv_cycles_write", ctypes.c_uint32),
+        ("conv_loader_address_cycles", ctypes.c_uint32),
+        ("conv_loader_request_cycles", ctypes.c_uint32),
+        ("conv_loader_receive_cycles", ctypes.c_uint32),
+        ("conv_cache_hits", ctypes.c_uint32),
+        ("conv_cache_misses", ctypes.c_uint32),
+        ("conv_fill_cycles", ctypes.c_uint32),
+        ("conv_bytes_delivered", ctypes.c_uint32),
     ]
 
 
@@ -299,6 +315,22 @@ class BcudaAxiDma(ctypes.Structure):
         ("last_memory_base", ctypes.c_size_t),
         ("last_memory_bytes", ctypes.c_uint32),
         ("last_memory_io_flags", ctypes.c_uint32),
+        ("conv_cycles_total", ctypes.c_uint32),
+        ("conv_cycles_zero_a", ctypes.c_uint32),
+        ("conv_cycles_load_a", ctypes.c_uint32),
+        ("conv_cycles_zero_b", ctypes.c_uint32),
+        ("conv_cycles_load_b", ctypes.c_uint32),
+        ("conv_cycles_bias", ctypes.c_uint32),
+        ("conv_cycles_compute", ctypes.c_uint32),
+        ("conv_cycles_accumulate", ctypes.c_uint32),
+        ("conv_cycles_write", ctypes.c_uint32),
+        ("conv_loader_address_cycles", ctypes.c_uint32),
+        ("conv_loader_request_cycles", ctypes.c_uint32),
+        ("conv_loader_receive_cycles", ctypes.c_uint32),
+        ("conv_cache_hits", ctypes.c_uint32),
+        ("conv_cache_misses", ctypes.c_uint32),
+        ("conv_fill_cycles", ctypes.c_uint32),
+        ("conv_bytes_delivered", ctypes.c_uint32),
     ]
 
 

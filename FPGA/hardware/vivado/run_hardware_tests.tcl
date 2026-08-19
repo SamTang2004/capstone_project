@@ -1,10 +1,32 @@
 set script_dir [file dirname [file normalize [info script]]]
 set hw_dir [file normalize [file join $script_dir ".."]]
 
-# Regression intentionally compiles all development RTL and benches. The
-# source set used for final bitstream creation lives in final_bitstream_sources.tcl.
-set rtl_files [glob [file join $hw_dir "rtl" "*.sv"]]
-set sim_files [glob [file join $hw_dir "sim" "*.sv"]]
+# Keep regressions tied to the deployable source manifest. Prototype RTL must
+# opt into a separate test flow instead of slowing or contaminating this one.
+source [file join $script_dir "final_bitstream_sources.tcl"]
+set rtl_files [concat $final_rtl_files $board_wrapper_rtl_files]
+set sim_files [list \
+    [file join $hw_dir "sim" "tb_pe_int8_mac.sv"] \
+    [file join $hw_dir "sim" "tb_tile_loader_ddr.sv"] \
+    [file join $hw_dir "sim" "tb_tile_writer_ddr.sv"] \
+    [file join $hw_dir "sim" "tb_conv2d_tile_loader_ddr.sv"] \
+    [file join $hw_dir "sim" "tb_conv_bias_preload_ddr.sv"] \
+    [file join $hw_dir "sim" "tb_gemm_array_cluster_8.sv"] \
+    [file join $hw_dir "sim" "tb_activation_unfold_parallel.sv"] \
+    [file join $hw_dir "sim" "tb_activation_ddr_parallel.sv"] \
+    [file join $hw_dir "sim" "tb_cnn_tensor_ops_ddr.sv"] \
+    [file join $hw_dir "sim" "tb_avgpool_ddr.sv"] \
+    [file join $hw_dir "sim" "tb_requantize_ddr.sv"] \
+    [file join $hw_dir "sim" "tb_memory_io_driver_burst.sv"] \
+    [file join $hw_dir "sim" "tb_memory_io_axi3_bridge_burst.sv"] \
+    [file join $hw_dir "sim" "tb_conv_writer_axi_path.sv"] \
+    [file join $hw_dir "sim" "tb_ps_pl_mmio_control.sv"] \
+    [file join $hw_dir "sim" "tb_bcuda_tiled_systolic_ddr_top.sv"] \
+    [file join $hw_dir "sim" "tb_accumulator_buffer.sv"] \
+    [file join $hw_dir "sim" "tb_gemm_controller.sv"] \
+    [file join $hw_dir "sim" "tb_systolic_array_16x16.sv"] \
+    [file join $hw_dir "sim" "tb_gemm_16x16_core.sv"] \
+]
 
 if {[info exists ::env(BCUDA_XSIM_WORK)]} {
     set sim_work [file normalize $::env(BCUDA_XSIM_WORK)]
@@ -40,13 +62,16 @@ set test_tops {
     tb_tile_loader_ddr
     tb_tile_writer_ddr
     tb_conv2d_tile_loader_ddr
+    tb_conv_bias_preload_ddr
     tb_gemm_array_cluster_8
     tb_activation_unfold_parallel
+    tb_activation_ddr_parallel
     tb_cnn_tensor_ops_ddr
     tb_avgpool_ddr
     tb_requantize_ddr
     tb_memory_io_driver_burst
-    tb_memory_io_axi_bridge_burst
+    tb_memory_io_axi3_bridge_burst
+    tb_conv_writer_axi_path
     tb_ps_pl_mmio_control
     tb_bcuda_tiled_systolic_ddr_top
     tb_accumulator_buffer

@@ -10,7 +10,7 @@ from .dtypes import OpType
 
 
 DIAGNOSTICS_MAGIC = 0x47444342
-DIAGNOSTICS_VERSION = 1
+DIAGNOSTICS_VERSION = 2
 DIAG_TIMING = 1 << 0
 DIAG_MEMORY = 1 << 1
 DIAG_OPERATIONS = 1 << 2
@@ -18,7 +18,7 @@ DIAG_UTILIZATION = 1 << 3
 DIAG_ALL = DIAG_TIMING | DIAG_MEMORY | DIAG_OPERATIONS | DIAG_UTILIZATION
 
 DIAGNOSTICS_HEADER_STRUCT = struct.Struct("<IIIIIIIIQQ")
-DIAGNOSTICS_RECORD_STRUCT = struct.Struct("<IIIIQQQQQQQII")
+DIAGNOSTICS_RECORD_STRUCT = struct.Struct("<IIIIQQQQQQQII16I")
 
 
 @dataclass(frozen=True)
@@ -85,10 +85,44 @@ class LayerDiagnostics:
     operations: int
     throughput_ops_per_second: int
     utilization_percent: float
+    conv_cycles_total: int = 0
+    conv_cycles_zero_a: int = 0
+    conv_cycles_load_a: int = 0
+    conv_cycles_zero_b: int = 0
+    conv_cycles_load_b: int = 0
+    conv_cycles_bias: int = 0
+    conv_cycles_compute: int = 0
+    conv_cycles_accumulate: int = 0
+    conv_cycles_write: int = 0
+    conv_loader_address_cycles: int = 0
+    conv_loader_request_cycles: int = 0
+    conv_loader_receive_cycles: int = 0
+    conv_cache_hits: int = 0
+    conv_cache_misses: int = 0
+    conv_fill_cycles: int = 0
+    conv_bytes_delivered: int = 0
 
     @property
     def working_set_bytes(self) -> int:
         return self.input_bytes + self.output_bytes + self.weight_bytes
+
+    @property
+    def conv_cycle_breakdown(self) -> dict[str, int]:
+        return {
+            "zero_a": self.conv_cycles_zero_a,
+            "load_a": self.conv_cycles_load_a,
+            "zero_b": self.conv_cycles_zero_b,
+            "load_b": self.conv_cycles_load_b,
+            "bias": self.conv_cycles_bias,
+            "compute": self.conv_cycles_compute,
+            "accumulate": self.conv_cycles_accumulate,
+            "write": self.conv_cycles_write,
+            "controller_other": max(0, self.conv_cycles_total - sum((
+                self.conv_cycles_zero_a, self.conv_cycles_load_a, self.conv_cycles_zero_b,
+                self.conv_cycles_load_b, self.conv_cycles_bias, self.conv_cycles_compute,
+                self.conv_cycles_accumulate, self.conv_cycles_write,
+            ))),
+        }
 
 
 @dataclass
@@ -163,6 +197,23 @@ class RunDiagnostics:
                 f"{layer.weight_bytes} | {layer.operations} | {layer.throughput_ops_per_second} | "
                 f"{layer.utilization_percent:.3f}% |"
             )
+        conv_layers = [layer for layer in self.layers if layer.conv_cycles_total]
+        if conv_layers:
+            lines.extend([
+                "", "## Conv2D Hardware Cycle Breakdown", "",
+                "| Layer | Total | Zero A | Load A | Zero B | Load B | Bias | Compute | Accumulate | Write | Other | Loader address | Loader request | Loader receive | Cache hits | Cache misses | Fill cycles | Bytes delivered |",
+                "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+            ])
+            for layer in conv_layers:
+                phases = layer.conv_cycle_breakdown
+                lines.append(
+                    f"| {layer.layer_index} | {layer.conv_cycles_total} | {phases['zero_a']} | {phases['load_a']} | "
+                    f"{phases['zero_b']} | {phases['load_b']} | {phases['bias']} | {phases['compute']} | "
+                    f"{phases['accumulate']} | {phases['write']} | {phases['controller_other']} | "
+                    f"{layer.conv_loader_address_cycles} | {layer.conv_loader_request_cycles} | "
+                    f"{layer.conv_loader_receive_cycles} | {layer.conv_cache_hits} | {layer.conv_cache_misses} | "
+                    f"{layer.conv_fill_cycles} | {layer.conv_bytes_delivered} |"
+                )
         return "\n".join(lines) + "\n"
 
     def to_text(self) -> str:
@@ -228,6 +279,23 @@ class RunDiagnostics:
                 "operations": layer.operations,
                 "throughput_ops_per_second": layer.throughput_ops_per_second,
                 "utilization_percent": f"{layer.utilization_percent:.6f}",
+                "conv_cycles_total": layer.conv_cycles_total,
+                "conv_cycles_zero_a": layer.conv_cycles_zero_a,
+                "conv_cycles_load_a": layer.conv_cycles_load_a,
+                "conv_cycles_zero_b": layer.conv_cycles_zero_b,
+                "conv_cycles_load_b": layer.conv_cycles_load_b,
+                "conv_cycles_bias": layer.conv_cycles_bias,
+                "conv_cycles_compute": layer.conv_cycles_compute,
+                "conv_cycles_accumulate": layer.conv_cycles_accumulate,
+                "conv_cycles_write": layer.conv_cycles_write,
+                "conv_controller_other_cycles": layer.conv_cycle_breakdown["controller_other"],
+                "conv_loader_address_cycles": layer.conv_loader_address_cycles,
+                "conv_loader_request_cycles": layer.conv_loader_request_cycles,
+                "conv_loader_receive_cycles": layer.conv_loader_receive_cycles,
+                "conv_cache_hits": layer.conv_cache_hits,
+                "conv_cache_misses": layer.conv_cache_misses,
+                "conv_fill_cycles": layer.conv_fill_cycles,
+                "conv_bytes_delivered": layer.conv_bytes_delivered,
             }
             for layer in self.layers
         ]
@@ -293,6 +361,7 @@ def parse_diagnostics(raw, settings: DiagnosticsSettings) -> RunDiagnostics:
             throughput,
             utilization_ppm,
             _,
+            *conv_profile,
         ) = fields
         try:
             op_name = OpType(op_type).name
@@ -312,6 +381,7 @@ def parse_diagnostics(raw, settings: DiagnosticsSettings) -> RunDiagnostics:
                 operations,
                 throughput,
                 utilization_ppm / 10_000.0,
+                *conv_profile,
             )
         )
     return RunDiagnostics(settings, layers, total_elapsed_ns, arena_bytes_used)

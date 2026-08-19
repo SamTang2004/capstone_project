@@ -14,6 +14,7 @@ from .diagnostics import (
     DIAGNOSTICS_VERSION,
 )
 from .dtypes import Command, DType, OpType, Status
+from .compiler import CONV_FLAG_PRESLICED_WEIGHTS
 from .protocol import build_ok_response
 from .serializer import (
     EXECUTE_REQUEST_TAIL_STRUCT,
@@ -227,6 +228,7 @@ class MockBackend:
             throughput,
             utilization_ppm,
             0,
+            *([0] * 16),
         )
         header[4] = index + 1
         DIAGNOSTICS_HEADER_STRUCT.pack_into(raw, 0, *header)
@@ -415,7 +417,7 @@ class MockBackend:
             raise ValueError("Mock concat channel count mismatch")
 
     def _execute_graph_conv2d(self, table, layer) -> None:
-        _, input0, _, _, output, weight, bias, _, n, c, h, w, out_c, out_h, out_w, kernel_h, kernel_w, stride_h, stride_w, pad_h, pad_w, groups, *_ = layer
+        _, input0, _, _, output, weight, bias, _, n, c, h, w, out_c, out_h, out_w, kernel_h, kernel_w, stride_h, stride_w, pad_h, pad_w, groups, flags, _ = layer
         if groups != 1:
             raise ValueError("Mock Conv2D only supports groups=1")
         src = self._get_buffer(table[input0][0])
@@ -437,7 +439,12 @@ class MockBackend:
                                     if iw < 0 or iw >= w:
                                         continue
                                     input_idx = ((batch * c + ic) * h + ih) * w + iw
-                                    weight_idx = ((oc * c + ic) * kernel_h + kh) * kernel_w + kw
+                                    k = (ic * kernel_h + kh) * kernel_w + kw
+                                    if flags & CONV_FLAG_PRESLICED_WEIGHTS:
+                                        k_tiles = (c * kernel_h * kernel_w + 15) // 16
+                                        weight_idx = (((oc // 16) * k_tiles + (k // 16)) * 256) + (k % 16) * 16 + (oc % 16)
+                                    else:
+                                        weight_idx = oc * c * kernel_h * kernel_w + k
                                     a = src[input_idx] if src[input_idx] < 128 else src[input_idx] - 256
                                     b = wgt[weight_idx] if wgt[weight_idx] < 128 else wgt[weight_idx] - 256
                                     acc += a * b

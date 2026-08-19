@@ -12,8 +12,9 @@
 #define BCUDA_ACTIVATION_LEAKY_SHIFT_SHIFT 8u
 #define BCUDA_ACTIVATION_LEAKY_SHIFT_MASK 0x00000700u
 #define BCUDA_POOL_AVERAGE 0x00000001u
+#define BCUDA_CONV_PRESLICED_WEIGHTS 0x00000001u
 #define BCUDA_DIAGNOSTICS_MAGIC 0x47444342u
-#define BCUDA_DIAGNOSTICS_VERSION 1u
+#define BCUDA_DIAGNOSTICS_VERSION 2u
 #define BCUDA_DIAG_TIMING 0x00000001u
 #define BCUDA_DIAG_MEMORY 0x00000002u
 #define BCUDA_DIAG_OPERATIONS 0x00000004u
@@ -37,7 +38,8 @@ enum {
 enum {
     BC_LAYOUT_ROW_MAJOR = 1,
     BC_LAYOUT_NCHW = 2,
-    BC_LAYOUT_NHWC = 3
+    BC_LAYOUT_NHWC = 3,
+    BC_LAYOUT_CONV_WEIGHT_TILED_INT8 = 4
 };
 
 enum {
@@ -262,6 +264,22 @@ typedef struct {
     uint64_t throughput_ops_per_second;
     uint32_t utilization_ppm;
     uint32_t reserved1;
+    uint32_t conv_cycles_total;
+    uint32_t conv_cycles_zero_a;
+    uint32_t conv_cycles_load_a;
+    uint32_t conv_cycles_zero_b;
+    uint32_t conv_cycles_load_b;
+    uint32_t conv_cycles_bias;
+    uint32_t conv_cycles_compute;
+    uint32_t conv_cycles_accumulate;
+    uint32_t conv_cycles_write;
+    uint32_t conv_loader_address_cycles;
+    uint32_t conv_loader_request_cycles;
+    uint32_t conv_loader_receive_cycles;
+    uint32_t conv_cache_hits;
+    uint32_t conv_cache_misses;
+    uint32_t conv_fill_cycles;
+    uint32_t conv_bytes_delivered;
 } BcudaDiagnosticsRecord;
 
 typedef struct {
