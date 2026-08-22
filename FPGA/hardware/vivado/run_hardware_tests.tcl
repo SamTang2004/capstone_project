@@ -4,12 +4,17 @@ set hw_dir [file normalize [file join $script_dir ".."]]
 # Keep regressions tied to the deployable source manifest. Prototype RTL must
 # opt into a separate test flow instead of slowing or contaminating this one.
 source [file join $script_dir "final_bitstream_sources.tcl"]
-set rtl_files [concat $final_rtl_files $board_wrapper_rtl_files]
+set rtl_files [concat $final_rtl_files $board_wrapper_rtl_files [list \
+    [file join $hw_dir "rtl" "read_word_to_byte_adapter.sv"] \
+]]
 set sim_files [list \
     [file join $hw_dir "sim" "tb_pe_int8_mac.sv"] \
     [file join $hw_dir "sim" "tb_tile_loader_ddr.sv"] \
     [file join $hw_dir "sim" "tb_tile_writer_ddr.sv"] \
+    [file join $hw_dir "sim" "tb_conv2d_activation_address_gen.sv"] \
     [file join $hw_dir "sim" "tb_conv2d_tile_loader_ddr.sv"] \
+    [file join $hw_dir "sim" "tb_conv2d_tile_loader_ddr_wide.sv"] \
+    [file join $hw_dir "sim" "tb_conv2d_tile_loader_ddr_stress.sv"] \
     [file join $hw_dir "sim" "tb_conv_bias_preload_ddr.sv"] \
     [file join $hw_dir "sim" "tb_gemm_array_cluster_8.sv"] \
     [file join $hw_dir "sim" "tb_activation_unfold_parallel.sv"] \
@@ -18,6 +23,8 @@ set sim_files [list \
     [file join $hw_dir "sim" "tb_avgpool_ddr.sv"] \
     [file join $hw_dir "sim" "tb_requantize_ddr.sv"] \
     [file join $hw_dir "sim" "tb_memory_io_driver_burst.sv"] \
+    [file join $hw_dir "sim" "tb_memory_io_load_balance_stress.sv"] \
+    [file join $hw_dir "sim" "tb_read_word_to_byte_adapter.sv"] \
     [file join $hw_dir "sim" "tb_memory_io_axi3_bridge_burst.sv"] \
     [file join $hw_dir "sim" "tb_conv_writer_axi_path.sv"] \
     [file join $hw_dir "sim" "tb_ps_pl_mmio_control.sv"] \
@@ -61,7 +68,10 @@ set test_tops {
     tb_pe_int8_mac
     tb_tile_loader_ddr
     tb_tile_writer_ddr
+    tb_conv2d_activation_address_gen
     tb_conv2d_tile_loader_ddr
+    tb_conv2d_tile_loader_ddr_wide
+    tb_conv2d_tile_loader_ddr_stress
     tb_conv_bias_preload_ddr
     tb_gemm_array_cluster_8
     tb_activation_unfold_parallel
@@ -70,6 +80,10 @@ set test_tops {
     tb_avgpool_ddr
     tb_requantize_ddr
     tb_memory_io_driver_burst
+    tb_memory_io_load_balance_stress
+    tb_memory_io_load_balance_vector_stress
+    tb_memory_io_load_balance_line_stress
+    tb_read_word_to_byte_adapter
     tb_memory_io_axi3_bridge_burst
     tb_conv_writer_axi_path
     tb_ps_pl_mmio_control
@@ -84,7 +98,7 @@ foreach top $test_tops {
     puts "===== Running $top ====="
     set sim_name "${top}_sim"
 
-    if {[catch {exec $xelab $top "-s" $sim_name} elab_output elab_options]} {
+    if {[catch {exec $xelab $top "-L" xpm "--timescale" 1ns/1ps "-s" $sim_name} elab_output elab_options]} {
         puts $elab_output
         error "xelab failed for $top: $elab_options"
     }

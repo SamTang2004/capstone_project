@@ -1,5 +1,5 @@
 ﻿<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
-<EDKSYSTEM EDWVERSION="1.2" TIMESTAMP="Wed Aug 19 13:21:46 2026" VIVADOVERSION="2024.2">
+<EDKSYSTEM EDWVERSION="1.2" TIMESTAMP="Fri Aug 21 19:42:36 2026" VIVADOVERSION="2024.2">
 
   <SYSTEMINFO ARCH="zynq" BOARD="tul.com.tw:pynq-z2:part0:1.0" DEVICE="7z020" NAME="bcuda_ps_pl" PACKAGE="clg400" SPEEDGRADE="-1"/>
 
@@ -911,7 +911,27 @@
             <CONNECTION INSTANCE="ddr_bridge_0" PORT="cmd_wstrb"/>
           </CONNECTIONS>
         </PORT>
-        <PORT DIR="I" LEFT="31" NAME="mem_read_data" RIGHT="0" SIGIS="undef" SIGNAME="ddr_bridge_0_read_data">
+        <PORT DIR="I" LEFT="3" NAME="mem_debug_arlen" RIGHT="0" SIGIS="undef" SIGNAME="ddr_bridge_0_debug_arlen">
+          <CONNECTIONS>
+            <CONNECTION INSTANCE="ddr_bridge_0" PORT="debug_arlen"/>
+          </CONNECTIONS>
+        </PORT>
+        <PORT DIR="I" LEFT="2" NAME="mem_debug_arsize" RIGHT="0" SIGIS="undef" SIGNAME="ddr_bridge_0_debug_arsize">
+          <CONNECTIONS>
+            <CONNECTION INSTANCE="ddr_bridge_0" PORT="debug_arsize"/>
+          </CONNECTIONS>
+        </PORT>
+        <PORT DIR="I" LEFT="4" NAME="mem_debug_rbeats" RIGHT="0" SIGIS="undef" SIGNAME="ddr_bridge_0_debug_rbeats">
+          <CONNECTIONS>
+            <CONNECTION INSTANCE="ddr_bridge_0" PORT="debug_rbeats"/>
+          </CONNECTIONS>
+        </PORT>
+        <PORT DIR="I" LEFT="1" NAME="mem_debug_rresp" RIGHT="0" SIGIS="undef" SIGNAME="ddr_bridge_0_debug_rresp">
+          <CONNECTIONS>
+            <CONNECTION INSTANCE="ddr_bridge_0" PORT="debug_rresp"/>
+          </CONNECTIONS>
+        </PORT>
+        <PORT DIR="I" LEFT="63" NAME="mem_read_data" RIGHT="0" SIGIS="undef" SIGNAME="ddr_bridge_0_read_data">
           <CONNECTIONS>
             <CONNECTION INSTANCE="ddr_bridge_0" PORT="read_data"/>
           </CONNECTIONS>
@@ -1149,6 +1169,26 @@
             <CONNECTION INSTANCE="bcuda_accelerator_0" PORT="mem_cmd_wstrb"/>
           </CONNECTIONS>
         </PORT>
+        <PORT DIR="O" LEFT="3" NAME="debug_arlen" RIGHT="0" SIGIS="undef" SIGNAME="ddr_bridge_0_debug_arlen">
+          <CONNECTIONS>
+            <CONNECTION INSTANCE="bcuda_accelerator_0" PORT="mem_debug_arlen"/>
+          </CONNECTIONS>
+        </PORT>
+        <PORT DIR="O" LEFT="2" NAME="debug_arsize" RIGHT="0" SIGIS="undef" SIGNAME="ddr_bridge_0_debug_arsize">
+          <CONNECTIONS>
+            <CONNECTION INSTANCE="bcuda_accelerator_0" PORT="mem_debug_arsize"/>
+          </CONNECTIONS>
+        </PORT>
+        <PORT DIR="O" LEFT="4" NAME="debug_rbeats" RIGHT="0" SIGIS="undef" SIGNAME="ddr_bridge_0_debug_rbeats">
+          <CONNECTIONS>
+            <CONNECTION INSTANCE="bcuda_accelerator_0" PORT="mem_debug_rbeats"/>
+          </CONNECTIONS>
+        </PORT>
+        <PORT DIR="O" LEFT="1" NAME="debug_rresp" RIGHT="0" SIGIS="undef" SIGNAME="ddr_bridge_0_debug_rresp">
+          <CONNECTIONS>
+            <CONNECTION INSTANCE="bcuda_accelerator_0" PORT="mem_debug_rresp"/>
+          </CONNECTIONS>
+        </PORT>
         <PORT DIR="O" NAME="error" SIGIS="undef"/>
         <PORT DIR="O" LEFT="31" NAME="m_axi_araddr" RIGHT="0" SIGIS="undef" SIGNAME="ddr_bridge_0_m_axi_araddr">
           <CONNECTIONS>
@@ -1280,7 +1320,7 @@
             <CONNECTION INSTANCE="processing_system7_0" PORT="S_AXI_HP0_BVALID"/>
           </CONNECTIONS>
         </PORT>
-        <PORT DIR="I" LEFT="31" NAME="m_axi_rdata" RIGHT="0" SIGIS="undef" SIGNAME="ddr_bridge_0_m_axi_rdata">
+        <PORT DIR="I" LEFT="63" NAME="m_axi_rdata" RIGHT="0" SIGIS="undef" SIGNAME="ddr_bridge_0_m_axi_rdata">
           <CONNECTIONS>
             <CONNECTION INSTANCE="processing_system7_0" PORT="S_AXI_HP0_RDATA"/>
           </CONNECTIONS>
@@ -1310,7 +1350,7 @@
             <CONNECTION INSTANCE="processing_system7_0" PORT="S_AXI_HP0_RVALID"/>
           </CONNECTIONS>
         </PORT>
-        <PORT DIR="O" LEFT="31" NAME="m_axi_wdata" RIGHT="0" SIGIS="undef" SIGNAME="ddr_bridge_0_m_axi_wdata">
+        <PORT DIR="O" LEFT="63" NAME="m_axi_wdata" RIGHT="0" SIGIS="undef" SIGNAME="ddr_bridge_0_m_axi_wdata">
           <CONNECTIONS>
             <CONNECTION INSTANCE="processing_system7_0" PORT="S_AXI_HP0_WDATA"/>
           </CONNECTIONS>
@@ -1330,7 +1370,7 @@
             <CONNECTION INSTANCE="processing_system7_0" PORT="S_AXI_HP0_WREADY"/>
           </CONNECTIONS>
         </PORT>
-        <PORT DIR="O" LEFT="3" NAME="m_axi_wstrb" RIGHT="0" SIGIS="undef" SIGNAME="ddr_bridge_0_m_axi_wstrb">
+        <PORT DIR="O" LEFT="7" NAME="m_axi_wstrb" RIGHT="0" SIGIS="undef" SIGNAME="ddr_bridge_0_m_axi_wstrb">
           <CONNECTIONS>
             <CONNECTION INSTANCE="processing_system7_0" PORT="S_AXI_HP0_WSTRB"/>
           </CONNECTIONS>
@@ -1340,7 +1380,7 @@
             <CONNECTION INSTANCE="processing_system7_0" PORT="S_AXI_HP0_WVALID"/>
           </CONNECTIONS>
         </PORT>
-        <PORT DIR="O" LEFT="31" NAME="read_data" RIGHT="0" SIGIS="undef" SIGNAME="ddr_bridge_0_read_data">
+        <PORT DIR="O" LEFT="63" NAME="read_data" RIGHT="0" SIGIS="undef" SIGNAME="ddr_bridge_0_read_data">
           <CONNECTIONS>
             <CONNECTION INSTANCE="bcuda_accelerator_0" PORT="mem_read_data"/>
           </CONNECTIONS>
@@ -1387,13 +1427,13 @@
         </PORT>
       </PORTS>
       <BUSINTERFACES>
-        <BUSINTERFACE BUSNAME="ddr_bridge_0_m_axi" DATAWIDTH="32" NAME="m_axi" TYPE="MASTER" VLNV="xilinx.com:interface:aximm:1.0">
+        <BUSINTERFACE BUSNAME="ddr_bridge_0_m_axi" DATAWIDTH="64" NAME="m_axi" TYPE="MASTER" VLNV="xilinx.com:interface:aximm:1.0">
           <PARAMETER NAME="ADDR_WIDTH" VALUE="32"/>
           <PARAMETER NAME="ARUSER_WIDTH" VALUE="0"/>
           <PARAMETER NAME="AWUSER_WIDTH" VALUE="0"/>
           <PARAMETER NAME="BUSER_WIDTH" VALUE="0"/>
           <PARAMETER NAME="CLK_DOMAIN" VALUE="bcuda_ps_pl_processing_system7_0_0_FCLK_CLK0"/>
-          <PARAMETER NAME="DATA_WIDTH" VALUE="32"/>
+          <PARAMETER NAME="DATA_WIDTH" VALUE="64"/>
           <PARAMETER NAME="FREQ_HZ" VALUE="100000000"/>
           <PARAMETER NAME="HAS_BRESP" VALUE="1"/>
           <PARAMETER NAME="HAS_BURST" VALUE="1"/>
@@ -1508,7 +1548,7 @@
         <PARAMETER NAME="C_S_AXI_ACP_ID_WIDTH" VALUE="3"/>
         <PARAMETER NAME="C_S_AXI_GP0_ID_WIDTH" VALUE="6"/>
         <PARAMETER NAME="C_S_AXI_GP1_ID_WIDTH" VALUE="6"/>
-        <PARAMETER NAME="C_S_AXI_HP0_DATA_WIDTH" VALUE="32"/>
+        <PARAMETER NAME="C_S_AXI_HP0_DATA_WIDTH" VALUE="64"/>
         <PARAMETER NAME="C_S_AXI_HP0_ID_WIDTH" VALUE="6"/>
         <PARAMETER NAME="C_S_AXI_HP1_DATA_WIDTH" VALUE="64"/>
         <PARAMETER NAME="C_S_AXI_HP1_ID_WIDTH" VALUE="6"/>
@@ -2207,7 +2247,7 @@
         <PARAMETER NAME="PCW_S_AXI_GP0_ID_WIDTH" VALUE="6"/>
         <PARAMETER NAME="PCW_S_AXI_GP1_FREQMHZ" VALUE="10"/>
         <PARAMETER NAME="PCW_S_AXI_GP1_ID_WIDTH" VALUE="6"/>
-        <PARAMETER NAME="PCW_S_AXI_HP0_DATA_WIDTH" VALUE="32"/>
+        <PARAMETER NAME="PCW_S_AXI_HP0_DATA_WIDTH" VALUE="64"/>
         <PARAMETER NAME="PCW_S_AXI_HP0_FREQMHZ" VALUE="100"/>
         <PARAMETER NAME="PCW_S_AXI_HP0_ID_WIDTH" VALUE="6"/>
         <PARAMETER NAME="PCW_S_AXI_HP1_DATA_WIDTH" VALUE="64"/>
@@ -2869,7 +2909,7 @@
         </PORT>
         <PORT DIR="O" LEFT="2" NAME="S_AXI_HP0_RACOUNT" RIGHT="0" SIGIS="undef"/>
         <PORT DIR="O" LEFT="7" NAME="S_AXI_HP0_RCOUNT" RIGHT="0" SIGIS="undef"/>
-        <PORT DIR="O" LEFT="31" NAME="S_AXI_HP0_RDATA" RIGHT="0" SIGIS="undef" SIGNAME="ddr_bridge_0_m_axi_rdata">
+        <PORT DIR="O" LEFT="63" NAME="S_AXI_HP0_RDATA" RIGHT="0" SIGIS="undef" SIGNAME="ddr_bridge_0_m_axi_rdata">
           <CONNECTIONS>
             <CONNECTION INSTANCE="ddr_bridge_0" PORT="m_axi_rdata"/>
           </CONNECTIONS>
@@ -2902,7 +2942,7 @@
         </PORT>
         <PORT DIR="O" LEFT="5" NAME="S_AXI_HP0_WACOUNT" RIGHT="0" SIGIS="undef"/>
         <PORT DIR="O" LEFT="7" NAME="S_AXI_HP0_WCOUNT" RIGHT="0" SIGIS="undef"/>
-        <PORT DIR="I" LEFT="31" NAME="S_AXI_HP0_WDATA" RIGHT="0" SIGIS="undef" SIGNAME="ddr_bridge_0_m_axi_wdata">
+        <PORT DIR="I" LEFT="63" NAME="S_AXI_HP0_WDATA" RIGHT="0" SIGIS="undef" SIGNAME="ddr_bridge_0_m_axi_wdata">
           <CONNECTIONS>
             <CONNECTION INSTANCE="ddr_bridge_0" PORT="m_axi_wdata"/>
           </CONNECTIONS>
@@ -2923,7 +2963,7 @@
           </CONNECTIONS>
         </PORT>
         <PORT DIR="I" NAME="S_AXI_HP0_WRISSUECAP1_EN" SIGIS="undef"/>
-        <PORT DIR="I" LEFT="3" NAME="S_AXI_HP0_WSTRB" RIGHT="0" SIGIS="undef" SIGNAME="ddr_bridge_0_m_axi_wstrb">
+        <PORT DIR="I" LEFT="7" NAME="S_AXI_HP0_WSTRB" RIGHT="0" SIGIS="undef" SIGNAME="ddr_bridge_0_m_axi_wstrb">
           <CONNECTIONS>
             <CONNECTION INSTANCE="ddr_bridge_0" PORT="m_axi_wstrb"/>
           </CONNECTIONS>
@@ -3072,13 +3112,13 @@
             <PORTMAP LOGICAL="WVALID" PHYSICAL="M_AXI_GP0_WVALID"/>
           </PORTMAPS>
         </BUSINTERFACE>
-        <BUSINTERFACE BUSNAME="ddr_bridge_0_m_axi" DATAWIDTH="32" NAME="S_AXI_HP0" TYPE="SLAVE" VLNV="xilinx.com:interface:aximm:1.0">
+        <BUSINTERFACE BUSNAME="ddr_bridge_0_m_axi" DATAWIDTH="64" NAME="S_AXI_HP0" TYPE="SLAVE" VLNV="xilinx.com:interface:aximm:1.0">
           <PARAMETER NAME="ADDR_WIDTH" VALUE="32"/>
           <PARAMETER NAME="ARUSER_WIDTH" VALUE="0"/>
           <PARAMETER NAME="AWUSER_WIDTH" VALUE="0"/>
           <PARAMETER NAME="BUSER_WIDTH" VALUE="0"/>
           <PARAMETER NAME="CLK_DOMAIN" VALUE="bcuda_ps_pl_processing_system7_0_0_FCLK_CLK0"/>
-          <PARAMETER NAME="DATA_WIDTH" VALUE="32"/>
+          <PARAMETER NAME="DATA_WIDTH" VALUE="64"/>
           <PARAMETER NAME="FREQ_HZ" VALUE="100000000"/>
           <PARAMETER NAME="HAS_BRESP" VALUE="1"/>
           <PARAMETER NAME="HAS_BURST" VALUE="1"/>

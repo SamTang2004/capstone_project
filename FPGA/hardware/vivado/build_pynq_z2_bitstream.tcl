@@ -27,8 +27,29 @@ report_utilization -file [file join $hw_dir "pynq_z2_utilization_synth.rpt"]
 launch_runs impl_1 -to_step write_bitstream -jobs $build_jobs
 wait_on_run impl_1
 open_run impl_1
+
+# Dense Zynq-7020 placements can lose several tenths of a nanosecond during
+# routing even when placement timing is clean. Recover those local route
+# delays before release, then reject any image that still violates setup or
+# hold timing instead of silently exporting an overclocked bitstream.
+set setup_path [get_timing_paths -delay_type max -max_paths 1]
+set setup_slack [get_property SLACK $setup_path]
+if {$setup_slack < 0.0} {
+    puts "Post-route WNS is ${setup_slack} ns; running AggressiveExplore"
+    phys_opt_design -directive AggressiveExplore
+    set routed_dcp [file join $project_dir "budgetcuda_board.runs" "impl_1" "bcuda_ps_pl_wrapper_routed.dcp"]
+    write_checkpoint -force $routed_dcp
+    write_bitstream -force [file join $project_dir "budgetcuda_board.runs" "impl_1" "bcuda_ps_pl_wrapper.bit"]
+}
+
 report_utilization -file [file join $hw_dir "pynq_z2_utilization_impl.rpt"]
 report_timing_summary -file [file join $hw_dir "pynq_z2_timing_impl.rpt"]
+set setup_slack [get_property SLACK [get_timing_paths -delay_type max -max_paths 1]]
+set hold_slack [get_property SLACK [get_timing_paths -delay_type min -max_paths 1]]
+if {$setup_slack < 0.0 || $hold_slack < 0.0} {
+    error "PYNQ-Z2 timing signoff failed: WNS=${setup_slack} ns WHS=${hold_slack} ns"
+}
+puts "PYNQ-Z2 timing signoff passed: WNS=${setup_slack} ns WHS=${hold_slack} ns"
 set generated_bits [glob -nocomplain [file join $project_dir "budgetcuda_board.runs" "impl_1" "*.bit"]]
 if {[llength $generated_bits] != 1} {
     error "Expected one implementation bitstream, found [llength $generated_bits]: $generated_bits"

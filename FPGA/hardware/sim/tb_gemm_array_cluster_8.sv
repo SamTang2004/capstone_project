@@ -15,6 +15,9 @@ module tb_gemm_array_cluster_8;
     gemm_array_cluster_8 dut (
         .clk(clk), .rst_n(rst_n), .load_valid(load_valid), .load_matrix(load_matrix), .load_array(load_array),
         .load_addr(load_addr), .load_data(load_data), .start(start), .active_arrays(active_arrays), .busy(busy), .done(done),
+        .load_word_valid(1'b0), .load_word_addr(8'd0), .load_word_stride(8'd1),
+        .load_word_data(64'd0), .load_word_keep(8'd0),
+        .invalidate_valid(1'b0), .invalidate_matrix(1'b0),
         .result_array(result_array), .result_addr(result_addr), .result_data(result_data)
     );
 

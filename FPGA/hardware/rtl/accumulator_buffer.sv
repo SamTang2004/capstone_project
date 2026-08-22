@@ -10,6 +10,7 @@ module accumulator_buffer #(
     input  logic [7:0]              op_addr,
     input  logic signed [31:0]      op_data,
     output logic signed [31:0]      op_result,
+    output logic                    op_commit,
 
     input  logic                    seed_valid,
     output logic                    seed_ready,
@@ -21,80 +22,104 @@ module accumulator_buffer #(
     output logic                    read_valid,
     output logic signed [31:0]      read_data
 );
-
     localparam int ENTRY_COUNT = TILE_SIZE * TILE_SIZE;
 
-    // Port A performs the serialized accumulation/bias read-modify-write.
-    // Port B is the registered TileWriter read port. This synchronous
-    // two-port template maps one accumulator tile into a RAMB18.
-    (* ram_style = "block", ram_decomp = "power" *) logic signed [31:0] mem [0:ENTRY_COUNT-1];
-    logic                    op_pending;
-    logic                    pending_clear;
-    logic [7:0]              pending_addr;
-    logic signed [31:0]      pending_data;
-    logic signed [31:0]      pending_old_value;
-    logic signed [31:0]      pending_result;
-    logic                    port_a_write;
-    logic [7:0]              port_a_addr;
-    logic signed [31:0]      port_a_data;
-    logic [3:0]              read_pending_pipe;
-    logic [7:0] read_addr_r;
-    logic signed [31:0] read_mem_data;
-    // Keep this second response stage outside the RAM primitive. Vivado may
-    // absorb read_mem_data into DOA_REG, but this always-clocked register must
-    // remain separate so TileWriter state cannot gate the physical response.
-    (* dont_touch = "yes" *) logic signed [31:0] read_data_r;
+    // During accumulation, port B reads the next address while port A commits
+    // the previous result. During writeback, port B serves TileWriter instead.
+    logic op_stage_valid;
+    logic op_stage_clear;
+    logic [7:0] op_stage_addr;
+    logic signed [31:0] op_stage_data;
+    logic signed [31:0] port_b_data;
+    logic signed [31:0] commit_result;
+    logic op_accept;
+    logic mem_write_enable;
+    logic [7:0] mem_write_addr;
+    logic signed [31:0] mem_write_data;
+    logic [7:0] mem_read_addr;
+    logic [3:0] read_pending_pipe;
+    logic signed [31:0] read_data_stage;
+    logic signed [31:0] read_data_stage2;
+    logic signed [31:0] read_data_stage3;
+    logic signed [31:0] read_data_r;
 
-    assign op_ready = !op_pending;
-    // Used by Conv2D bias preload while the regular accumulator port is idle.
-    assign seed_ready = !op_pending;
-    assign pending_result = pending_clear ? pending_data : pending_old_value + pending_data;
-    assign port_a_write = op_pending || seed_valid;
-    assign port_a_addr = op_pending ? pending_addr : seed_addr;
-    assign port_a_data = op_pending ? pending_result : seed_data;
+    assign op_ready = !seed_valid && !(op_stage_valid && op_valid && op_stage_addr == op_addr);
+    assign op_accept = op_valid && op_ready;
+    assign seed_ready = !op_stage_valid && !op_valid;
+    assign commit_result = op_stage_clear ? op_stage_data : port_b_data + op_stage_data;
     assign read_data = read_data_r;
+    assign mem_write_enable = op_stage_valid || (seed_valid && seed_ready);
+    assign mem_write_addr = op_stage_valid ? op_stage_addr : seed_addr;
+    assign mem_write_data = op_stage_valid ? commit_result : seed_data;
+    assign mem_read_addr = op_accept ? op_addr : read_addr;
+
+    xpm_memory_sdpram #(
+        .MEMORY_SIZE(ENTRY_COUNT * 32),
+        .MEMORY_PRIMITIVE("block"),
+        .CLOCKING_MODE("common_clock"),
+        .MEMORY_INIT_FILE("none"),
+        .USE_MEM_INIT(0),
+        .WRITE_DATA_WIDTH_A(32),
+        .BYTE_WRITE_WIDTH_A(32),
+        .ADDR_WIDTH_A(8),
+        .READ_DATA_WIDTH_B(32),
+        .ADDR_WIDTH_B(8),
+        .READ_RESET_VALUE_B("0"),
+        .READ_LATENCY_B(1),
+        .WRITE_MODE_B("read_first"),
+        .RST_MODE_B("SYNC")
+    ) accumulator_memory (
+        .sleep(1'b0),
+        .clka(clk),
+        .ena(mem_write_enable),
+        .wea(mem_write_enable),
+        .addra(mem_write_addr),
+        .dina(mem_write_data),
+        .injectsbiterra(1'b0),
+        .injectdbiterra(1'b0),
+        .clkb(clk),
+        .rstb(!rst_n),
+        .enb(1'b1),
+        .regceb(1'b1),
+        .addrb(mem_read_addr),
+        .doutb(port_b_data),
+        .sbiterrb(),
+        .dbiterrb()
+    );
+
     always_ff @(posedge clk) begin
         if (!rst_n) begin
-            op_pending <= 1'b0;
-            pending_clear <= 1'b0;
-            pending_addr <= '0;
-            pending_data <= '0;
-            pending_old_value <= '0;
+            op_stage_valid <= 1'b0;
+            op_stage_clear <= 1'b0;
+            op_stage_addr <= '0;
+            op_stage_data <= '0;
             op_result <= '0;
+            op_commit <= 1'b0;
             read_pending_pipe <= '0;
-            read_addr_r <= '0;
-            read_mem_data <= '0;
-            read_valid <= 1'b0;
+            read_data_stage <= '0;
+            read_data_stage2 <= '0;
+            read_data_stage3 <= '0;
             read_data_r <= '0;
+            read_valid <= 1'b0;
         end else begin
-            // Vivado can split this true dual-port 256x32 RAM across cascaded
-            // RAMB18s and absorb different output registers into each half.
-            // Keep the requested address stable and sample the port on every
-            // cycle; only advertise it after four settling clocks. This gives
-            // simulation and every legal RAMB18 mapping one fixed contract.
-            read_addr_r <= read_addr;
-            read_mem_data <= mem[read_addr_r];
-            read_data_r <= read_mem_data;
-            read_pending_pipe <= {read_pending_pipe[2:0], read_req};
+            op_commit <= op_stage_valid;
+            if (op_stage_valid) begin
+                op_result <= commit_result;
+            end
+
+            op_stage_valid <= op_accept;
+            if (op_accept) begin
+                op_stage_clear <= op_clear;
+                op_stage_addr <= op_addr;
+                op_stage_data <= op_data;
+            end
+
+            read_data_stage <= port_b_data;
+            read_data_stage2 <= read_data_stage;
+            read_data_stage3 <= read_data_stage2;
+            read_data_r <= read_data_stage3;
+            read_pending_pipe <= {read_pending_pipe[2:0], read_req && !op_accept};
             read_valid <= read_pending_pipe[3];
-
-            if (port_a_write) begin
-                mem[port_a_addr] <= port_a_data;
-            end
-
-            if (op_pending) begin
-                op_result <= pending_result;
-                op_pending <= 1'b0;
-            end
-
-            if (op_valid && op_ready) begin
-                pending_clear <= op_clear;
-                pending_addr <= op_addr;
-                pending_data <= op_data;
-                pending_old_value <= mem[op_addr];
-                op_pending <= 1'b1;
-            end
         end
     end
-
 endmodule

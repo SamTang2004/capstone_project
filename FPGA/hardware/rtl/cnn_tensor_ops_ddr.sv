@@ -11,7 +11,10 @@ module cnn_tensor_ops_ddr (
     input logic [7:0] pad_h, input logic [7:0] pad_w,
     output logic busy, output logic done, output logic error,
     output logic read_req_valid, input logic read_req_ready, output logic [31:0] read_req_addr,
-    input logic read_data_valid, output logic read_data_ready, input logic [7:0] read_data,
+    output logic [4:0] read_req_len,
+    input logic read_word_valid, output logic read_word_ready,
+    input logic [31:0] read_word_data, input logic [3:0] read_word_keep,
+    input logic read_word_last,
     output logic write_req_valid, input logic write_req_ready, output logic [31:0] write_req_addr,
     output logic [31:0] write_req_data, output logic [3:0] write_req_strb
 );
@@ -22,7 +25,8 @@ module cnn_tensor_ops_ddr (
         ADDR_SELECT, ADDR_COORD_CAPTURE, ADDR_BATCH_OPERANDS,
         ADDR_BATCH_MUL, ADDR_CHANNEL_ADD,
         ADDR_ROW_MUL, ADDR_ROW_ADD, ADDR_COL_MUL, ADDR_BASE_ADD,
-        ADDR_FINAL_ADD, POOL_REQUEST, POOL_RECEIVE, PACK, WRITE, FINISH, FAIL
+        ADDR_FINAL_ADD, POOL_REQUEST, POOL_RECEIVE, POOL_REDUCE,
+        PACK, WRITE, FINISH, FAIL
     } state_t;
     state_t state;
     logic [1:0] mode_r;
@@ -32,6 +36,7 @@ module cnn_tensor_ops_ddr (
     logic [15:0] n_idx, c_idx, oh_idx, ow_idx;
     logic [7:0] kh_idx, kw_idx;
     logic signed [7:0] pool_max_r;
+    logic signed [7:0] pool_word_max_r;
     logic [7:0] element_value_r;
     logic [31:0] packed_word_r, write_data_r, write_addr_r;
     logic [3:0] write_strb_r;
@@ -58,10 +63,22 @@ module cnn_tensor_ops_ddr (
     logic validation_mode_error_r, validation_shape_error_r;
     logic validation_pool_error_r, validation_upsample_error_r;
     logic [23:0] validation_up_h_r, validation_up_w_r;
+    logic [2:0] read_run_len_r;
+    wire [2:0] response_bytes = read_word_keep[0] + read_word_keep[1] +
+                                read_word_keep[2] + read_word_keep[3];
+    wire signed [7:0] pool_lane0 = $signed(read_word_data[7:0]);
+    wire signed [7:0] pool_lane1 = read_run_len_r > 1 ? $signed(read_word_data[15:8]) : -8'sd128;
+    wire signed [7:0] pool_lane2 = read_run_len_r > 2 ? $signed(read_word_data[23:16]) : -8'sd128;
+    wire signed [7:0] pool_lane3 = read_run_len_r > 3 ? $signed(read_word_data[31:24]) : -8'sd128;
+    wire signed [7:0] pool_pair01_max = pool_lane0 > pool_lane1 ? pool_lane0 : pool_lane1;
+    wire signed [7:0] pool_pair23_max = pool_lane2 > pool_lane3 ? pool_lane2 : pool_lane3;
+    wire signed [7:0] pool_response_max = pool_pair01_max > pool_pair23_max ? pool_pair01_max : pool_pair23_max;
+    wire signed [7:0] pool_merged_max = pool_word_max_r > pool_max_r ? pool_word_max_r : pool_max_r;
 
     assign busy = state != IDLE && state != FINISH && state != FAIL;
     assign read_req_valid = state == POOL_REQUEST;
-    assign read_data_ready = state == POOL_RECEIVE || (state == POOL_REQUEST && read_data_valid);
+    assign read_req_len = {2'd0, read_run_len_r};
+    assign read_word_ready = state == POOL_RECEIVE;
     assign write_req_valid = state == WRITE;
     assign write_req_addr = write_addr_r;
     assign write_req_data = write_data_r;
@@ -129,7 +146,8 @@ module cnn_tensor_ops_ddr (
             mode_r <= 0; in0_r <= 0; in1_r <= 0; in2_r <= 0; out_r <= 0; output_index_r <= 0;
             n_r <= 0; c0_r <= 0; c1_r <= 0; c2_r <= 0; c01_r <= 0; total_channels_r <= 0; in_h_r <= 0; in_w_r <= 0; out_h_r <= 0; out_w_r <= 0;
             kh_size_r <= 0; kw_size_r <= 0; sh_r <= 0; sw_r <= 0; ph_r <= 0; pw_r <= 0;
-            n_idx <= 0; c_idx <= 0; oh_idx <= 0; ow_idx <= 0; kh_idx <= 0; kw_idx <= 0; pool_max_r <= -8'sd128;
+            n_idx <= 0; c_idx <= 0; oh_idx <= 0; ow_idx <= 0; kh_idx <= 0; kw_idx <= 0;
+            pool_max_r <= -8'sd128; pool_word_max_r <= -8'sd128;
             packed_word_r <= 0; write_data_r <= 0; write_addr_r <= 0; write_strb_r <= 0; write_last_r <= 0; up_h_repeat <= 0; up_w_repeat <= 0; up_src_h <= 0; up_src_w <= 0;
             source_base_r <= 0; source_addr_r <= 0; address_index_r <= 0; address_base_r <= 0;
             source_channels_r <= 0; source_channel_offset_r <= 0; batch_channel_product_r <= 0; row_product_r <= 0; column_product_r <= 0;
@@ -141,6 +159,7 @@ module cnn_tensor_ops_ddr (
             validation_mode_error_r <= 0; validation_shape_error_r <= 0;
             validation_pool_error_r <= 0; validation_upsample_error_r <= 0;
             validation_up_h_r <= 0; validation_up_w_r <= 0;
+            read_run_len_r <= 0;
         end else begin
             done <= 1'b0;
             case (state)
@@ -269,41 +288,43 @@ module cnn_tensor_ops_ddr (
                 end
                 ADDR_FINAL_ADD: begin
                     source_addr_r <= address_base_r + source_w_r;
+                    if (mode_r != MODE_POOL) read_run_len_r <= 3'd1;
+                    else if (kw_size_r - kw_idx >= 4 && in_w_r - pool_iw_r >= 4) read_run_len_r <= 3'd4;
+                    else if (kw_size_r - kw_idx < in_w_r - pool_iw_r) read_run_len_r <= kw_size_r - kw_idx;
+                    else read_run_len_r <= in_w_r - pool_iw_r;
                     state <= POOL_REQUEST;
                 end
-                POOL_REQUEST: begin
-                    if (read_data_valid) begin
-                        if (mode_r == MODE_POOL) begin
-                            if (kh_idx + 1 >= kh_size_r && kw_idx + 1 >= kw_size_r) begin
-                                element_value_r <= $signed(read_data) > pool_max_r ? read_data : pool_max_r;
+                POOL_REQUEST: if (read_req_ready) state <= POOL_RECEIVE;
+                POOL_RECEIVE: if (read_word_valid) begin
+                    if (response_bytes != read_run_len_r ||
+                        read_word_keep != ((5'd1 << read_run_len_r) - 1'b1) ||
+                        !read_word_last) begin
+                        error <= 1'b1;
+                        state <= FAIL;
+                    end else if (mode_r == MODE_POOL) begin
+                        pool_word_max_r <= pool_response_max;
+                        state <= POOL_REDUCE;
+                    end else begin
+                        element_value_r <= read_word_data[7:0];
+                        state <= PACK;
+                    end
+                end
+                POOL_REDUCE: begin
+                        pool_max_r <= pool_merged_max;
+                        if (kw_idx + read_run_len_r >= kw_size_r) begin
+                            kw_idx <= 0;
+                            if (kh_idx + 1 >= kh_size_r) begin
+                                element_value_r <= pool_merged_max;
                                 kh_idx <= 0;
-                                kw_idx <= 0;
                                 state <= PACK;
                             end else begin
-                                if ($signed(read_data) > pool_max_r) pool_max_r <= $signed(read_data);
-                                advance_pool_window();
+                                kh_idx <= kh_idx + 1'b1;
+                                state <= POOL_COORD_MUL;
                             end
                         end else begin
-                            element_value_r <= read_data;
-                            state <= PACK;
+                            kw_idx <= kw_idx + read_run_len_r;
+                            state <= POOL_COORD_MUL;
                         end
-                    end
-                    else if (read_req_ready) state <= POOL_RECEIVE;
-                end
-                POOL_RECEIVE: if (read_data_valid) begin
-                    if (mode_r == MODE_POOL) begin
-                        if (kh_idx + 1 >= kh_size_r && kw_idx + 1 >= kw_size_r) begin
-                            element_value_r <= $signed(read_data) > pool_max_r ? read_data : pool_max_r;
-                            kh_idx <= 0;
-                            kw_idx <= 0;
-                            state <= PACK;
-                        end else begin
-                            if ($signed(read_data) > pool_max_r) pool_max_r <= $signed(read_data);
-                            advance_pool_window();
-                        end
-                    end else begin
-                        element_value_r <= read_data; state <= PACK;
-                    end
                 end
                 PACK: begin
                     next_packed = packed_word_r;

@@ -52,7 +52,13 @@ The firmware-visible AXI-Lite register map for this top is documented in `docs/b
 maps the accelerator register window at `0x43C80000`. The required official
 PYNQ-Z2 board files are vendored under `board_files/XilinxBoardStore`; they
 provide the DDR/MIO preset. The wrapper now connects the accelerator's
-memory-command protocol through a one-outstanding AXI4 bridge to PS HP0 DDR.
+memory-command protocol through a 64-bit AXI3 bridge to PS HP0 DDR. The bridge
+serializes physical bursts, while the memory driver queues logical reads,
+caches sixteen 64-byte lines, and returns native eight-byte qwords to the
+TileLoader. The core accepts one such A/B qword per clock through eight
+independent wave-BRAM banks. On writes, the bridge combines the accelerator's
+32-bit logical words into native 64-bit HP0 beats and uses byte strobes for
+unaligned first and final words.
 
 On the board, use `budgetcuda.PynqPlRuntime` to allocate PYNQ CMA buffers,
 flush A/B before submit, and invalidate C after completion. Its register base

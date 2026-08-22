@@ -4,17 +4,18 @@ module tb_cnn_tensor_ops_ddr;
     logic [31:0] in0, in1, in2, out;
     logic [15:0] n, c0, c1, c2, ih, iw, oh, ow;
     logic [7:0] kh, kw, sh, sw, ph, pw;
-    logic busy, done, error, read_req_valid, read_req_ready, read_data_valid, read_data_ready, write_req_valid, write_req_ready;
+    logic busy, done, error, read_req_valid, read_req_ready, read_word_valid, read_word_ready, read_word_last, write_req_valid, write_req_ready;
     logic [31:0] read_req_addr, write_req_addr, write_req_data;
-    logic [7:0] read_data;
-    logic [3:0] write_req_strb;
+    logic [4:0] read_req_len;
+    logic [31:0] read_word_data;
+    logic [3:0] read_word_keep, write_req_strb;
     logic [7:0] mem [0:4095];
     logic read_pending;
     integer cycles, start_cycle, first_request_cycle;
     logic [31:0] read_address_q;
 
     always #5 clk = ~clk;
-    assign read_req_ready = !read_pending;
+    assign read_req_ready = !read_pending && !read_word_valid;
     assign write_req_ready = 1'b1;
 
     cnn_tensor_ops_ddr dut (.*,
@@ -26,13 +27,17 @@ module tb_cnn_tensor_ops_ddr;
         cycles <= cycles + 1;
         if (start) begin start_cycle <= cycles; first_request_cycle <= -1; end
         if (read_req_valid && read_req_ready && first_request_cycle < 0) first_request_cycle <= cycles;
-        read_data_valid <= 0;
-        if (read_pending) begin
-            read_data <= mem[read_address_q];
-            read_data_valid <= 1;
-            if (read_data_ready) read_pending <= 0;
+        if (read_word_valid && read_word_ready) read_word_valid <= 0;
+        if (read_pending && !read_word_valid) begin
+            read_word_data <= 0;
+            read_word_keep <= (5'd1 << read_req_len) - 1'b1;
+            read_word_last <= 1;
+            for (int lane=0;lane<4;lane++) if (lane < read_req_len) read_word_data[lane*8 +: 8] <= mem[read_address_q+lane];
+            read_word_valid <= 1;
+            read_pending <= 0;
         end
         if (read_req_valid && read_req_ready) begin
+            if (read_req_len == 0 || read_req_len > 4) $fatal(1, "Invalid tensor run length %0d", read_req_len);
             read_address_q <= read_req_addr;
             read_pending <= 1;
         end
@@ -68,7 +73,7 @@ module tb_cnn_tensor_ops_ddr;
         cycles = 0; start_cycle = -1; first_request_cycle = -1;
         start = 0; mode = 0; in0 = 32'h100; in1 = 32'h200; in2 = 32'h300; out = 32'h400;
         n = 1; c0 = 1; c1 = 0; c2 = 0; ih = 0; iw = 0; oh = 0; ow = 0; kh = 0; kw = 0; sh = 0; sw = 0; ph = 0; pw = 0;
-        read_pending = 0; read_data_valid = 0; read_data = 0; read_address_q = 0;
+        read_pending = 0; read_word_valid = 0; read_word_data = 0; read_word_keep = 0; read_word_last = 0; read_address_q = 0;
         clear_memory();
         repeat (3) @(posedge clk); rst_n = 1;
 
@@ -105,7 +110,7 @@ module tb_cnn_tensor_ops_ddr;
         launch();
         expect_byte(16'h400, 10); expect_byte(16'h401, 11); expect_byte(16'h402, 20); expect_byte(16'h403, 21); expect_byte(16'h404, 30); expect_byte(16'h405, 31);
         expect_byte(16'h406, 12); expect_byte(16'h407, 13); expect_byte(16'h408, 22); expect_byte(16'h409, 23); expect_byte(16'h40a, 32); expect_byte(16'h40b, 33);
-        $display("tb_cnn_tensor_ops_ddr golden trace passed");
+        $display("tb_cnn_tensor_ops_ddr wide row-run golden trace passed");
         $finish;
     end
 endmodule

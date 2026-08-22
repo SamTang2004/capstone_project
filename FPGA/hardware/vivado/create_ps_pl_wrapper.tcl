@@ -31,7 +31,7 @@ apply_bd_automation -rule xilinx.com:bd_rule:processing_system7 \
 set_property -dict [list \
     CONFIG.PCW_USE_M_AXI_GP0 {1} \
     CONFIG.PCW_USE_S_AXI_HP0 {1} \
-    CONFIG.PCW_S_AXI_HP0_DATA_WIDTH {32} \
+    CONFIG.PCW_S_AXI_HP0_DATA_WIDTH {64} \
     CONFIG.PCW_M_AXI_GP0_ENABLE_STATIC_REMAP {0} \
     CONFIG.PCW_FPGA0_PERIPHERAL_FREQMHZ {100.0} \
 ] $ps7
@@ -80,6 +80,10 @@ connect_bd_net [get_bd_pins ddr_bridge_0/read_valid] [get_bd_pins bcuda_accelera
 connect_bd_net [get_bd_pins ddr_bridge_0/read_ready] [get_bd_pins bcuda_accelerator_0/mem_read_ready]
 connect_bd_net [get_bd_pins ddr_bridge_0/read_data] [get_bd_pins bcuda_accelerator_0/mem_read_data]
 connect_bd_net [get_bd_pins ddr_bridge_0/read_last] [get_bd_pins bcuda_accelerator_0/mem_read_last]
+connect_bd_net [get_bd_pins ddr_bridge_0/debug_arlen] [get_bd_pins bcuda_accelerator_0/mem_debug_arlen]
+connect_bd_net [get_bd_pins ddr_bridge_0/debug_arsize] [get_bd_pins bcuda_accelerator_0/mem_debug_arsize]
+connect_bd_net [get_bd_pins ddr_bridge_0/debug_rbeats] [get_bd_pins bcuda_accelerator_0/mem_debug_rbeats]
+connect_bd_net [get_bd_pins ddr_bridge_0/debug_rresp] [get_bd_pins bcuda_accelerator_0/mem_debug_rresp]
 
 set accelerator_segment [lindex [get_bd_addr_segs -of_objects [get_bd_intf_pins bcuda_accelerator_0/s_axi]] 0]
 if {$accelerator_segment eq ""} {

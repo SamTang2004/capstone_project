@@ -18,8 +18,12 @@ module memory_io_axi3_bridge (
     output logic        read_valid,
     output logic        read_last,
     input  logic        read_ready,
-    output logic [31:0] read_data,
+    output logic [63:0] read_data,
     output logic        error,
+    output logic [3:0]  debug_arlen,
+    output logic [2:0]  debug_arsize,
+    output logic [4:0]  debug_rbeats,
+    output logic [1:0]  debug_rresp,
 
     output logic [5:0]  m_axi_awid,
     output logic [31:0] m_axi_awaddr,
@@ -33,8 +37,8 @@ module memory_io_axi3_bridge (
     output logic        m_axi_awvalid,
     input  logic        m_axi_awready,
     output logic [5:0]  m_axi_wid,
-    output logic [31:0] m_axi_wdata,
-    output logic [3:0]  m_axi_wstrb,
+    output logic [63:0] m_axi_wdata,
+    output logic [7:0]  m_axi_wstrb,
     output logic        m_axi_wlast,
     output logic        m_axi_wvalid,
     input  logic        m_axi_wready,
@@ -54,7 +58,7 @@ module memory_io_axi3_bridge (
     output logic        m_axi_arvalid,
     input  logic        m_axi_arready,
     input  logic [5:0]  m_axi_rid,
-    input  logic [31:0] m_axi_rdata,
+    input  logic [63:0] m_axi_rdata,
     input  logic [1:0]  m_axi_rresp,
     input  logic        m_axi_rvalid,
     input  logic        m_axi_rlast,
@@ -64,12 +68,18 @@ module memory_io_axi3_bridge (
     state_t state;
     logic [31:0] addr_r;
     logic [3:0] len_r;
+    logic        write_have_lower;
+    logic        write_flush_lower;
+    logic [31:0] write_lower_data;
+    logic [3:0]  write_lower_strb;
 
     assign cmd_ready = state == IDLE;
     assign m_axi_awid = 6'd0;
-    assign m_axi_awaddr = addr_r;
-    assign m_axi_awlen = len_r;
-    assign m_axi_awsize = 3'd2;
+    assign m_axi_awaddr = {addr_r[31:3], 3'b000};
+    // The producer counts 32-bit words while HP0 consumes native 64-bit
+    // beats. Include an initial upper-word offset, then round up by two.
+    assign m_axi_awlen = ({1'b0, len_r} + addr_r[2]) >> 1;
+    assign m_axi_awsize = 3'd3;
     assign m_axi_awburst = 2'b01;
     assign m_axi_awlock = 2'b00;
     assign m_axi_awcache = 4'b0011;
@@ -77,16 +87,23 @@ module memory_io_axi3_bridge (
     assign m_axi_awqos = 4'd0;
     assign m_axi_awvalid = state == WRITE_ADDR;
     assign m_axi_wid = 6'd0;
-    assign m_axi_wdata = write_data;
-    assign m_axi_wstrb = write_strb;
-    assign m_axi_wlast = write_last;
-    assign m_axi_wvalid = state == WRITE_DATA && write_valid;
-    assign write_ready = state == WRITE_DATA && m_axi_wready;
+    // Pair logical words into native HP0 beats. A final unpaired lower word
+    // is flushed with its upper strobes clear. For a +4 start, the seeded
+    // empty lower half causes the first producer word to occupy upper lanes.
+    assign m_axi_wdata = write_flush_lower ? {32'd0, write_lower_data} :
+                         {write_data, write_lower_data};
+    assign m_axi_wstrb = write_flush_lower ? {4'd0, write_lower_strb} :
+                         {write_strb, write_lower_strb};
+    assign m_axi_wlast = write_flush_lower || (write_valid && write_last);
+    assign m_axi_wvalid = state == WRITE_DATA &&
+                         (write_flush_lower || (write_have_lower && write_valid));
+    assign write_ready = state == WRITE_DATA && !write_flush_lower &&
+                         (!write_have_lower || m_axi_wready);
     assign m_axi_bready = state == WRITE_RESP;
     assign m_axi_arid = 6'd0;
     assign m_axi_araddr = addr_r;
     assign m_axi_arlen = len_r;
-    assign m_axi_arsize = 3'd2;
+    assign m_axi_arsize = 3'd3;
     assign m_axi_arburst = 2'b01;
     assign m_axi_arlock = 2'b00;
     assign m_axi_arcache = 4'b0011;
@@ -103,17 +120,51 @@ module memory_io_axi3_bridge (
             state <= IDLE;
             addr_r <= 32'd0;
             len_r <= 4'd0;
+            write_have_lower <= 1'b0;
+            write_flush_lower <= 1'b0;
+            write_lower_data <= 32'd0;
+            write_lower_strb <= 4'd0;
             error <= 1'b0;
+            debug_arlen <= 4'd0;
+            debug_arsize <= 3'd0;
+            debug_rbeats <= 5'd0;
+            debug_rresp <= 2'd0;
         end else begin
             if (cmd_valid && cmd_ready) begin
                 addr_r <= cmd_addr;
                 len_r <= cmd_len;
+                write_have_lower <= cmd_write && cmd_addr[2];
+                write_flush_lower <= 1'b0;
+                write_lower_data <= 32'd0;
+                write_lower_strb <= 4'd0;
                 state <= cmd_write ? WRITE_ADDR : READ_ADDR;
+                if (!cmd_write) begin
+                    debug_arlen <= cmd_len;
+                    debug_arsize <= 3'd3;
+                    debug_rbeats <= 5'd0;
+                    debug_rresp <= 2'd0;
+                end
             end
             unique case (state)
                 IDLE: begin end
                 WRITE_ADDR: if (m_axi_awready) state <= WRITE_DATA;
-                WRITE_DATA: if (write_valid && m_axi_wready && write_last) state <= WRITE_RESP;
+                WRITE_DATA: begin
+                    if (write_flush_lower && m_axi_wready) begin
+                        write_flush_lower <= 1'b0;
+                        write_have_lower <= 1'b0;
+                        state <= WRITE_RESP;
+                    end else if (write_valid && write_ready) begin
+                        if (!write_have_lower) begin
+                            write_lower_data <= write_data;
+                            write_lower_strb <= write_strb;
+                            write_have_lower <= 1'b1;
+                            if (write_last) write_flush_lower <= 1'b1;
+                        end else begin
+                            write_have_lower <= 1'b0;
+                            if (write_last) state <= WRITE_RESP;
+                        end
+                    end
+                end
                 WRITE_RESP: if (m_axi_bvalid) begin
                     error <= error || m_axi_bresp != 2'b00 || m_axi_bid != 6'd0;
                     state <= IDLE;
@@ -121,6 +172,8 @@ module memory_io_axi3_bridge (
                 READ_ADDR: if (m_axi_arready) state <= READ_DATA;
                 READ_DATA: if (m_axi_rvalid && read_ready) begin
                     error <= error || m_axi_rresp != 2'b00 || m_axi_rid != 6'd0;
+                    debug_rbeats <= debug_rbeats + 1'b1;
+                    debug_rresp <= m_axi_rresp;
                     if (m_axi_rlast) state <= IDLE;
                 end
                 default: state <= IDLE;

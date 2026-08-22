@@ -11,6 +11,8 @@ set final_rtl_files [list \
     [file join $hw_dir "rtl" "memory_io_driver.sv"] \
     [file join $hw_dir "rtl" "tile_loader_ddr.sv"] \
     [file join $hw_dir "rtl" "tile_writer_ddr.sv"] \
+    [file join $hw_dir "rtl" "lut_mul32x16_pipeline.sv"] \
+    [file join $hw_dir "rtl" "conv2d_activation_address_gen.sv"] \
     [file join $hw_dir "rtl" "conv2d_tile_loader_ddr.sv"] \
     [file join $hw_dir "rtl" "conv2d_tile_writer_ddr.sv"] \
     [file join $hw_dir "rtl" "conv_bias_preload_ddr.sv"] \

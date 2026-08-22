@@ -336,10 +336,13 @@ cat /sys/class/fpga_manager/fpga0/state
 sudo systemctl restart budgetcuda.service
 ```
 
-The state must read `operating`. Confirm the live FCLK0 divisor before loading
-the image. For 90.91 MHz the register must be `0x00100b00` (divisors 1 and 11),
-not `0x00200b00`, which is only 45.45 MHz. `tests/hardware/pynq_fclk0.py` and the helper in
-`budgetcuda/pynq.py` implement the validated divider programming sequence.
+The state must read `operating`. The production image built on 2026-08-19 is
+signed off and deployed at 100 MHz; `budgetcuda-fpga.service` therefore sets
+`BCUDA_FCLK_MHZ=100` by default. Confirm the live FCLK0 divisor after loading
+the image. For the older 90.91 MHz fallback the register must be `0x00100b00`
+(divisors 1 and 11), not `0x00200b00`, which is only 45.45 MHz.
+`tests/hardware/pynq_fclk0.py` and the helper in `budgetcuda/pynq.py` implement
+the validated divider programming sequence.
 
 Do not add a large CMA override to `/boot/uEnv.txt` on the current image. A
 tested `cma=288M` override prevented normal boot. The board was recovered over
@@ -1066,6 +1069,24 @@ final words. Required invariants are:
 - use valid strobes for partial writes; and
 - do not free or reuse a buffer while PL is busy.
 
+The active HP0 data interface is 64 bits wide. A read-cache fill transfers one
+64-byte line as eight 64-bit AXI3 beats. The memory driver can return scalar
+bytes, legacy 32-bit words, or native 64-bit qwords; the Conv2D TileLoader uses
+the qword stream and can therefore inject eight INT8 A or B values per clock.
+The accelerator still presents logical 32-bit writes, but the bridge packs
+consecutive words into native 64-bit AXI beats. `AWADDR` is aligned down to an
+eight-byte boundary, `AWLEN` is recomputed in native beats, and byte strobes
+mask an unpaired first or final word. This is required on the deployed HP0
+path; alternating 32-bit narrow beats left every upper word unwritten in board
+tests. Do not silently restore the PS HP0 width to 32 bits: the bridge, driver,
+IP wrappers, and block-design configuration are one interface contract.
+
+The read cache contains 16 lines and is invalidated at every accelerator
+dispatch because PS software may update DDR without traversing the PL writer.
+PL writes selectively invalidate overlapping lines. A 64-byte logical-read
+stress trace delivered 1,024 bytes in 233 clocks, or 4.39 bytes/clock
+(approximately 439 MB/s at 100 MHz) with the idealized memory model.
+
 BRAM-backed tile and accumulator storage decouples DDR latency from the
 compute wave. A synchronous BRAM read is treated as a registered operation; the
 consumer must align address, enable, data, and valid through the declared
@@ -1128,6 +1149,15 @@ GEMM K = input channels/groups * kernel height * kernel width
 `conv2d_tile_loader_ddr.sv` computes the source NCHW coordinate for each logical
 im2col element. Padding positions inject zero; valid positions issue DDR reads.
 This avoids allocating and writing a complete unfolded activation matrix.
+
+The active loader has a deterministic eight-lane output. Contiguous lookahead
+descriptors sharing a row and 64-byte cache line are coalesced before issue,
+and up to four requests may be outstanding in the loader response queue. The
+memory driver guarantees that a qword response contains the next
+`min(bytes_remaining, 8)` contiguous lanes; `keep` masks only the partial final
+beat. The core maps those lanes into eight independent wave-BRAM banks and
+registers both the lane-to-bank decode and the final PE-boundary wavefront.
+These registers add startup latency but preserve one accepted qword per clock.
 
 Constant INT8 Conv weights are presliced by the host importer before upload.
 The physical layout is:

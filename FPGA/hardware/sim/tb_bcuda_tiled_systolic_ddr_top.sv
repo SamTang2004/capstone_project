@@ -2,7 +2,7 @@ module tb_bcuda_tiled_systolic_ddr_top;
     localparam string A_PATH = "C:/python_projects/capstone_project/FPGA/tests/hardware/golden_traces/gemm_16x16_A.hex";
     localparam string B_PATH = "C:/python_projects/capstone_project/FPGA/tests/hardware/golden_traces/gemm_16x16_B.hex";
     localparam string C_PATH = "C:/python_projects/capstone_project/FPGA/tests/hardware/golden_traces/gemm_16x16_C.hex";
-    localparam int MEM_BYTES = 4096;
+    localparam int MEM_BYTES = 65536;
     localparam int A_BASE = 32;
     localparam int B_BASE = 1024;
     localparam int C_BASE = 2048;
@@ -20,6 +20,10 @@ module tb_bcuda_tiled_systolic_ddr_top;
     localparam int TENSOR1_BASE = 3264;
     localparam int TENSOR2_BASE = 3328;
     localparam int TENSOR_OUT_BASE = 3456;
+    localparam int LARGE_CONV_A_BASE = 8192;
+    localparam int LARGE_CONV_B_BASE = 24576;
+    localparam int LARGE_CONV_BIAS_BASE = 26000;
+    localparam int LARGE_CONV_C_BASE = 32768;
 
     logic clk = 1'b0;
     logic rst_n = 1'b0;
@@ -54,7 +58,7 @@ module tb_bcuda_tiled_systolic_ddr_top;
     logic mem_write_last;
     logic mem_read_valid;
     logic mem_read_ready;
-    logic [31:0] mem_read_data;
+    logic [63:0] mem_read_data;
     logic mem_read_last;
 
     logic [7:0] ddr [0:MEM_BYTES-1];
@@ -76,6 +80,7 @@ module tb_bcuda_tiled_systolic_ddr_top;
     integer command_dispatch_cycle;
     integer writer_request_cycle;
     integer writer_launch_cycle;
+    integer debug_loader_accepts, debug_response_enqueues, debug_response_pops, debug_qword_handshakes;
 
     always #5 clk = ~clk;
 
@@ -119,12 +124,23 @@ module tb_bcuda_tiled_systolic_ddr_top;
         .mem_read_valid(mem_read_valid),
         .mem_read_ready(mem_read_ready),
         .mem_read_data(mem_read_data),
-        .mem_read_last(mem_read_last)
+        .mem_read_last(mem_read_last),
+        .mem_debug_arlen(4'd7),
+        .mem_debug_arsize(3'd3),
+        .mem_debug_rbeats(5'd8),
+        .mem_debug_rresp(2'd0)
     );
 
     function automatic logic [31:0] load_word_le(input logic [31:0] addr);
         begin
             load_word_le = {ddr[addr + 3], ddr[addr + 2], ddr[addr + 1], ddr[addr]};
+        end
+    endfunction
+
+    function automatic logic [63:0] load_qword_le(input logic [31:0] addr);
+        begin
+            load_qword_le = {ddr[addr + 7], ddr[addr + 6], ddr[addr + 5], ddr[addr + 4],
+                             ddr[addr + 3], ddr[addr + 2], ddr[addr + 1], ddr[addr]};
         end
     endfunction
 
@@ -179,7 +195,16 @@ module tb_bcuda_tiled_systolic_ddr_top;
             command_dispatch_cycle <= -1;
             writer_request_cycle <= -1;
             writer_launch_cycle <= -1;
+            debug_loader_accepts <= 0;
+            debug_response_enqueues <= 0;
+            debug_response_pops <= 0;
+            debug_qword_handshakes <= 0;
         end else begin
+            if (dut.loader.jit_request_accept) debug_loader_accepts <= debug_loader_accepts + 1;
+            if (dut.loader.jit_response_enqueue) debug_response_enqueues <= debug_response_enqueues + 1;
+            if (dut.loader.jit_response_pop) debug_response_pops <= debug_response_pops + 1;
+            if (dut.memio_read_qword_valid && dut.memio_read_qword_ready)
+                debug_qword_handshakes <= debug_qword_handshakes + 1;
             if (dut.start_pulse) command_request_cycle <= 0;
             else if (command_request_cycle >= 0) command_request_cycle <= command_request_cycle + 1;
             if (dut.dispatch_pulse) begin
@@ -223,11 +248,11 @@ module tb_bcuda_tiled_systolic_ddr_top;
             mem_cmd_ready <= ddr_phase != 2'd0;
             mem_write_ready <= ddr_phase[0];
             mem_read_valid <= pending_read;
-            mem_read_data <= load_word_le(pending_read_addr);
+            mem_read_data <= load_qword_le(pending_read_addr);
             mem_read_last <= pending_read && pending_read_remaining == 1;
             if (pending_read && mem_read_ready) begin
                 if (pending_read_remaining == 1) pending_read <= 1'b0;
-                else begin pending_read_addr <= pending_read_addr + 4; pending_read_remaining <= pending_read_remaining - 1'b1; end
+                else begin pending_read_addr <= pending_read_addr + 8; pending_read_remaining <= pending_read_remaining - 1'b1; end
             end
 
             if (mem_cmd_valid && mem_cmd_ready) begin
@@ -239,7 +264,7 @@ module tb_bcuda_tiled_systolic_ddr_top;
                     end
                     pending_write_addr <= mem_cmd_addr;
                 end else begin
-                    if (mem_cmd_addr[1:0] != 2'b00) begin
+                    if (mem_cmd_addr[2:0] != 3'b000) begin
                         $error("Tiled DDR GEMM top emitted unaligned read command addr=0x%08h", mem_cmd_addr);
                         errors++;
                     end
@@ -430,9 +455,6 @@ module tb_bcuda_tiled_systolic_ddr_top;
             $error("Biased PL Conv2D result mismatch status=0x%08h got=[%0d,%0d,%0d,%0d]", status,
                    $signed(load_word_le(CONV_C_BASE)), $signed(load_word_le(CONV_C_BASE + 4)),
                    $signed(load_word_le(CONV_C_BASE + 8)), $signed(load_word_le(CONV_C_BASE + 12)));
-            $display("Accumulator entries after Conv: %0d %0d %0d %0d", $signed(dut.accumulator_banks[0].accumulator.mem[0]),
-                     $signed(dut.accumulator_banks[0].accumulator.mem[16]), $signed(dut.accumulator_banks[0].accumulator.mem[32]),
-                     $signed(dut.accumulator_banks[0].accumulator.mem[48]));
             $display("Bias preload geometry rows=%0d cols=%0d", dut.bias_preloader.rows_r, dut.bias_preloader.cols_r);
             errors++;
         end
@@ -540,6 +562,37 @@ module tb_bcuda_tiled_systolic_ddr_top;
             $signed(ddr[TENSOR_OUT_BASE + 2]) != 3 || $signed(ddr[TENSOR_OUT_BASE + 3]) != 4 || $signed(ddr[TENSOR_OUT_BASE + 4]) != 5 || $signed(ddr[TENSOR_OUT_BASE + 5]) != 6) begin
             $error("PL concat mismatch status=0x%08h", status); errors++;
         end
+
+        // Mirror the production classifier's first Conv activation tile. This
+        // forces the lookahead loader and memory-driver request/response FIFOs
+        // through sustained pressure instead of the tiny 2x4 smoke geometry.
+        for (int idx = 0; idx < 3*64*64; idx++)
+            ddr[LARGE_CONV_A_BASE + idx] = (idx % 251) + 1;
+        for (int idx = 0; idx < 512; idx++) ddr[LARGE_CONV_B_BASE + idx] = 0;
+        for (int idx = 0; idx < 48; idx++) ddr[LARGE_CONV_BIAS_BASE + idx] = 0;
+        axi_write(6'h00, 0); axi_write(6'h08, LARGE_CONV_A_BASE); axi_write(6'h0C, LARGE_CONV_B_BASE);
+        axi_write(6'h10, LARGE_CONV_C_BASE); axi_write(6'h14, 3); axi_write(6'h18, 64); axi_write(6'h1C, 64);
+        axi_write(6'h20, 12); axi_write(6'h24, 64); axi_write(6'h28, 64); axi_write(6'h2C, 3); axi_write(6'h30, 3);
+        axi_write(6'h34, 32'h00000101); axi_write(6'h38, 32'h00000101); axi_write(6'h3C, LARGE_CONV_BIAS_BASE);
+        axi_write(6'h00, 32'h405);
+        wait (dut.op_state == 4'd2);
+        repeat (10000) begin
+            @(posedge clk);
+            if (dut.op_state != 4'd2) break;
+        end
+        if (dut.op_state == 4'd2) begin
+            $error("Large first-Conv activation load deadlocked: loader=%0d fifo=%0d responses=%0d backend=%0d memio_busy=%0b req_count=%0d lookup=%0b result=%0b prepared=%0b prefetch=%0b filled=%0b fill=%0b pending=%0b deliver=%0b data_valid=%0b owner=%0b outstanding=%0d accepts=%0d enqueues=%0d pops=%0d qwords=%0d",
+                   dut.loader.state, dut.loader.jit_fifo_count, dut.loader.jit_response_count,
+                   dut.loader.jit_backend_state, dut.memio_busy, dut.memio.request_count,
+                   dut.memio.lookup_pending, dut.memio.lookup_result_pending, dut.memio.prepared_valid,
+                   dut.memio.prefetch_valid, dut.memio.prefetch_filled, dut.memio.fill_active,
+                   dut.memio.read_pending, dut.memio.deliver_active, dut.memio.read_data_valid_r,
+                   dut.read_owner_valid, dut.read_owner_outstanding, debug_loader_accepts,
+                   debug_response_enqueues, debug_response_pops, debug_qword_handshakes);
+            errors++;
+        end
+        rst_n = 1'b0;
+        repeat (3) @(posedge clk);
 
         if (errors != 0) begin
             $fatal(1, "Tiled DDR GEMM top golden trace failed with %0d errors", errors);

@@ -9,7 +9,10 @@ module avgpool_ddr (
     input logic [7:0] pad_h, input logic [7:0] pad_w,
     output logic busy, output logic done, output logic error,
     output logic read_req_valid, input logic read_req_ready, output logic [31:0] read_req_addr,
-    input logic read_data_valid, output logic read_data_ready, input logic [7:0] read_data,
+    output logic [4:0] read_req_len,
+    input logic read_word_valid, output logic read_word_ready,
+    input logic [31:0] read_word_data, input logic [3:0] read_word_keep,
+    input logic read_word_last,
     output logic write_req_valid, input logic write_req_ready, output logic [31:0] write_req_addr,
     output logic [31:0] write_req_data, output logic [3:0] write_req_strb
 );
@@ -40,6 +43,9 @@ module avgpool_ddr (
     logic signed [31:0] sample_y, sample_x;
     logic sample_valid;
     logic last_output;
+    logic [2:0] read_run_len_r;
+    wire [2:0] response_bytes = read_word_keep[0] + read_word_keep[1] +
+                                read_word_keep[2] + read_word_keep[3];
 
     always_comb begin
         last_output = ni + 1 >= n_r && ci + 1 >= c_r && oy + 1 >= oh_r && ox + 1 >= ow_r;
@@ -48,9 +54,8 @@ module avgpool_ddr (
     assign busy = state != IDLE && state != FINISH && state != FAIL;
     assign read_req_valid = state == READ_REQ;
     assign read_req_addr = sample_addr_r;
-    // A response is consumed only after its request has been accepted.  This
-    // prevents a registered memory port's previous valid pulse being reused.
-    assign read_data_ready = state == READ_WAIT;
+    assign read_req_len = {2'd0, read_run_len_r};
+    assign read_word_ready = state == READ_WAIT;
     assign write_req_valid = state == WRITE;
     assign write_req_addr = write_addr_r;
     assign write_req_data = packed_r;
@@ -92,7 +97,7 @@ module avgpool_ddr (
             addr_chunk0_r <= 0; addr_chunk1_r <= 0; addr_pair_low_r <= 0; addr_pair_high_r <= 0;
             coord_y_product_r <= 0; coord_x_product_r <= 0; sample_y <= 0; sample_x <= 0; sample_valid <= 0;
             n_r <= 0; c_r <= 0; ih_r <= 0; iw_r <= 0; oh_r <= 0; ow_r <= 0; kh_r <= 0; kw_r <= 0; sh_r <= 0; sw_r <= 0; ph_r <= 0; pw_r <= 0;
-            ni <= 0; ci <= 0; oy <= 0; ox <= 0; ky <= 0; kx <= 0; sum_r <= 0; count_r <= 0; dividend_r <= 0; divisor_r <= 0; quotient_r <= 0; negative_r <= 0;
+            ni <= 0; ci <= 0; oy <= 0; ox <= 0; ky <= 0; kx <= 0; sum_r <= 0; count_r <= 0; dividend_r <= 0; divisor_r <= 0; quotient_r <= 0; negative_r <= 0; read_run_len_r <= 0;
         end else begin
             done <= 0;
             case (state)
@@ -163,14 +168,42 @@ module avgpool_ddr (
                 end
                 ADDR_BASE: begin
                     sample_addr_r <= in_r + addr_linear_r;
+                    if (kw_r - kx >= 4 && iw_r - sample_x >= 4) read_run_len_r <= 3'd4;
+                    else if (kw_r - kx < iw_r - sample_x) read_run_len_r <= kw_r - kx;
+                    else read_run_len_r <= iw_r - sample_x;
                     state <= READ_REQ;
                 end
                 READ_REQ: if (read_req_ready) state <= READ_WAIT;
-                READ_WAIT: if (read_data_valid) begin
-                    // Keep the DDR byte's sign extension explicit at the
-                    // accumulator boundary.
-                    final_sum = sum_r + $signed({{24{read_data[7]}}, read_data}); final_count = count_r + 1'b1; sum_r <= final_sum; count_r <= final_count;
-                    if (ky + 1 >= kh_r && kx + 1 >= kw_r) state <= DIV_INIT; else advance_window();
+                READ_WAIT: if (read_word_valid) begin
+                    if (response_bytes != read_run_len_r ||
+                        read_word_keep != ((5'd1 << read_run_len_r) - 1'b1) ||
+                        !read_word_last) begin
+                        error <= 1'b1;
+                        state <= FAIL;
+                    end else begin
+                        final_sum = sum_r;
+                        for (int lane = 0; lane < 4; lane++) begin
+                            if (lane < read_run_len_r)
+                                final_sum = final_sum +
+                                    $signed({{24{read_word_data[lane*8+7]}}, read_word_data[lane*8 +: 8]});
+                        end
+                        final_count = count_r + read_run_len_r;
+                        sum_r <= final_sum;
+                        count_r <= final_count;
+                        if (kx + read_run_len_r >= kw_r) begin
+                            kx <= 0;
+                            if (ky + 1 >= kh_r) begin
+                                ky <= 0;
+                                state <= DIV_INIT;
+                            end else begin
+                                ky <= ky + 1'b1;
+                                state <= WINDOW;
+                            end
+                        end else begin
+                            kx <= kx + read_run_len_r;
+                            state <= WINDOW;
+                        end
+                    end
                 end
                 DIV_INIT: begin
                     // The final read enters this state directly, so reset the

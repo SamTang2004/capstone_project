@@ -2,7 +2,11 @@ set script_dir [file dirname [file normalize [info script]]]
 set hw_dir [file normalize [file join $script_dir ".."]]
 source [file join $script_dir "final_bitstream_sources.tcl"]
 
-set sim_work [file join $hw_dir "xsim_final_top"]
+if {[info exists ::env(BCUDA_XSIM_WORK)]} {
+    set sim_work [file normalize $::env(BCUDA_XSIM_WORK)]
+} else {
+    set sim_work [file join $hw_dir "xsim_final_top"]
+}
 file mkdir $sim_work
 cd $sim_work
 
@@ -28,7 +32,7 @@ puts $compile_output
 
 set sim_name "${final_sim_top}_sim"
 puts "===== Elaborating $final_sim_top ====="
-if {[catch {exec $xelab $final_sim_top "-s" $sim_name} elab_output elab_options]} {
+if {[catch {exec $xelab $final_sim_top "-L" xpm "--timescale" 1ns/1ps "-s" $sim_name} elab_output elab_options]} {
     puts $elab_output
     error "xelab failed for $final_sim_top: $elab_options"
 }

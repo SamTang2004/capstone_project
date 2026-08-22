@@ -9,6 +9,13 @@ module tb_gemm_16x16_core;
     logic load_matrix;
     logic [7:0] load_addr;
     logic [7:0] load_data;
+    logic load_word_valid;
+    logic [7:0] load_word_addr;
+    logic [7:0] load_word_stride;
+    logic [63:0] load_word_data;
+    logic [7:0] load_word_keep;
+    logic invalidate_valid;
+    logic invalidate_matrix;
     logic start;
     logic busy;
     logic done;
@@ -31,6 +38,13 @@ module tb_gemm_16x16_core;
         .load_matrix(load_matrix),
         .load_addr(load_addr),
         .load_data(load_data),
+        .load_word_valid(load_word_valid),
+        .load_word_addr(load_word_addr),
+        .load_word_stride(load_word_stride),
+        .load_word_data(load_word_data),
+        .load_word_keep(load_word_keep),
+        .invalidate_valid(invalidate_valid),
+        .invalidate_matrix(invalidate_matrix),
         .start(start),
         .busy(busy),
         .done(done),
@@ -41,14 +55,30 @@ module tb_gemm_16x16_core;
     task automatic load_matrix_bytes(input logic matrix_select);
         begin
             load_matrix = matrix_select;
-            for (i = 0; i < 256; i = i + 1) begin
-                load_addr = i[7:0];
-                load_data = matrix_select ? b_mem[i] : a_mem[i];
-                load_valid = 1'b1;
-                @(posedge clk);
-                #1;
+            if (!matrix_select) begin
+                load_word_stride = 1;
+                for (i = 0; i < 256; i = i + 8) begin
+                    load_word_addr = i[7:0];
+                    for (int lane = 0; lane < 8; lane++)
+                        load_word_data[lane*8 +: 8] = a_mem[i + lane];
+                    load_word_valid = 1'b1;
+                    @(posedge clk);
+                    #1;
+                end
+            end else begin
+                load_word_stride = 16;
+                for (int col = 0; col < 16; col++) begin
+                    for (int row = 0; row < 16; row += 8) begin
+                        load_word_addr = row * 16 + col;
+                        for (int lane = 0; lane < 8; lane++)
+                            load_word_data[lane*8 +: 8] = b_mem[(row + lane) * 16 + col];
+                        load_word_valid = 1'b1;
+                        @(posedge clk);
+                        #1;
+                    end
+                end
             end
-            load_valid = 1'b0;
+            load_word_valid = 1'b0;
         end
     endtask
 
@@ -62,6 +92,13 @@ module tb_gemm_16x16_core;
         load_matrix = 0;
         load_addr = 0;
         load_data = 0;
+        load_word_valid = 0;
+        load_word_addr = 0;
+        load_word_stride = 1;
+        load_word_data = 0;
+        load_word_keep = 8'hff;
+        invalidate_valid = 0;
+        invalidate_matrix = 0;
         start = 0;
         result_addr = 0;
 
@@ -93,7 +130,44 @@ module tb_gemm_16x16_core;
             $fatal(1, "GEMM core golden trace failed with %0d errors", errors);
         end
 
-        $display("GEMM core golden trace passed: 256 outputs");
+        // Preserve the old BRAM payload, invalidate it in one cycle, and load
+        // a 1x1 logical tile. Every stale lane must be masked at compute time.
+        @(negedge clk);
+        invalidate_valid = 1'b1;
+        invalidate_matrix = 1'b0;
+        @(negedge clk);
+        invalidate_matrix = 1'b1;
+        @(negedge clk);
+        invalidate_valid = 1'b0;
+        invalidate_matrix = 1'b0;
+        load_valid = 1'b1;
+        load_matrix = 1'b0;
+        load_addr = 0;
+        load_data = 8'd3;
+        @(negedge clk);
+        load_matrix = 1'b1;
+        load_data = 8'd4;
+        @(negedge clk);
+        load_valid = 1'b0;
+        start = 1'b1;
+        @(posedge clk);
+        #1;
+        start = 1'b0;
+        wait (done == 1'b1);
+        @(posedge clk);
+        for (i = 0; i < 256; i = i + 1) begin
+            result_addr = i[7:0];
+            #1;
+            if (result_data !== (i == 0 ? 32'd12 : 32'd0)) begin
+                $error("valid-mask mismatch index %0d: expected %0d got %0d",
+                       i, i == 0 ? 12 : 0, $signed(result_data));
+                errors = errors + 1;
+            end
+        end
+        if (errors != 0)
+            $fatal(1, "GEMM valid-mask trace failed with %0d errors", errors);
+
+        $display("GEMM core golden trace passed: full tile and stale-memory 1x1 edge tile");
         $finish;
     end
 endmodule

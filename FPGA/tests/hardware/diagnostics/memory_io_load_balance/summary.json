@@ -1,0 +1,45 @@
+{
+  "baseline": {
+    "cycles": 5393,
+    "requests": 1024,
+    "read_payload_beats": 256,
+    "output_bytes": 1024,
+    "read_bus_utilization_percent": 4.746894122010013,
+    "output_stream_utilization_percent": 18.98757648804005,
+    "request_accept_utilization_percent": 18.98757648804005,
+    "busy_percent": 80.99388095679585
+  },
+  "queued_lookup": {
+    "cycles": 4372,
+    "requests": 1024,
+    "read_payload_beats": 256,
+    "output_bytes": 1024,
+    "read_bus_utilization_percent": 5.85544373284538,
+    "output_stream_utilization_percent": 23.42177493138152,
+    "request_accept_utilization_percent": 23.42177493138152,
+    "busy_percent": 99.95425434583714
+  },
+  "vector16": {
+    "cycles": 1366,
+    "requests": 64,
+    "read_payload_beats": 256,
+    "output_bytes": 1024,
+    "read_bus_utilization_percent": 18.740849194729137,
+    "output_stream_utilization_percent": 74.96339677891655,
+    "request_accept_utilization_percent": 4.685212298682284,
+    "busy_percent": 99.85358711566617
+  },
+  "wide32": {
+    "cycles": 598,
+    "requests": 64,
+    "read_payload_beats": 256,
+    "output_bytes": 1024,
+    "read_bus_utilization_percent": 42.80936454849498,
+    "output_stream_utilization_percent": 42.80936454849498,
+    "request_accept_utilization_percent": 10.702341137123746,
+    "busy_percent": 99.66555183946488
+  },
+  "cycle_reduction_percent": 18.931948822547746,
+  "vector_cycle_reduction_vs_scalar_percent": 68.75571820677035,
+  "wide_cycle_reduction_vs_vector_percent": 56.22254758418741
+}

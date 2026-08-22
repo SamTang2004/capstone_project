@@ -1,7 +1,7 @@
 module tb_ps_pl_mmio_control;
     logic clk = 1'b0;
     logic rst_n = 1'b0;
-    logic [5:0] awaddr;
+    logic [7:0] awaddr;
     logic awvalid;
     logic awready;
     logic [31:0] wdata;
@@ -11,7 +11,7 @@ module tb_ps_pl_mmio_control;
     logic [1:0] bresp;
     logic bvalid;
     logic bready;
-    logic [5:0] araddr;
+    logic [7:0] araddr;
     logic arvalid;
     logic arready;
     logic [31:0] rdata;
@@ -45,6 +45,7 @@ module tb_ps_pl_mmio_control;
         .s_axi_rvalid(rvalid),
         .s_axi_rready(rready),
         .status_word(status_word),
+        .perf_regs_flat('0),
         .ctrl_word(ctrl_word)
     );
 
@@ -76,14 +77,12 @@ module tb_ps_pl_mmio_control;
             araddr = addr;
             arvalid = 1'b1;
             rready = 1'b1;
-            @(posedge clk);
-            while (!rvalid) @(posedge clk);
+            while (!rvalid) @(negedge clk);
             data = rdata;
             if (rresp != 2'b00) begin
                 $error("AXI-lite read response error at addr=0x%02h", addr);
                 errors++;
             end
-            @(negedge clk);
             arvalid = 1'b0;
             rready = 1'b0;
         end

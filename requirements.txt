@@ -1,6 +1,7 @@
 # Validated host, ONNX import, demo, and test dependencies.
 # Install PyTorch and torchvision separately so their builds match host CUDA.
 numpy==2.4.4
+matplotlib==3.11.1
 onnx==1.22.0
 onnxruntime==1.27.0
 onnxscript==0.7.1

@@ -6,6 +6,7 @@ Before=budgetcuda.service
 
 [Service]
 Type=oneshot
+Environment=BCUDA_FCLK_MHZ=100
 ExecStart=/usr/local/sbin/budgetcuda-fpga-setup
 RemainAfterExit=yes
 

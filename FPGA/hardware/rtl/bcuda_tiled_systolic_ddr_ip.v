@@ -8,7 +8,9 @@ module bcuda_tiled_systolic_ddr_ip (
     output wire mem_cmd_valid, input wire mem_cmd_ready, output wire mem_cmd_write, output wire [31:0] mem_cmd_addr, output wire [3:0] mem_cmd_len,
     output wire [31:0] mem_cmd_wdata, output wire [3:0] mem_cmd_wstrb, output wire mem_write_valid, input wire mem_write_ready,
     output wire [31:0] mem_write_data, output wire [3:0] mem_write_strb, output wire mem_write_last,
-    input wire mem_read_valid, output wire mem_read_ready, input wire [31:0] mem_read_data, input wire mem_read_last
+    input wire mem_read_valid, output wire mem_read_ready, input wire [63:0] mem_read_data, input wire mem_read_last,
+    input wire [3:0] mem_debug_arlen, input wire [2:0] mem_debug_arsize,
+    input wire [4:0] mem_debug_rbeats, input wire [1:0] mem_debug_rresp
 );
     bcuda_tiled_systolic_ddr_top accelerator (
         .aclk(aclk), .aresetn(aresetn),
@@ -20,6 +22,8 @@ module bcuda_tiled_systolic_ddr_ip (
         .mem_cmd_valid(mem_cmd_valid), .mem_cmd_ready(mem_cmd_ready), .mem_cmd_write(mem_cmd_write), .mem_cmd_addr(mem_cmd_addr),
         .mem_cmd_len(mem_cmd_len), .mem_cmd_wdata(mem_cmd_wdata), .mem_cmd_wstrb(mem_cmd_wstrb),
         .mem_write_valid(mem_write_valid), .mem_write_ready(mem_write_ready), .mem_write_data(mem_write_data), .mem_write_strb(mem_write_strb), .mem_write_last(mem_write_last),
-        .mem_read_valid(mem_read_valid), .mem_read_ready(mem_read_ready), .mem_read_data(mem_read_data), .mem_read_last(mem_read_last)
+        .mem_read_valid(mem_read_valid), .mem_read_ready(mem_read_ready), .mem_read_data(mem_read_data), .mem_read_last(mem_read_last),
+        .mem_debug_arlen(mem_debug_arlen), .mem_debug_arsize(mem_debug_arsize),
+        .mem_debug_rbeats(mem_debug_rbeats), .mem_debug_rresp(mem_debug_rresp)
     );
 endmodule

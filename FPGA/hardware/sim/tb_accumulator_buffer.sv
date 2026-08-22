@@ -12,6 +12,7 @@ module tb_accumulator_buffer;
     logic [7:0] op_addr;
     logic signed [31:0] op_data;
     logic signed [31:0] op_result;
+    logic op_commit;
     logic read_req;
     logic [7:0] read_addr;
     logic read_valid;
@@ -30,6 +31,10 @@ module tb_accumulator_buffer;
         .op_addr(op_addr),
         .op_data(op_data),
         .op_result(op_result),
+        .op_commit(op_commit),
+        .seed_valid(1'b0),
+        .seed_addr(8'd0),
+        .seed_data(32'd0),
         .read_req(read_req),
         .read_addr(read_addr),
         .read_valid(read_valid),
@@ -72,7 +77,7 @@ module tb_accumulator_buffer;
             if (!op_ready) $fatal(1, "accumulator did not accept op %0d", i);
             @(negedge clk);
             op_valid = 1'b0;
-            wait (op_ready);
+            wait (op_commit);
             #1;
             if (op_result !== expected) $fatal(1, "accumulator op mismatch at %0d addr=%0d expected=%0d got=%0d", i, op_addr, expected, op_result);
             model[op_addr] = expected;

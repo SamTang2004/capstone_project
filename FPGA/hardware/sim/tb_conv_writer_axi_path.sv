@@ -14,7 +14,9 @@ module tb_conv_writer_axi_path;
     logic [31:0] mem_write_data;
     logic [3:0] mem_write_strb;
     logic mem_busy, mem_error;
-    logic [31:0] awaddr, wdata;
+    logic [31:0] awaddr;
+    logic [63:0] wdata;
+    logic [7:0] wstrb;
     logic [3:0] awlen;
     logic [2:0] awsize;
     logic [1:0] awburst, bresp = 0;
@@ -39,8 +41,15 @@ module tb_conv_writer_axi_path;
 
     memory_io_driver memio (
         .clk(clk), .rst_n(rst_n), .read_req_valid(1'b0), .read_req_ready(),
-        .read_req_addr(32'd0), .read_req_len(5'd1), .read_data_valid(),
+        .read_req_wide(1'b0),
+        .read_req_qword(1'b0),
+        .read_req_allow_ahead(1'b0),
+        .read_req_addr(32'd0), .read_req_len(7'd1), .read_data_valid(),
         .read_data_ready(1'b1), .read_data(), .read_data_last(),
+        .read_word_valid(), .read_word_ready(1'b0), .read_word_data(),
+        .read_word_keep(), .read_word_last(),
+        .read_qword_valid(), .read_qword_ready(1'b0), .read_qword_data(),
+        .read_qword_keep(), .read_qword_last(),
         .write_req_valid(write_req_valid), .write_req_ready(write_req_ready),
         .write_req_addr(write_req_addr), .write_req_data(write_req_data),
         .write_req_strb(4'hf), .write_req_last(write_req_last),
@@ -50,8 +59,9 @@ module tb_conv_writer_axi_path;
         .mem_cmd_wstrb(mem_cmd_wstrb), .mem_write_valid(mem_write_valid),
         .mem_write_ready(mem_write_ready), .mem_write_data(mem_write_data),
         .mem_write_strb(mem_write_strb), .mem_write_last(mem_write_last),
-        .mem_read_valid(1'b0), .mem_read_ready(), .mem_read_data(0),
-        .mem_read_last(1'b0), .busy(mem_busy), .error(mem_error)
+        .mem_read_valid(1'b0), .mem_read_ready(), .mem_read_data(64'd0),
+        .mem_read_last(1'b0), .busy(mem_busy), .error(mem_error),
+        .cache_invalidate(1'b0), .stats_reset(1'b0)
     );
 
     memory_io_axi3_bridge bridge (
@@ -67,13 +77,13 @@ module tb_conv_writer_axi_path;
         .m_axi_awsize(awsize), .m_axi_awburst(awburst), .m_axi_awlock(),
         .m_axi_awcache(), .m_axi_awprot(), .m_axi_awqos(),
         .m_axi_awvalid(awvalid), .m_axi_awready(awready),
-        .m_axi_wid(), .m_axi_wdata(wdata), .m_axi_wstrb(), .m_axi_wlast(wlast),
+        .m_axi_wid(), .m_axi_wdata(wdata), .m_axi_wstrb(wstrb), .m_axi_wlast(wlast),
         .m_axi_wvalid(wvalid), .m_axi_wready(wready), .m_axi_bresp(bresp),
         .m_axi_bid(6'd0), .m_axi_bvalid(bvalid), .m_axi_bready(bready),
         .m_axi_arid(), .m_axi_araddr(), .m_axi_arlen(), .m_axi_arsize(),
         .m_axi_arburst(), .m_axi_arlock(), .m_axi_arcache(),
         .m_axi_arprot(), .m_axi_arqos(), .m_axi_arvalid(),
-        .m_axi_arready(1'b0), .m_axi_rid(6'd0), .m_axi_rdata(32'd0),
+        .m_axi_arready(1'b0), .m_axi_rid(6'd0), .m_axi_rdata(64'd0),
         .m_axi_rresp(2'b00), .m_axi_rvalid(1'b0), .m_axi_rlast(1'b0),
         .m_axi_rready()
     );
@@ -97,7 +107,10 @@ module tb_conv_writer_axi_path;
             cycle_count <= cycle_count + 1;
             if (awvalid && awready) write_index <= 0;
             if (wvalid && wready) begin
-                memory[((awaddr - 32'h100) >> 2) + write_index] <= wdata;
+                if (wstrb[3:0] != 0)
+                    memory[((awaddr - 32'h100) >> 2) + write_index*2] <= wdata[31:0];
+                if (wstrb[7:4] != 0)
+                    memory[((awaddr - 32'h100) >> 2) + write_index*2+1] <= wdata[63:32];
                 if (wlast) bvalid <= 1'b1;
                 else write_index <= write_index + 1;
             end
@@ -114,8 +127,11 @@ module tb_conv_writer_axi_path;
         repeat (4) @(posedge clk); rst_n = 1;
         @(negedge clk); start = 1;
         @(negedge clk); start = 0;
-        wait(writer_done); wait(!mem_busy); repeat (3) @(posedge clk);
-        if (awlen != 3 || awsize != 2 || awburst != 1) errors++;
+        wait(writer_done);
+        if (cycle_count > 80)
+            $fatal(1, "Conv writer recurrence exceeded cycle budget: %0d", cycle_count);
+        wait(!mem_busy); repeat (3) @(posedge clk);
+        if (awlen != 1 || awsize != 3 || awburst != 1) errors++;
         if ($signed(memory[0]) != -4 || $signed(memory[1]) != -2 ||
             $signed(memory[2]) != 2 || $signed(memory[3]) != 4) begin
             $display("writer AXI values: %0d %0d %0d %0d",
@@ -125,7 +141,7 @@ module tb_conv_writer_axi_path;
         end
         if (writer_error || mem_error || errors)
             $fatal(1, "Conv writer-to-AXI path failed errors=%0d", errors);
-        $display("Conv writer-to-AXI golden trace passed with four ordered beats under backpressure");
+        $display("Conv writer-to-AXI golden trace passed with two native 64-bit beats in %0d cycles", cycle_count);
         $finish;
     end
 
