@@ -27,7 +27,7 @@ LAYER_DESC_STRUCT = struct.Struct("<IIIIIIIIIIIIIIIIIIIIIIII")
 MODEL_MAGIC = 0x444D4342
 MODEL_VERSION = 1
 DIAGNOSTICS_HEADER_STRUCT = struct.Struct("<IIIIIIIIQQ")
-DIAGNOSTICS_RECORD_STRUCT = struct.Struct("<IIIIQQQQQQQII16I")
+DIAGNOSTICS_RECORD_STRUCT = struct.Struct("<IIIIQQQQQQQII7QII")
 
 
 class MockBackend:
@@ -155,7 +155,7 @@ class MockBackend:
                 raise ValueError("Diagnostics flags and buffer must be provided together")
             diag = self._get_buffer(diagnostics_buffer)
             magic, version, flags, capacity, _, record_bytes, clock_hz, peak, _, _ = DIAGNOSTICS_HEADER_STRUCT.unpack_from(diag)
-            if magic != 0x47444342 or version != 2 or flags != diagnostics_flags or capacity < num_layers or record_bytes != DIAGNOSTICS_RECORD_STRUCT.size:
+            if magic != 0x47444342 or version != 3 or flags != diagnostics_flags or capacity < num_layers or record_bytes != DIAGNOSTICS_RECORD_STRUCT.size:
                 raise ValueError("Invalid diagnostics buffer")
         for idx in range(num_layers):
             layer = LAYER_DESC_STRUCT.unpack_from(raw_model, layer_offset + idx * LAYER_DESC_STRUCT.size)
@@ -202,7 +202,7 @@ class MockBackend:
                 cycles = elapsed * clock_hz // 1_000_000_000
                 throughput = operations * 1_000_000_000 // elapsed
                 utilization = min(1_000_000, operations * 1_000_000 // max(1, cycles * peak))
-                record = (idx, int(op_type), 0, 0, elapsed, cycles, input_bytes, output_bytes, weight_bytes, operations, throughput, utilization, 0, *([0] * 16))
+                record = (idx, int(op_type), 0, 0, elapsed, cycles, input_bytes, output_bytes, weight_bytes, operations, throughput, utilization, 0, *([0] * 9))
                 DIAGNOSTICS_RECORD_STRUCT.pack_into(diag, DIAGNOSTICS_HEADER_STRUCT.size + idx * DIAGNOSTICS_RECORD_STRUCT.size, *record)
         if diag is not None:
             header = list(DIAGNOSTICS_HEADER_STRUCT.unpack_from(diag))

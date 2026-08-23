@@ -13,6 +13,7 @@ from .deit import (
     build_deit_mlp_block_package,
 )
 from .compiler import GraphBuilder, ResidentBufferPool, compose_model_packages
+from .diagnostics import RunDiagnostics, summarize_cycle_report
 from .dtypes import BufferUsage, DType
 from .packing import (
     pack_transformer_activations_int8,
@@ -49,6 +50,7 @@ class DeiTInferenceResult:
     logits: tuple[int, ...]
     elapsed_seconds: float
     stage_seconds: tuple[tuple[str, float], ...]
+    diagnostics: RunDiagnostics | None = None
 
 
 class DeiTManifestRunner:
@@ -63,6 +65,8 @@ class DeiTManifestRunner:
         self._resident = ResidentBufferPool(device)
         self._full_package = None
         self._full_model = None
+        self._full_layer_names: tuple[str, ...] = ()
+        self._full_layer_stages: tuple[str, ...] = ()
         self._closed = False
         self._validate_manifest()
 
@@ -248,10 +252,27 @@ class DeiTManifestRunner:
             return self._load_streaming_encoder()
         if self._full_model is not None:
             return self
-        sequence = [self._patch_package(), self._token_embedding_package()]
+        named_sequence = [
+            ("patch_embedding", self._patch_package()),
+            ("token_embedding", self._token_embedding_package()),
+        ]
         for block_index in range(int(self.manifest["depth"])):
-            sequence.extend((self._attention_package(block_index), self._mlp_package(block_index)))
-        sequence.extend((self._final_norm_package(), self._head_package()))
+            named_sequence.extend((
+                (f"block_{block_index}.attention", self._attention_package(block_index)),
+                (f"block_{block_index}.mlp", self._mlp_package(block_index)),
+            ))
+        named_sequence.extend((
+            ("final_layernorm", self._final_norm_package()),
+            ("six_class_head", self._head_package()),
+        ))
+        sequence = [package for _, package in named_sequence]
+        self._full_layer_names = tuple(
+            f"{stage}.layer_{index}.{layer.op_type.name}"
+            for stage, package in named_sequence
+            for index, layer in enumerate(package.layers)
+        )
+        self._full_layer_stages = tuple(
+            stage for stage, package in named_sequence for _ in package.layers)
         self._full_package = compose_model_packages("deit_full_model", sequence)
         self._full_model = self.device.load_model(self._full_package)
         return self
@@ -354,7 +375,7 @@ class DeiTManifestRunner:
             perf_counter() - started, tuple(stage_times),
         )
 
-    def run_image(self, image) -> DeiTInferenceResult:
+    def run_image(self, image, *, diagnostics: bool = False) -> DeiTInferenceResult:
         """Preprocess a PIL image/path, execute patch embedding, then all blocks."""
         self.load()
         started = perf_counter()
@@ -385,7 +406,9 @@ class DeiTManifestRunner:
             quantized.tolist(), quantized.shape[0], quantized.shape[1])
         graph_started = perf_counter()
         try:
-            logits = _flat_int8(self._full_model.run(payload))
+            execution = self._full_model.run(payload, diagnostics=diagnostics or None)
+            report = execution.diagnostics if diagnostics else None
+            logits = _flat_int8(execution.output if diagnostics else execution)
         except Exception as exc:
             raise RuntimeError("Full resident DeiT graph failed") from exc
         graph_seconds = perf_counter() - graph_started
@@ -396,4 +419,10 @@ class DeiTManifestRunner:
             tuple(logits),
             perf_counter() - started,
             (("full_device_graph", graph_seconds),),
+            report,
         )
+
+    def cycle_report(self, diagnostics: RunDiagnostics) -> dict:
+        """Aggregate a diagnostic run using the fused model's stage metadata."""
+        return summarize_cycle_report(
+            diagnostics, self._full_layer_names, self._full_layer_stages)

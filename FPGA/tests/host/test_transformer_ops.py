@@ -7,6 +7,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from budgetcuda import Device, DiagnosticResult, DeiTConfig, build_deit_attention_block_package, build_deit_mlp_block_package
 from budgetcuda.compiler import GraphBuilder, HostBuffer, compose_model_packages, upload_model
 from budgetcuda.dtypes import BufferUsage, DType, Layout, OpType
+from budgetcuda.diagnostics import (
+    DIAGNOSTICS_HEADER_STRUCT,
+    DIAGNOSTICS_RECORD_STRUCT,
+    DiagnosticsSettings,
+    parse_diagnostics,
+)
 from budgetcuda.packing import (
     pack_transformer_activations_int8,
     pack_transformer_weights,
@@ -114,7 +120,7 @@ class TransformerOpsTest(unittest.TestCase):
         model = upload_model(Device.mock(), graph.package(lhs, out))
         self.assertEqual(values(model.run([120, -120, 50, -50])), [127, -128, 127, -128])
 
-    def test_transformer_diagnostics_preserve_v2_record_abi(self):
+    def test_transformer_diagnostics_preserve_v3_record_abi(self):
         graph = GraphBuilder("debug")
         inp = graph.add_buffer("input", (4,), DType.INT8)
         out = graph.add_buffer("output", (4,), DType.INT8, BufferUsage.OUTPUT)
@@ -126,6 +132,23 @@ class TransformerOpsTest(unittest.TestCase):
         self.assertEqual(result.diagnostics.layers[0].op_name, "GELU")
         self.assertEqual(result.diagnostics.layers[0].output_bytes, 4)
         self.assertEqual(result.diagnostics.layers[0].transformer_cycles["memory_stall_cycles"], 0)
+
+    def test_v3_diagnostics_preserve_counters_beyond_32_bits(self):
+        settings = DiagnosticsSettings()
+        raw = bytearray(settings.initial_buffer(1))
+        large = (1 << 40) + 123
+        header = list(DIAGNOSTICS_HEADER_STRUCT.unpack_from(raw))
+        header[4] = 1
+        DIAGNOSTICS_HEADER_STRUCT.pack_into(raw, 0, *header)
+        record = (0, int(OpType.GEMM), 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0,
+                  large, large - 1, large - 2, large - 3, large - 4,
+                  large - 5, large - 6, 7, 0)
+        DIAGNOSTICS_RECORD_STRUCT.pack_into(
+            raw, DIAGNOSTICS_HEADER_STRUCT.size, *record)
+        parsed = parse_diagnostics(raw, settings).layers[0].transformer_cycles
+        self.assertEqual(parsed["window_cycles"], large)
+        self.assertEqual(parsed["max_op_cycles"], large - 6)
+        self.assertEqual(parsed["completed_ops"], 7)
 
     def test_deit_mlp_builder_runs_pre_norm_residual_graph(self):
         self.assertEqual(DeiTConfig().tokens, 197)

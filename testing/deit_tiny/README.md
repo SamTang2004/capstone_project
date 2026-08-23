@@ -82,6 +82,9 @@ python testing/deit_tiny/run_budgetcuda_deit.py path/to/image.jpg `
   --address 192.168.2.99 --repeat 2
 ```
 
+Add `--cycle-report testing/deit_tiny/results/fpga_cycle_report.json` to run
+with precise 64-bit PL counters and save operation, stage, and per-layer timing.
+
 The runner validates the manifest and uploads one fused full-model graph into a
 64 MiB DDR3 arena. Weights, class/position embeddings, activation workspaces,
 and the descriptor all remain allocated. `--repeat` therefore performs exactly

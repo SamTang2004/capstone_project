@@ -1148,6 +1148,12 @@ int bcuda_execute_graph(BcudaGraphRuntime *runtime, const BcudaGraphExecDesc *de
     }
     (void)diagnostics_buffer;
     uint64_t graph_started_ns = diagnostics_header == 0 ? 0 : bcuda_now_ns();
+    if (diagnostics_header != 0 && runtime->dma != 0 && runtime->dma->register_base != 0) {
+        /* Start each report from a clean max/completed-op baseline without
+         * enabling single-step mode or freezing the free-running counters. */
+        bcuda_axi_dma_debug_control(runtime->dma, BCUDA_DEBUG_CLEAR);
+        bcuda_axi_dma_debug_control(runtime->dma, 0u);
+    }
 
     for (uint32_t i = 0; i < model_desc.num_layers; i++) {
         BcudaLayerDesc layer;
@@ -1170,7 +1176,8 @@ int bcuda_execute_graph(BcudaGraphRuntime *runtime, const BcudaGraphExecDesc *de
         uint64_t layer_started_ns = record == 0 ? 0 : bcuda_now_ns();
         BcudaTransformerDebugSnapshot debug_before;
         int debug_snapshot_valid = record != 0 && runtime->dma != 0 && runtime->dma->register_base != 0 &&
-            (layer.op_type == BC_OP_GEMM || layer.op_type >= BC_OP_LAYERNORM) &&
+            (layer.op_type == BC_OP_GEMM || layer.op_type == BC_OP_REQUANTIZE ||
+             layer.op_type >= BC_OP_LAYERNORM) &&
             bcuda_axi_dma_read_transformer_debug(runtime->dma, &debug_before) == BC_STATUS_OK;
         switch (layer.op_type) {
             case BC_OP_GEMM:
@@ -1239,39 +1246,21 @@ int bcuda_execute_graph(BcudaGraphRuntime *runtime, const BcudaGraphExecDesc *de
                     diagnostics_header->peak_operations_per_cycle
                 );
             }
-            if (layer.op_type == BC_OP_CONV2D_GEMM && runtime != 0 && runtime->dma != 0 && runtime->dma->register_base != 0) {
-                record->conv_cycles_total = runtime->dma->conv_cycles_total;
-                record->conv_cycles_zero_a = runtime->dma->conv_cycles_zero_a;
-                record->conv_cycles_load_a = runtime->dma->conv_cycles_load_a;
-                record->conv_cycles_zero_b = runtime->dma->conv_cycles_zero_b;
-                record->conv_cycles_load_b = runtime->dma->conv_cycles_load_b;
-                record->conv_cycles_bias = runtime->dma->conv_cycles_bias;
-                record->conv_cycles_compute = runtime->dma->conv_cycles_compute;
-                record->conv_cycles_accumulate = runtime->dma->conv_cycles_accumulate;
-                record->conv_cycles_write = runtime->dma->conv_cycles_write;
-                record->conv_loader_address_cycles = runtime->dma->conv_loader_address_cycles;
-                record->conv_loader_request_cycles = runtime->dma->conv_loader_request_cycles;
-                record->conv_loader_receive_cycles = runtime->dma->conv_loader_receive_cycles;
-                record->conv_cache_hits = runtime->dma->conv_cache_hits;
-                record->conv_cache_misses = runtime->dma->conv_cache_misses;
-                record->conv_fill_cycles = runtime->dma->conv_fill_cycles;
-                record->conv_bytes_delivered = runtime->dma->conv_bytes_delivered;
-            } else if (debug_snapshot_valid) {
+            if (debug_snapshot_valid) {
                 BcudaTransformerDebugSnapshot after;
                 if (bcuda_axi_dma_read_transformer_debug(runtime->dma, &after) == BC_STATUS_OK) {
-                    record->conv_cycles_total = (uint32_t)(after.total_cycles - debug_before.total_cycles);
-                    record->conv_cycles_zero_a = (uint32_t)(after.busy_cycles - debug_before.busy_cycles);
-                    record->conv_cycles_load_a = (uint32_t)(after.memory_stall_cycles - debug_before.memory_stall_cycles);
-                    record->conv_cycles_zero_b = (uint32_t)(after.input_stall_cycles - debug_before.input_stall_cycles);
-                    record->conv_cycles_load_b = (uint32_t)(after.output_stall_cycles - debug_before.output_stall_cycles);
-                    record->conv_cycles_bias = (uint32_t)after.last_op_cycles;
-                    record->conv_cycles_compute = (uint32_t)after.max_op_cycles;
-                    record->conv_cycles_accumulate = after.completed_ops - debug_before.completed_ops;
-                    record->conv_cycles_write = after.active_op;
-                    record->conv_loader_address_cycles = after.error_latched;
-                    record->conv_loader_request_cycles = after.trace_valid;
-                    record->conv_loader_receive_cycles = after.trace_event;
-                    record->conv_cache_hits = after.trace_data;
+                    record->hardware_total_cycles = after.total_cycles - debug_before.total_cycles;
+                    record->hardware_busy_cycles = after.busy_cycles - debug_before.busy_cycles;
+                    record->hardware_memory_stall_cycles = after.memory_stall_cycles - debug_before.memory_stall_cycles;
+                    record->hardware_input_stall_cycles = after.input_stall_cycles - debug_before.input_stall_cycles;
+                    record->hardware_output_stall_cycles = after.output_stall_cycles - debug_before.output_stall_cycles;
+                    record->hardware_last_op_cycles = after.last_op_cycles;
+                    record->hardware_max_op_cycles = after.max_op_cycles;
+                    record->hardware_completed_ops = after.completed_ops - debug_before.completed_ops;
+                    record->hardware_status = (uint32_t)after.active_op |
+                        ((uint32_t)after.error_latched << 8) |
+                        ((uint32_t)after.trace_valid << 9) |
+                        ((uint32_t)after.trace_event << 16);
                 }
             }
             diagnostics_header->layer_count = i + 1;
