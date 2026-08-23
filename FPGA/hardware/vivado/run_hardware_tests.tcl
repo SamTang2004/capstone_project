@@ -25,6 +25,7 @@ set rtl_files [list \
     [file join $hw_dir "rtl" "gelu_int8.sv"] \
     [file join $hw_dir "rtl" "layernorm_int8.sv"] \
     [file join $hw_dir "rtl" "softmax_int8.sv"] \
+    [file join $hw_dir "rtl" "rowwise_norm_softmax_engine.sv"] \
     [file join $hw_dir "rtl" "read_word_to_byte_adapter.sv"] \
     [file join $hw_dir "rtl" "requantize_ddr.sv"] \
     [file join $hw_dir "rtl" "requantize_pack_int8.sv"] \
@@ -46,6 +47,8 @@ set sim_files [list \
     [file join $hw_dir "sim" "tb_gelu_int8.sv"] \
     [file join $hw_dir "sim" "tb_layernorm_int8.sv"] \
     [file join $hw_dir "sim" "tb_softmax_int8.sv"] \
+    [file join $hw_dir "sim" "tb_rowwise_norm_softmax_engine.sv"] \
+    [file join $hw_dir "sim" "tb_rowwise_norm_softmax_equivalence.sv"] \
     [file join $hw_dir "sim" "tb_pe_int8_mac.sv"] \
     [file join $hw_dir "sim" "tb_ps_pl_mmio_control.sv"] \
     [file join $hw_dir "sim" "tb_bcuda_transformer_ddr_top.sv"] \
@@ -95,6 +98,8 @@ set test_tops {
     tb_gelu_int8
     tb_layernorm_int8
     tb_softmax_int8
+    tb_rowwise_norm_softmax_engine
+    tb_rowwise_norm_softmax_equivalence
     tb_pe_int8_mac
     tb_requantize_ddr
     tb_requantize_pack_int8

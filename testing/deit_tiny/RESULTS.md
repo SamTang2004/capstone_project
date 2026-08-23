@@ -90,6 +90,14 @@ rather than prerequisites for recovering accuracy.
   1.887 seconds, but requantization, LayerNorm, Softmax, and activation packing
   still total about 2.50 seconds. Remaining latency is therefore device
   execution efficiency, not intermediate host transfers.
+- A dedicated shared reciprocal engine reduced LayerNorm from 723.81 to 192.55
+  ms and Softmax from 527.78 to 301.47 ms. The measured full PL window was
+  3.157 seconds (30.11% below the dual-core baseline), but final logits shifted
+  from `[2, -2, 1, 2, -1, -7]` to `[2, -3, -1, 2, -3, -8]`. The class remained
+  `apple_fresh`, and model-dimension RTL differential tests show the rowwise
+  arithmetic itself is bit-exact. Because the full-fabric interaction remains
+  unresolved, this is an experimental performance result and the board was
+  restored to the known-good overlay.
 - The FP4 experiment is scaled E2M1 with matched INT4 scale granularity. It is
   not NVIDIA NVFP4 or OCP MXFP4 and does not include their block-scale metadata.
 

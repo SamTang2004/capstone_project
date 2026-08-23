@@ -16,6 +16,7 @@ set final_rtl_files [list \
     [file join $hw_dir "rtl" "transformer_elementwise_ddr.sv"] \
     [file join $hw_dir "rtl" "layernorm_int8.sv"] \
     [file join $hw_dir "rtl" "softmax_int8.sv"] \
+    [file join $hw_dir "rtl" "rowwise_norm_softmax_engine.sv"] \
     [file join $hw_dir "rtl" "transformer_rowwise_ddr.sv"] \
     [file join $hw_dir "rtl" "transformer_debug_counters.sv"] \
     [file join $hw_dir "rtl" "transformer_control_status.sv"] \

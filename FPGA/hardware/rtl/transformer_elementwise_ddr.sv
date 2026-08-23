@@ -14,7 +14,9 @@ module transformer_elementwise_ddr (
     typedef enum logic [3:0] {IDLE, PREP_READ, READ0_REQ, READ0_RECV, READ1_REQ, READ1_RECV,
         COMPUTE, WRITE_LOW, WRITE_HIGH, WRITE_ARM, WRITE_WAIT, FINISH, FAIL} state_t;
     state_t state;
-    logic mode_r; logic [31:0] total_r, offset; logic [3:0] lhs_shift_r, rhs_shift_r;
+    logic mode_r; logic [31:0] total_r;
+    (* extract_enable = "no" *) logic [31:0] offset;
+    logic [3:0] lhs_shift_r, rhs_shift_r;
     logic [63:0] lhs_r, rhs_r, gelu_result, residual_result, result_r;
     logic [7:0] keep_r; logic [6:0] chunk_bytes_r;
     logic gelu_in_ready,gelu_out_valid,residual_in_ready,residual_out_valid;

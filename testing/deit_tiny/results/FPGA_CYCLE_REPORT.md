@@ -1,8 +1,32 @@
-# DeiT-Tiny dual-core FPGA cycle report
+# DeiT-Tiny FPGA cycle report
 
 Measured on the PYNQ board with the complete W8A8 DeiT-Tiny model resident in
 the 64 MiB DDR arena. Each run used one image write, one device-resident graph
 execution, and one logits read. PL counters run at 100 MHz.
+
+## Dedicated rowwise-engine experiment
+
+The shared reciprocal LayerNorm/Softmax engine was built with timing signoff
+(WNS +0.070 ns, WHS +0.025 ns) and measured on the complete resident model.
+
+| Metric | Dual-core baseline | Rowwise build | Change |
+|---|---:|---:|---:|
+| Exact PL window | 4.517346 s | 3.157370 s | 30.11% lower |
+| Host complete inference | 4.708 s | 3.347 s | 28.91% lower |
+| LayerNorm window | 723.81 ms | 192.55 ms | 73.40% lower |
+| Softmax window | 527.78 ms | 301.47 ms | 42.88% lower |
+| Effective throughput | 0.5597 GOPS | 0.8008 GOPS | 43.08% higher |
+
+Three resident-model repeats measured 3.346, 3.258, and 3.328 seconds at the
+host. The prediction remained `apple_fresh`, but logits changed from
+`[2, -2, 1, 2, -1, -7]` to `[2, -3, -1, 2, -3, -8]`. Standalone and actual-
+dimension differential RTL tests prove the new rowwise arithmetic bit-exact to
+the legacy units, so the shift is an unresolved full-fabric interaction rather
+than an accepted rowwise approximation. The board was restored to the known-
+good dual-core overlay after measurement.
+
+Raw data is in `fpga_cycle_report_row_engine.json`; the three-repeat capture is
+in `fpga_cycle_report_row_engine_repeat.json`.
 
 ## Run result
 

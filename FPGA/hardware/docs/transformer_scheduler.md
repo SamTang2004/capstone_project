@@ -45,14 +45,24 @@ This removes the row-major-to-tile-major host copy between consecutive linear
 layers. The graph runtime records layouts 5/6/7 for tiled activations, W8
 weights, and W4 weights respectively.
 
+LayerNorm and Softmax share a dedicated rowwise engine. It loads one row into
+local storage, computes one Q32 reciprocal per row with the iterative divider,
+and replaces subsequent element divisions with reciprocal multiplies and exact
+quotient correction. LayerNorm retains integer variance/square-root, Q14
+normalization, gamma/beta, and saturation. Softmax retains the Q15 exponential
+lookup and Q7 rounded output. The DDR command and firmware interfaces are
+unchanged.
+
 ## Verified checkpoint
 
 The scheduler passes direct W8/W4 golden tests, a dual-core asymmetric-edge
-test (M=10), and an integrated DDR-top golden test. The complete PS/PL
-implementation meets 100 MHz with +0.056 ns setup slack and +0.034 ns hold
-slack. It uses 152 of 220 DSP48E1s, 7 BRAM tiles, 11,652 slice LUTs, and 11,445
-slice registers. Vivado emits `.bit`, `.hwh`, `.bin`, and `.xsa` board artifacts
-under `FPGA/hardware`.
+test (M=10), and an integrated DDR-top golden test. The rowwise engine passes
+standalone tests and model-dimension bit-exact differential tests against the
+legacy units (192-element LayerNorm and 197-element Softmax). The complete
+PS/PL implementation meets 100 MHz with +0.070 ns setup slack and +0.025 ns
+hold slack. It uses 158 of 220 DSP48E1s, 7.5 BRAM tiles, 11,432 slice LUTs, and
+11,373 slice registers. Vivado emits `.bit`, `.hwh`, `.bin`, and `.xsa` board
+artifacts under `FPGA/hardware`.
 
 The top executes one graph operation at a time; firmware remains responsible
 for issuing the full DeiT graph. LayerNorm, GELU, Softmax, residual addition,

@@ -96,4 +96,12 @@ seconds, 46.15% below the optimized one-core 8.388-second result and 10.03x
 faster than the 45.31-second streamed baseline. It remains above the
 less-than-500-ms deployment target.
 
+An experimental shared LayerNorm/Softmax reciprocal engine reduced the exact
+PL window to 3.157 seconds, including LayerNorm at 192.55 ms and Softmax at
+301.47 ms. Its standalone arithmetic is bit-exact to the legacy units at the
+model's 192/197-element dimensions. The rebuilt full fabric nevertheless
+shifted final logits while preserving the predicted class, so the board was
+rolled back to the known-good dual-core image pending full-fabric isolation.
+See `results/FPGA_CYCLE_REPORT.md` for the measured comparison.
+
 See `RESULTS.md` for the measured comparison and limitations.

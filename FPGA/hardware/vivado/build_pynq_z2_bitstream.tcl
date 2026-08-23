@@ -24,6 +24,10 @@ wait_on_run synth_1
 open_run synth_1
 report_utilization -file [file join $hw_dir "pynq_z2_utilization_synth.rpt"]
 
+# The design is dense enough that the default router can lose timing after a
+# clean physical-optimization result. Use its timing-focused search directly
+# instead of relying on a memory-heavy post-route recovery pass.
+set_property STEPS.ROUTE_DESIGN.ARGS.DIRECTIVE AggressiveExplore [get_runs impl_1]
 launch_runs impl_1 -to_step write_bitstream -jobs $build_jobs
 wait_on_run impl_1
 open_run impl_1

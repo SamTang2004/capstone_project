@@ -27,7 +27,8 @@ module transformer_rowwise_ddr #(
 
     logic mode_r, tiled_r;
     logic [15:0] rows_r, cols_r, row_idx, col_idx;
-    logic [31:0] eps_r, input_addr_r, output_row_base_r, byte_output_addr;
+    logic [31:0] eps_r, input_addr_r, byte_output_addr;
+    (* extract_enable = "no" *) logic [31:0] output_row_base_r;
     logic [31:0] gamma_base_r, beta_base_r;
     logic [16:0] param_byte_index, param_total_bytes;
     logic [7:0] param_low;
@@ -40,12 +41,11 @@ module transformer_rowwise_ddr #(
     logic [9:0] param_read_addr;
     logic gamma_write_en, beta_write_en;
 
-    logic ln_start, ln_input_valid, ln_input_ready, ln_param_valid, ln_param_ready;
-    logic ln_output_valid, ln_output_last, ln_busy, ln_done, ln_error;
-    logic signed [7:0] ln_output_data;
-    logic sm_start, sm_input_valid, sm_input_ready, sm_output_valid, sm_output_last;
-    logic sm_busy, sm_done, sm_error;
-    logic [7:0] sm_output_data, output_byte;
+    logic engine_start, engine_input_valid, engine_input_ready;
+    logic engine_param_valid, engine_param_ready;
+    logic engine_output_valid, engine_output_last, engine_busy, engine_done, engine_error;
+    logic signed [7:0] engine_output_data;
+    logic [7:0] output_byte;
 
     function automatic logic [6:0] request_size(
         input logic [16:0] remaining,
@@ -58,28 +58,20 @@ module transformer_rowwise_ddr #(
         end
     endfunction
 
-    layernorm_int8 #(.MAX_LENGTH(MAX_COLUMNS)) ln (
-        .clk, .rst_n, .start(ln_start), .vector_length(cols_r), .epsilon_term(eps_r),
-        .input_valid(ln_input_valid), .input_ready(ln_input_ready), .input_data(read_data),
-        .param_valid(ln_param_valid), .param_ready(ln_param_ready),
+    rowwise_norm_softmax_engine #(.MAX_LENGTH(MAX_COLUMNS)) engine (
+        .clk, .rst_n, .start(engine_start), .softmax_mode(mode_r),
+        .vector_length(cols_r), .epsilon_term(eps_r),
+        .input_valid(engine_input_valid), .input_ready(engine_input_ready), .input_data(read_data),
+        .param_valid(engine_param_valid), .param_ready(engine_param_ready),
         .gamma_q8(gamma_r), .beta_q8(beta_r),
-        .output_valid(ln_output_valid), .output_ready(write_req_ready && state == OUTPUT),
-        .output_data(ln_output_data), .output_last(ln_output_last),
-        .busy(ln_busy), .done(ln_done), .error(ln_error)
-    );
-    softmax_int8 sm (
-        .clk, .rst_n, .start(sm_start), .vector_length(cols_r[8:0]),
-        .input_valid(sm_input_valid), .input_ready(sm_input_ready), .input_data(read_data),
-        .output_valid(sm_output_valid), .output_ready(write_req_ready && state == OUTPUT),
-        .output_probability_q7(sm_output_data), .output_last(sm_output_last),
-        .busy(sm_busy), .done(sm_done), .error(sm_error)
+        .output_valid(engine_output_valid), .output_ready(write_req_ready && state == OUTPUT),
+        .output_data(engine_output_data), .output_last(engine_output_last),
+        .busy(engine_busy), .done(engine_done), .error(engine_error)
     );
 
-    assign ln_start = state == ROW_START && !mode_r;
-    assign sm_start = state == ROW_START && mode_r;
-    assign ln_input_valid = state == IN_RECV && read_data_valid && !mode_r;
-    assign sm_input_valid = state == IN_RECV && read_data_valid && mode_r;
-    assign ln_param_valid = state == OUTPUT && !mode_r;
+    assign engine_start = state == ROW_START;
+    assign engine_input_valid = state == IN_RECV && read_data_valid;
+    assign engine_param_valid = state == OUTPUT && !mode_r;
     assign busy = state != IDLE && state != FINISH && state != FAIL;
     assign op_start = state == IDLE && start;
     assign op_done = state == FINISH;
@@ -93,11 +85,10 @@ module transformer_rowwise_ddr #(
     assign read_req_allow_ahead = 1'b0;
     assign read_data_ready = pipeline_enable &&
         ((state == PARAM_G_RECV || state == PARAM_B_RECV) ||
-         (state == IN_RECV && (mode_r ? sm_input_ready : ln_input_ready)));
+         (state == IN_RECV && engine_input_ready));
 
-    assign output_byte = mode_r ? sm_output_data : ln_output_data;
-    assign write_req_valid = pipeline_enable && state == OUTPUT &&
-        (mode_r ? sm_output_valid : ln_output_valid);
+    assign output_byte = engine_output_data;
+    assign write_req_valid = pipeline_enable && state == OUTPUT && engine_output_valid;
     assign write_req_addr = {byte_output_addr[31:2], 2'b0};
     assign write_req_data = {4{output_byte}} << (byte_output_addr[1:0] * 8);
     assign write_req_strb = 4'b1 << byte_output_addr[1:0];
@@ -141,7 +132,7 @@ module transformer_rowwise_ddr #(
             response_bytes_left <= '0; read_addr_r <= '0; read_len_r <= '0;
         end else begin
             done <= 1'b0;
-            if (memory_error || ln_error || sm_error) begin
+            if (memory_error || engine_error) begin
                 error <= 1'b1;
                 state <= FAIL;
             end else if (pipeline_enable) unique case (state)
@@ -245,7 +236,7 @@ module transformer_rowwise_ddr #(
                 end
 
                 OUTPUT: if (write_req_valid && write_req_ready) begin
-                    if (mode_r ? sm_output_last : ln_output_last) begin
+                    if (engine_output_last) begin
                         if (row_idx + 1'b1 == rows_r) state <= WRITE_ARM;
                         else begin
                             row_idx <= row_idx + 1'b1;
