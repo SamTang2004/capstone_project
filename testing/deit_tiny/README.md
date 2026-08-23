@@ -79,13 +79,16 @@ To run a complete W8A8 image through a BudgetCUDA board server:
 ```powershell
 python testing/deit_tiny/run_budgetcuda_deit.py path/to/image.jpg `
   --manifest testing/deit_tiny/artifacts/budgetcuda_w8a8/manifest.json `
-  --address 192.168.2.99
+  --address 192.168.2.99 --repeat 2
 ```
 
-The runner validates every tensor hash and streams patch embedding, each
-attention/MLP block, final LayerNorm, and the six-class head. The first physical
-smoke run completed correctly in 45.73 seconds because each of its 27 subgraphs
-is uploaded and allocated separately; this path establishes correctness, not
-the less-than-500-ms deployment target.
+The runner validates the manifest, uploads all model constants to DDR3 once,
+and then runs patch embedding, class/position token embedding, each
+attention/MLP block, final LayerNorm, and the six-class head. `--repeat` reuses
+the same resident model. The final physical resident-model test retained
+5,599,352 bytes in 417 buffers, loaded in 12.28 seconds, and ran in 28.48
+seconds, down from the 45.31-second streamed-weight baseline. Activation
+workspaces and graph descriptors are still transient, so this remains well
+above the less-than-500-ms deployment target.
 
 See `RESULTS.md` for the measured comparison and limitations.

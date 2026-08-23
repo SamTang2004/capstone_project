@@ -45,10 +45,21 @@ def test_manifest_runner_executes_every_encoder_stage(tmp_path):
     manifest_path = tmp_path / "manifest.json"
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
-    result = DeiTManifestRunner(Device.mock(), manifest_path).run_tokens([-3, -2, -1, 1, 2, 3] * 2)
+    device = Device.mock()
+    runner = DeiTManifestRunner(device, manifest_path)
+    runner.load(include_patch=False)
+    resident_count = runner.resident_buffer_count
+    result = runner.run_tokens([-3, -2, -1, 1, 2, 3] * 2)
     assert result.class_index == 1
     assert result.class_name == "rotten"
     assert result.logits == (1, 4)
     assert [name for name, _ in result.stage_seconds] == [
         "block_0.attention", "block_0.mlp", "final_layernorm", "six_class_head",
     ]
+    assert resident_count > 0
+    assert len(device.protocol.transport.buffers) == resident_count
+    repeated = runner.run_tokens([-3, -2, -1, 1, 2, 3] * 2)
+    assert repeated.logits == result.logits
+    assert len(device.protocol.transport.buffers) == resident_count
+    runner.close()
+    assert not device.protocol.transport.buffers

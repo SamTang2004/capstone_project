@@ -5,7 +5,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from budgetcuda import Device
-from budgetcuda.compiler import HostBuffer, Layer, ModelPackage, build_tiny_conv_relu_package, upload_model
+from budgetcuda.compiler import (HostBuffer, Layer, ModelPackage, ResidentBufferPool,
+                                 build_tiny_conv_relu_package, upload_model)
 from budgetcuda.dtypes import BufferUsage, DType, OpType
 from budgetcuda.model import Model
 
@@ -30,6 +31,28 @@ class RecordingDevice(Device):
 
 
 class ModelTest(unittest.TestCase):
+    def test_external_resident_weight_is_borrowed_by_model(self):
+        dev = Device.mock()
+        package = ModelPackage(
+            buffers=[
+                HostBuffer("input", (1, 2), DType.INT8),
+                HostBuffer.from_values("weight", (2, 1), DType.INT8, [3, 4]),
+                HostBuffer("output", (1, 1), DType.INT32, usage=BufferUsage.OUTPUT),
+            ],
+            layers=[Layer(OpType.GEMM, input0=0, weight=1, output=2, n=1, c=2, out_c=1)],
+            input_index=0,
+            output_index=2,
+        )
+        pool = ResidentBufferPool(dev)
+        pool.upload([package.buffers[1]])
+        resident_id = pool.tensors["weight"].buffer_id
+        model = upload_model(dev, package, external_tensors=pool.tensors)
+        self.assertEqual(values := model.run([2, 5]).reshape(-1).tolist(), [26])
+        model.close()
+        self.assertIn(resident_id, dev.protocol.transport.buffers)
+        pool.close()
+        self.assertNotIn(resident_id, dev.protocol.transport.buffers)
+
     def test_model_run_writes_input_executes_graph_and_reads_output(self):
         dev = RecordingDevice()
         dev.freed = []

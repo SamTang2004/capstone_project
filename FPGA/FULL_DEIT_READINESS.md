@@ -21,6 +21,9 @@
   attention validation on the PYNQ-Z2
 - A streamed manifest runner covering image preprocessing, patch embedding,
   class/position tokens, all 12 encoder blocks, final LayerNorm, and the head
+- CUDA-style resident model storage: 417 W8 model-constant buffers totaling
+  5,599,352 bytes remain in DDR3 and are borrowed by each graph invocation;
+  this includes class and position embeddings
 
 ## Completed encoder requirements
 
@@ -54,13 +57,25 @@
   0.46-second patch-embedding stage. The path repeatedly allocates, uploads,
   executes, reads, and frees 27 graphs; it is a functional-integration path,
   not a resident-model kernel benchmark.
+- With matrix and normalization constants resident, one-time DDR loading took 13.31 seconds. Two
+  warm physical runs took 29.13 and 29.53 seconds (29.33-second mean), retained
+  the same `apple_fresh` logits, and improved latency by 35.3% (1.54x) versus
+  the 45.31-second streamed-weight baseline.
+- Moving the class and position embeddings into the resident set preserved the
+  logits. The final strict device-owned model loaded in 12.28 seconds and ran
+  in 28.48 seconds; its token-embedding accelerator stage took 0.14 seconds.
+- Peak persistent constants plus the largest transient attention workspace and
+  descriptor occupy approximately 7.60 MB of the 16 MiB arena. The firmware
+  allocation table now has 512 slots; the final resident configuration uses
+  417, with at most 75 graph buffers in one stage.
 
 ## Remaining deployment requirements
 
-The complete-image path is functionally integrated, but its 45.73-second host
-time does not meet the less-than-500-ms objective. Reaching that target
-requires a persistent execution plan: retain weights and reusable buffers in
-board memory, eliminate per-stage model upload/allocation round trips, fuse
-adjacent scheduling steps, and profile hardware-only counters separately from
-host transport time. End-to-end board accuracy must also be measured over the
-held-out split; one correctly classified smoke image is not an accuracy result.
+The complete-image path is functionally integrated, but its 28.48-second warm
+host time does not meet the less-than-500-ms objective. Weights are now
+persistent; the next step is to retain reusable activation workspaces and all
+28 descriptors, then execute the schedule through one command instead of 28
+host round trips. Adjacent scheduling steps can subsequently be fused and
+hardware-only counters profiled separately from transport time. End-to-end
+board accuracy must also be measured over the held-out split; one correctly
+classified smoke image is not an accuracy result.

@@ -97,10 +97,10 @@ class Device:
     def free(self, tensor: Tensor):
         return self.protocol.free(tensor.buffer_id)
 
-    def load_model(self, package):
+    def load_model(self, package, external_tensors=None):
         from .compiler import upload_model
 
-        return upload_model(self, package)
+        return upload_model(self, package, external_tensors=external_tensors)
 
     @staticmethod
     def _to_bytes(values, tensor: Tensor) -> bytes:

@@ -12,6 +12,8 @@ from .deit import (
     build_deit_linear_package,
     build_deit_mlp_block_package,
 )
+from .compiler import GraphBuilder, ResidentBufferPool
+from .dtypes import BufferUsage, DType
 from .packing import (
     pack_transformer_activations_int8,
     unpack_transformer_activations_int8,
@@ -50,10 +52,11 @@ class DeiTInferenceResult:
 
 
 class DeiTManifestRunner:
-    """Stream a complete exported DeiT through the graph accelerator.
+    """Run a complete exported DeiT with model constants resident in DDR.
 
-    One attention or MLP graph is resident at a time. This keeps the current
-    128-buffer firmware ABI and 16/64 MiB CMA arenas usable for all 12 blocks.
+    All weights, biases, normalization values, and requantization constants are
+    uploaded once. One attention or MLP activation workspace is allocated at a
+    time, keeping a 16 MiB CMA arena usable for all 12 blocks.
     """
 
     def __init__(self, device, manifest_path: str | Path):
@@ -61,7 +64,160 @@ class DeiTManifestRunner:
         self.manifest_path = Path(manifest_path)
         self.root = self.manifest_path.parent
         self.manifest = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+        self._packages = {}
+        self._resident = ResidentBufferPool(device)
+        self._closed = False
         self._validate_manifest()
+
+    @property
+    def resident_weight_bytes(self) -> int:
+        return self._resident.bytes
+
+    @property
+    def resident_buffer_count(self) -> int:
+        return len(self._resident.tensors)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        self.close()
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        self._resident.close()
+
+    def _cache_package(self, name: str, build):
+        if self._closed:
+            raise RuntimeError("DeiT runner is closed")
+        package = self._packages.get(name)
+        if package is None:
+            package = build()
+            self._packages[name] = package
+            self._resident.upload(
+                buffer for buffer in package.buffers if buffer.usage == BufferUsage.WEIGHT)
+        return package
+
+    def _attention_package(self, block_index: int):
+        def build():
+            block = self.manifest["blocks"][block_index]
+            base = f"blocks.{block_index}"
+            q, q_meta = self._linear(f"{base}.attn.q")
+            k, k_meta = self._linear(f"{base}.attn.k")
+            v, v_meta = self._linear(f"{base}.attn.v")
+            projection, projection_meta = self._linear(f"{base}.attn.proj")
+            hidden = int(self.manifest["hidden_dim"])
+            heads = int(self.manifest["heads"])
+            q_scale = float(q_meta["output_scale"])
+            projection_input_scale = float(projection_meta["input_scale"])
+            return build_deit_attention_block_package(
+                int(self.manifest["tokens"]), hidden, heads, q, k, v, projection,
+                gamma_q8=_q8(block["norm1_gamma"]), beta_q8=_q8(block["norm1_beta"]),
+                q_bias_int32=q_meta.get("bias_int32"), k_bias_int32=k_meta.get("bias_int32"),
+                v_bias_int32=v_meta.get("bias_int32"),
+                output_bias_int32=projection_meta.get("bias_int32"),
+                qkv_requant=tuple(q_meta["requant"]),
+                score_requant=_fixed_multiplier(
+                    (q_scale * q_scale) / max(1.0, (hidden // heads) ** 0.5)),
+                context_requant=_fixed_multiplier(
+                    (q_scale / 127.0) / projection_input_scale),
+                output_requant=tuple(projection_meta["requant"]),
+                weight_int4=int(self.manifest["weight_bits"]) == 4,
+                name=f"deit_block_{block_index}_attention",
+            )
+        return self._cache_package(f"block_{block_index}.attention", build)
+
+    def _mlp_package(self, block_index: int):
+        def build():
+            block = self.manifest["blocks"][block_index]
+            base = f"blocks.{block_index}"
+            fc1, fc1_meta = self._linear(f"{base}.mlp.fc1")
+            fc2, fc2_meta = self._linear(f"{base}.mlp.fc2")
+            return build_deit_mlp_block_package(
+                int(self.manifest["tokens"]), int(self.manifest["hidden_dim"]),
+                int(self.manifest["mlp_dim"]), fc1, fc2,
+                gamma_q8=_q8(block["norm2_gamma"]), beta_q8=_q8(block["norm2_beta"]),
+                fc1_bias_int32=fc1_meta.get("bias_int32"),
+                fc2_bias_int32=fc2_meta.get("bias_int32"),
+                fc1_requant=tuple(fc1_meta["requant"]),
+                fc2_requant=tuple(fc2_meta["requant"]), accelerator_layout=True,
+                weight_int4=int(self.manifest["weight_bits"]) == 4,
+                name=f"deit_block_{block_index}_mlp",
+            )
+        return self._cache_package(f"block_{block_index}.mlp", build)
+
+    def _final_norm_package(self):
+        return self._cache_package("final_layernorm", lambda: build_deit_layernorm_package(
+            int(self.manifest["tokens"]), int(self.manifest["hidden_dim"]),
+            _q8(self.manifest["final_norm"]["gamma"]),
+            _q8(self.manifest["final_norm"]["beta"]),
+        ))
+
+    def _head_package(self):
+        def build():
+            head, metadata = self._linear("head")
+            return build_deit_linear_package(
+                1, int(self.manifest["hidden_dim"]), len(self.manifest["classes"]), head,
+                bias_int32=metadata.get("bias_int32"), requant=tuple(metadata["requant"]),
+                weight_int4=int(self.manifest["weight_bits"]) == 4, name="deit_head",
+            )
+        return self._cache_package("six_class_head", build)
+
+    def _patch_package(self):
+        def build():
+            patch = int(self.manifest["patch_size"])
+            weights, metadata = self._linear("patch_embed.linear")
+            return build_deit_linear_package(
+                (224 // patch) ** 2, 3 * patch * patch, int(self.manifest["hidden_dim"]), weights,
+                bias_int32=metadata.get("bias_int32"), requant=tuple(metadata["requant"]),
+                weight_int4=int(self.manifest["weight_bits"]) == 4,
+                name="deit_patch_embedding",
+            )
+        return self._cache_package("patch_embedding", build)
+
+    def _token_embedding_package(self):
+        def build():
+            rows = int(self.manifest["tokens"])
+            hidden = int(self.manifest["hidden_dim"])
+            metadata = self.manifest["class_position_tokens"]
+            patch_scale = float(self.manifest["tensors"]["patch_embed.linear"]["output_scale"])
+            position_scale = float(metadata["scale"])
+            token_scale = max(patch_scale, position_scale)
+            raw = (self.root / metadata["file"]).read_bytes()
+            expected = rows * hidden
+            if len(raw) != expected:
+                raise ValueError(f"Class/position tensor has {len(raw)} bytes, expected {expected}")
+            position = []
+            for offset in range(0, expected, hidden):
+                row = []
+                for value in raw[offset:offset + hidden]:
+                    signed = value if value < 128 else value - 256
+                    row.append(max(-128, min(127, int(round(signed * position_scale / token_scale)))))
+                position.append(row)
+            graph = GraphBuilder("deit_token_embedding")
+            inp = graph.add_buffer("input", (rows, hidden), DType.INT8)
+            constant = graph.add_buffer(
+                "class_position", (rows, hidden), DType.INT8,
+                BufferUsage.WEIGHT, position)
+            output = graph.add_buffer(
+                "output", (rows, hidden), DType.INT8, BufferUsage.OUTPUT)
+            graph.residual_add(inp, constant, output)
+            return graph.package(inp, output)
+        return self._cache_package("token_embedding", build)
+
+    def load(self, *, include_patch: bool = True):
+        """Upload all model constants to DDR once, before timed inference."""
+        if include_patch:
+            self._patch_package()
+            self._token_embedding_package()
+        for block_index in range(int(self.manifest["depth"])):
+            self._attention_package(block_index)
+            self._mlp_package(block_index)
+        self._final_norm_package()
+        self._head_package()
+        return self
 
     def _validate_manifest(self) -> None:
         manifest = self.manifest
@@ -90,7 +246,7 @@ class DeiTManifestRunner:
         self, package, values, *, tiled_input: bool = False,
         tiled_output: bool = False, stage: str | None = None,
     ):
-        model = self.device.load_model(package)
+        model = self.device.load_model(package, external_tensors=self._resident.tensors)
         try:
             payload = values
             if tiled_input:
@@ -115,69 +271,33 @@ class DeiTManifestRunner:
 
     def run_tokens(self, tokens) -> DeiTInferenceResult:
         """Run pre-quantized row-major token values through all encoder blocks."""
+        self.load(include_patch=False)
         started = perf_counter()
         stage_times: list[tuple[str, float]] = []
         token_count = int(self.manifest["tokens"])
         hidden = int(self.manifest["hidden_dim"])
-        heads = int(self.manifest["heads"])
-        mlp = int(self.manifest["mlp_dim"])
         values = _flat_int8(tokens)
         if len(values) != token_count * hidden:
             raise ValueError(f"Expected {token_count * hidden} token values")
-        int4 = int(self.manifest["weight_bits"]) == 4
 
-        for block_index, block in enumerate(self.manifest["blocks"]):
-            base = f"blocks.{block_index}"
-            q, q_meta = self._linear(f"{base}.attn.q")
-            k, k_meta = self._linear(f"{base}.attn.k")
-            v, v_meta = self._linear(f"{base}.attn.v")
-            projection, projection_meta = self._linear(f"{base}.attn.proj")
-            q_scale = float(q_meta["output_scale"])
-            projection_input_scale = float(projection_meta["input_scale"])
-            score_requant = _fixed_multiplier((q_scale * q_scale) / max(1.0, (hidden // heads) ** 0.5))
-            context_requant = _fixed_multiplier((q_scale / 127.0) / projection_input_scale)
-            package = build_deit_attention_block_package(
-                token_count, hidden, heads, q, k, v, projection,
-                gamma_q8=_q8(block["norm1_gamma"]), beta_q8=_q8(block["norm1_beta"]),
-                q_bias_int32=q_meta.get("bias_int32"), k_bias_int32=k_meta.get("bias_int32"),
-                v_bias_int32=v_meta.get("bias_int32"),
-                output_bias_int32=projection_meta.get("bias_int32"),
-                qkv_requant=tuple(q_meta["requant"]), score_requant=score_requant,
-                context_requant=context_requant, output_requant=tuple(projection_meta["requant"]),
-                weight_int4=int4, name=f"deit_block_{block_index}_attention",
-            )
+        for block_index in range(int(self.manifest["depth"])):
+            package = self._attention_package(block_index)
             stage_started = perf_counter()
             values = self._execute(package, values, stage=f"block_{block_index}.attention")
             stage_times.append((f"block_{block_index}.attention", perf_counter() - stage_started))
 
-            fc1, fc1_meta = self._linear(f"{base}.mlp.fc1")
-            fc2, fc2_meta = self._linear(f"{base}.mlp.fc2")
-            package = build_deit_mlp_block_package(
-                token_count, hidden, mlp, fc1, fc2,
-                gamma_q8=_q8(block["norm2_gamma"]), beta_q8=_q8(block["norm2_beta"]),
-                fc1_bias_int32=fc1_meta.get("bias_int32"), fc2_bias_int32=fc2_meta.get("bias_int32"),
-                fc1_requant=tuple(fc1_meta["requant"]), fc2_requant=tuple(fc2_meta["requant"]),
-                accelerator_layout=True, weight_int4=int4, name=f"deit_block_{block_index}_mlp",
-            )
+            package = self._mlp_package(block_index)
             stage_started = perf_counter()
             values = self._execute(package, values, stage=f"block_{block_index}.mlp")
             stage_times.append((f"block_{block_index}.mlp", perf_counter() - stage_started))
 
-        final_norm = self.manifest["final_norm"]
-        package = build_deit_layernorm_package(
-            token_count, hidden, _q8(final_norm["gamma"]), _q8(final_norm["beta"]),
-        )
+        package = self._final_norm_package()
         stage_started = perf_counter()
         values = self._execute(
             package, values, tiled_output=True, stage="final_layernorm")
         stage_times.append(("final_layernorm", perf_counter() - stage_started))
 
-        head, head_meta = self._linear("head")
-        package = build_deit_linear_package(
-            1, hidden, len(self.manifest["classes"]), head,
-            bias_int32=head_meta.get("bias_int32"), requant=tuple(head_meta["requant"]),
-            weight_int4=int4, name="deit_head",
-        )
+        package = self._head_package()
         stage_started = perf_counter()
         logits = self._execute(package, values[:hidden], tiled_input=True, stage="six_class_head")
         stage_times.append(("six_class_head", perf_counter() - stage_started))
@@ -189,6 +309,7 @@ class DeiTManifestRunner:
 
     def run_image(self, image) -> DeiTInferenceResult:
         """Preprocess a PIL image/path, execute patch embedding, then all blocks."""
+        self.load()
         started = perf_counter()
         try:
             import numpy as np
@@ -210,34 +331,33 @@ class DeiTManifestRunner:
         grid = 224 // patch
         patches = array.reshape(3, grid, patch, grid, patch).transpose(1, 3, 0, 2, 4).reshape(grid * grid, -1)
 
-        weights, metadata = self._linear("patch_embed.linear")
+        metadata = self.manifest["tensors"]["patch_embed.linear"]
         input_scale = float(metadata["input_scale"])
         quantized = np.clip(np.rint(patches / input_scale), -128, 127).astype(np.int8).reshape(-1).tolist()
-        package = build_deit_linear_package(
-            grid * grid, patches.shape[1], int(self.manifest["hidden_dim"]), weights,
-            bias_int32=metadata.get("bias_int32"), requant=tuple(metadata["requant"]),
-            weight_int4=int(self.manifest["weight_bits"]) == 4, name="deit_patch_embedding",
-        )
+        package = self._patch_package()
         patch_started = perf_counter()
         patch_values = self._execute(package, quantized, tiled_input=True, stage="patch_embedding")
         patch_seconds = perf_counter() - patch_started
 
         position_meta = self.manifest["class_position_tokens"]
-        position_raw = np.frombuffer((self.root / position_meta["file"]).read_bytes(), dtype=np.int8).astype(np.int32)
         patch_scale = float(metadata["output_scale"])
         position_scale = float(position_meta["scale"])
         token_scale = max(patch_scale, position_scale)
         patch_matrix = np.asarray(patch_values, dtype=np.int32).reshape(grid * grid, -1)
         patch_matrix = np.rint(patch_matrix * (patch_scale / token_scale)).astype(np.int32)
-        positions = np.rint(position_raw * (position_scale / token_scale)).astype(np.int32).reshape(grid * grid + 1, -1)
-        tokens = positions
-        tokens[1:] += patch_matrix
-        tokens = np.clip(tokens, -128, 127).astype(np.int8)
+        token_input = np.zeros((grid * grid + 1, int(self.manifest["hidden_dim"])), dtype=np.int8)
+        token_input[1:] = np.clip(patch_matrix, -128, 127).astype(np.int8)
+        token_started = perf_counter()
+        tokens = self._execute(
+            self._token_embedding_package(), token_input.reshape(-1).tolist(),
+            stage="token_embedding")
+        token_seconds = perf_counter() - token_started
         result = self.run_tokens(tokens)
         return DeiTInferenceResult(
             result.class_index,
             result.class_name,
             result.logits,
             perf_counter() - started,
-            (("patch_embedding", patch_seconds), *result.stage_seconds),
+            (("patch_embedding", patch_seconds), ("token_embedding", token_seconds),
+             *result.stage_seconds),
         )

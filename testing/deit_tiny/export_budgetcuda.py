@@ -91,7 +91,12 @@ def export_checkpoint(checkpoint_path: Path, output_dir: Path, weight_bits: int 
     cls_pos_q, cls_pos_scale = quantize_symmetric(cls_pos, 8)
     constants = cls_pos_q.numpy().tobytes()
     (output_dir / "class_position_tokens.i8.bin").write_bytes(constants)
-    manifest["class_position_tokens"] = {"file": "class_position_tokens.i8.bin", "scale": cls_pos_scale, "shape": [197, 192]}
+    manifest["class_position_tokens"] = {
+        "file": "class_position_tokens.i8.bin",
+        "sha256": hashlib.sha256(constants).hexdigest(),
+        "scale": cls_pos_scale,
+        "shape": [197, 192],
+    }
 
     for block in range(12):
         base = f"blocks.{block}"

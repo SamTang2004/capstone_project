@@ -179,6 +179,59 @@ class ModelPackage:
         return model + buffer_table + layers
 
 
+class ResidentBufferPool:
+    """Own named device tensors that can be borrowed by multiple graph uploads."""
+
+    def __init__(self, device):
+        self.device = device
+        self.tensors = {}
+        self.specifications = {}
+        self._closed = False
+
+    @property
+    def bytes(self) -> int:
+        return sum(tensor.size_bytes for tensor in self.tensors.values())
+
+    def upload(self, buffers: Iterable[HostBuffer]) -> None:
+        if self._closed:
+            raise RuntimeError("Resident buffer pool is closed")
+        for buffer in buffers:
+            if buffer.data is None:
+                raise ValueError(f"Resident buffer {buffer.name} has no initial data")
+            specification = (buffer.shape, buffer.dtype, buffer.layout, buffer.usage, buffer.size_bytes)
+            existing = self.specifications.get(buffer.name)
+            if existing is not None:
+                if existing != specification:
+                    raise ValueError(f"Incompatible resident buffer reuse: {buffer.name}")
+                continue
+            if len(buffer.data) != buffer.size_bytes:
+                raise ValueError(f"Buffer {buffer.name} has {len(buffer.data)} bytes, expected {buffer.size_bytes}")
+            tensor = self.device.alloc(buffer.shape, buffer.dtype, buffer.layout, buffer.usage)
+            try:
+                self.device.write(tensor, buffer.data)
+            except Exception:
+                self.device.free(tensor)
+                raise
+            self.tensors[buffer.name] = tensor
+            self.specifications[buffer.name] = specification
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        first_error = None
+        for tensor in reversed(list(self.tensors.values())):
+            try:
+                self.device.free(tensor)
+            except Exception as exc:
+                if first_error is None:
+                    first_error = exc
+        self.tensors.clear()
+        self.specifications.clear()
+        if first_error is not None:
+            raise first_error
+
+
 class GraphBuilder:
     def __init__(self, name: str = "graph"):
         self.name = name
@@ -460,16 +513,25 @@ class GraphBuilder:
         return ModelPackage(self.buffers, self.layers, input_idx, output_idx)
 
 
-def upload_model(device, package: ModelPackage) -> Model:
+def upload_model(device, package: ModelPackage, external_tensors=None) -> Model:
+    external_tensors = {} if external_tensors is None else external_tensors
     tensors = []
+    owned_tensors = []
     descriptor_tensor = None
     try:
         for buffer in package.buffers:
             if buffer.data is not None and len(buffer.data) != buffer.size_bytes:
                 raise ValueError(f"Buffer {buffer.name} has {len(buffer.data)} bytes, expected {buffer.size_bytes}")
-            tensor = device.alloc(buffer.shape, buffer.dtype, buffer.layout, buffer.usage)
-            if buffer.data is not None:
-                device.write(tensor, buffer.data)
+            tensor = external_tensors.get(buffer.name)
+            if tensor is not None:
+                if (tuple(tensor.shape) != buffer.shape or tensor.dtype != buffer.dtype or
+                        tensor.layout != buffer.layout or tensor.size_bytes != buffer.size_bytes):
+                    raise ValueError(f"External tensor does not match buffer {buffer.name}")
+            else:
+                tensor = device.alloc(buffer.shape, buffer.dtype, buffer.layout, buffer.usage)
+                owned_tensors.append(tensor)
+                if buffer.data is not None:
+                    device.write(tensor, buffer.data)
             tensors.append(tensor)
 
         descriptor = package.serialize_descriptor([tensor.buffer_id for tensor in tensors])
@@ -481,7 +543,7 @@ def upload_model(device, package: ModelPackage) -> Model:
                 device.free(descriptor_tensor)
             except Exception:
                 pass
-        for tensor in reversed(tensors):
+        for tensor in reversed(owned_tensors):
             try:
                 device.free(tensor)
             except Exception:
@@ -499,7 +561,7 @@ def upload_model(device, package: ModelPackage) -> Model:
         tensors[package.input_index],
         tensors[package.output_index],
         weights=weights,
-        tensors=tensors,
+        tensors=owned_tensors,
         package=package,
     )
 

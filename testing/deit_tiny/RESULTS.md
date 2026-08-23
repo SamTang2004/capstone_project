@@ -76,9 +76,11 @@ rather than prerequisites for recovering accuracy.
   run, but the complete 178-image board accuracy study has not been performed.
 - Per-output-channel weight scales improve accuracy but are not supported by
   the repository's current per-tensor BudgetCUDA deployment contract.
-- The corrected full-image host timing was 45.73 seconds. The path uses 27
-  streamed graph uploads and allocations, so it is not evidence for the
-  <500-ms latency goal.
+- The streamed-weight baseline took 45.31 seconds. Keeping all 5,599,352 bytes
+  of model constants, including class/position embeddings, resident in DDR3
+  produced a final 28.48-second physical run with unchanged logits. The
+  remaining transient workspaces, descriptors, and 28 graph commands mean this
+  is still not evidence for the <500-ms latency goal.
 - The FP4 experiment is scaled E2M1 with matched INT4 scale granularity. It is
   not NVIDIA NVFP4 or OCP MXFP4 and does not include their block-scale metadata.
 
