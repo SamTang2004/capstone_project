@@ -394,7 +394,26 @@ static int bcuda_execute_gemm_layer(BcudaGraphRuntime *runtime, const BcudaBuffe
     gemm.B_layout = weight->layout;
     gemm.C_layout = output->layout;
     gemm.flags = layer->flags;
-    return bcuda_execute_gemm(runtime, &gemm);
+    status = bcuda_execute_gemm(runtime, &gemm);
+    if (status == BC_STATUS_OK && layer->bias != 0u) {
+        BcudaBuffer *bias = 0;
+        status = bcuda_graph_table_buffer(model_buffer, model, layer->bias, &bias);
+        if (status != BC_STATUS_OK) return status;
+        if (bias->dtype != BC_DTYPE_INT32 || bias->size_bytes < (uint64_t)layer->out_c * sizeof(int32_t) ||
+            output->dtype != BC_DTYPE_INT32 || output->size_bytes < (uint64_t)layer->n * layer->out_c * sizeof(int32_t)) {
+            return BC_STATUS_SHAPE_MISMATCH;
+        }
+        for (uint32_t row = 0; row < layer->n; row++) {
+            for (uint32_t column = 0; column < layer->out_c; column++) {
+                uint8_t *destination = (uint8_t *)output->virtual_address +
+                    ((uint64_t)row * layer->out_c + column) * sizeof(int32_t);
+                const uint8_t *bias_value = (const uint8_t *)bias->virtual_address +
+                    (uint64_t)column * sizeof(int32_t);
+                bcuda_write_i32(destination, bcuda_read_i32(destination) + bcuda_read_i32(bias_value));
+            }
+        }
+    }
+    return status;
 }
 
 static int bcuda_execute_activation_layer(BcudaGraphRuntime *runtime, const BcudaBuffer *model_buffer, const BcudaModelDesc *model, const BcudaLayerDesc *layer) {

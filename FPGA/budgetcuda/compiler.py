@@ -301,10 +301,11 @@ class GraphBuilder:
             )
         )
 
-    def gemm(self, input_idx: int, weight_idx: int, output_idx: int, *, m: int, n: int, k: int) -> None:
-        self.layers.append(Layer(OpType.GEMM, input0=input_idx, weight=weight_idx, output=output_idx, n=m, out_c=n, c=k))
+    def gemm(self, input_idx: int, weight_idx: int, output_idx: int, *, m: int, n: int, k: int, bias_idx: int = 0) -> None:
+        self.layers.append(Layer(OpType.GEMM, input0=input_idx, weight=weight_idx, output=output_idx,
+                                 bias=bias_idx, n=m, out_c=n, c=k))
 
-    def transformer_gemm(self, input_idx: int, weight_idx: int, output_idx: int, *, m: int, n: int, k: int) -> None:
+    def transformer_gemm(self, input_idx: int, weight_idx: int, output_idx: int, *, m: int, n: int, k: int, bias_idx: int = 0) -> None:
         activation = self.buffers[input_idx]
         weight = self.buffers[weight_idx]
         output = self.buffers[output_idx]
@@ -315,7 +316,11 @@ class GraphBuilder:
             raise ValueError("Transformer GEMM weight must use the matching tiled KxN layout")
         if output.dtype != DType.INT32 or output.layout != Layout.ROW_MAJOR or output.shape != (m, n):
             raise ValueError("Transformer GEMM output must be row-major INT32 MxN")
-        self.gemm(input_idx, weight_idx, output_idx, m=m, n=n, k=k)
+        if bias_idx:
+            bias = self.buffers[bias_idx]
+            if bias.dtype != DType.INT32 or bias.layout != Layout.ROW_MAJOR or bias.shape != (n,):
+                raise ValueError("Transformer GEMM bias must be row-major INT32 with N elements")
+        self.gemm(input_idx, weight_idx, output_idx, m=m, n=n, k=k, bias_idx=bias_idx)
 
     def activation_b_pack(self, input_idx: int, output_idx: int, *, reduction: int, outputs: int, transpose: bool = False) -> None:
         source = self.buffers[input_idx]

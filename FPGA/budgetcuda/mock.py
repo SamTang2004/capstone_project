@@ -208,7 +208,7 @@ class MockBackend:
             DIAGNOSTICS_HEADER_STRUCT.pack_into(diag, 0, *header)
 
     def _execute_graph_gemm(self, table, layer) -> None:
-        _, input0, _, _, output, weight, _, _, n, c, _, _, out_c, *_ = layer
+        _, input0, _, _, output, weight, bias, _, n, c, _, _, out_c, *_ = layer
         desc = struct.pack(
             "<IIIIIIIIIIIIII",
             table[input0][0],
@@ -227,6 +227,17 @@ class MockBackend:
             0,
         )
         self._execute_gemm(desc)
+        if bias:
+            output_raw = self._get_buffer(table[output][0])
+            bias_raw = self._get_buffer(table[bias][0])
+            if table[bias][1] != DType.INT32 or len(bias_raw) < out_c * 4:
+                raise ValueError("Mock GEMM bias must contain N INT32 values")
+            for row in range(n):
+                for column in range(out_c):
+                    offset = (row * out_c + column) * 4
+                    value = int.from_bytes(output_raw[offset:offset + 4], "little", signed=True)
+                    value += int.from_bytes(bias_raw[column * 4:column * 4 + 4], "little", signed=True)
+                    output_raw[offset:offset + 4] = value.to_bytes(4, "little", signed=True)
 
     def _execute_graph_relu(self, table, layer) -> None:
         _, input0, _, _, output, *_, flags, _ = layer

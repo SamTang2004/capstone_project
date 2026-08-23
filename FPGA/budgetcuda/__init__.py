@@ -4,7 +4,9 @@ from .quantization import ModelQDQParams, QuantizationParams, dequantize_int8, o
 from .tensor import Tensor
 from .pynq import PynqBuffer, PynqDevice, PynqPlRuntime, connect, pack_transformer_activations_int8, pack_transformer_weights
 from .diagnostics import DiagnosticResult, DiagnosticsSettings, LayerDiagnostics, RunDiagnostics
-from .deit import DeiTConfig, build_deit_attention_block_package, build_deit_mlp_block_package
+from .deit import (DeiTConfig, build_deit_attention_block_package, build_deit_layernorm_package,
+                   build_deit_linear_package, build_deit_mlp_block_package)
+from .deit_runtime import DeiTInferenceResult, DeiTManifestRunner
 
 __all__ = [
     "BoardEndpoint", "DEFAULT_PROTOCOL_PORT", "DEFAULT_PYNQ_IP", "Device",
@@ -12,6 +14,8 @@ __all__ = [
     "PynqPlRuntime", "QuantizationParams", "SocketTransport", "Tensor",
     "connect", "dequantize_int8", "onnx_qdq_params", "quantize_int8",
     "DiagnosticResult", "DiagnosticsSettings", "LayerDiagnostics", "RunDiagnostics",
-    "DeiTConfig", "build_deit_attention_block_package", "build_deit_mlp_block_package",
+    "DeiTConfig", "DeiTInferenceResult", "DeiTManifestRunner",
+    "build_deit_attention_block_package", "build_deit_layernorm_package",
+    "build_deit_linear_package", "build_deit_mlp_block_package",
     "pack_transformer_activations_int8", "pack_transformer_weights",
 ]

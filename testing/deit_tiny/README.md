@@ -48,8 +48,10 @@ The FP4 run uses the same scale granularity as INT4 to isolate the element
 format. It is not NVFP4: NVFP4 adds hierarchical 16-element block scaling and
 FP8 scale metadata.
 
-This is fake-quantized QAT for an accuracy comparison. It is not yet an integer
-ONNX export or measured PYNQ-Z2 execution.
+The table in `RESULTS.md` remains a fake-quantized QAT accuracy comparison. A
+separate shared-scale W8A8 hardware manifest can now be exported and executed
+on the PYNQ-Z2; its integer scaling contract is intentionally more restrictive
+than the per-output-channel QAT experiment.
 
 ## Reproduce
 
@@ -62,6 +64,7 @@ python -m pytest testing/deit_tiny/test_quantization.py -q
 python testing/deit_tiny/train_deit_tiny.py --device cuda
 python testing/deit_tiny/train_mixed_precision.py --device cuda
 python testing/deit_tiny/train_fp4.py --device cuda
+python testing/deit_tiny/export_budgetcuda.py
 ```
 
 To independently reload and score a saved model:
@@ -70,5 +73,19 @@ To independently reload and score a saved model:
 python testing/deit_tiny/evaluate_checkpoint.py `
   testing/deit_tiny/artifacts/int4/best_fake_quant.pt --device cuda
 ```
+
+To run a complete W8A8 image through a BudgetCUDA board server:
+
+```powershell
+python testing/deit_tiny/run_budgetcuda_deit.py path/to/image.jpg `
+  --manifest testing/deit_tiny/artifacts/budgetcuda_w8a8/manifest.json `
+  --address 192.168.2.99
+```
+
+The runner validates every tensor hash and streams patch embedding, each
+attention/MLP block, final LayerNorm, and the six-class head. The first physical
+smoke run completed correctly in 45.73 seconds because each of its 27 subgraphs
+is uploaded and allocated separately; this path establishes correctness, not
+the less-than-500-ms deployment target.
 
 See `RESULTS.md` for the measured comparison and limitations.

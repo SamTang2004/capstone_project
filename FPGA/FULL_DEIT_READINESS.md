@@ -19,6 +19,8 @@
   10,520/53,200 LUTs, and 4/140 BRAM tiles
 - Physical W8A8/W4A8 GEMM, fused requantize-pack, MLP, and complete three-head
   attention validation on the PYNQ-Z2
+- A streamed manifest runner covering image preprocessing, patch embedding,
+  class/position tokens, all 12 encoder blocks, final LayerNorm, and the head
 
 ## Completed encoder requirements
 
@@ -46,12 +48,19 @@
 - Debug event inputs are registered at the control/status boundary. This keeps
   trace collection off the shared-DDR handshake critical path and restored
   100 MHz timing closure.
+- A complete W8A8 image run on the PYNQ-Z2 classified the fresh-apple smoke
+  image as `apple_fresh`, with logits `[3, -2, 1, 1, -1, -6]`.
+- The corrected complete-image host timing was 45.73 seconds, including a
+  0.46-second patch-embedding stage. The path repeatedly allocates, uploads,
+  executes, reads, and frees 27 graphs; it is a functional-integration path,
+  not a resident-model kernel benchmark.
 
-## Remaining full-run requirement
+## Remaining deployment requirements
 
-The remaining gap is an executable complete-image package and runner that joins
-patch extraction/embedding, class and position tokens, all 12 encoder blocks,
-final LayerNorm, and the six-class head. The exporter contains all 74 tensors,
-but physical full-image latency and end-to-end board accuracy cannot be measured
-until that orchestration package is generated and run. Kernel and encoder-graph
-hardware validation should not be reported as complete-image DeiT inference.
+The complete-image path is functionally integrated, but its 45.73-second host
+time does not meet the less-than-500-ms objective. Reaching that target
+requires a persistent execution plan: retain weights and reusable buffers in
+board memory, eliminate per-stage model upload/allocation round trips, fuse
+adjacent scheduling steps, and profile hardware-only counters separately from
+host transport time. End-to-end board accuracy must also be measured over the
+held-out split; one correctly classified smoke image is not an accuracy result.

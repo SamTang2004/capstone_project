@@ -7,7 +7,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from budgetcuda import Device, DiagnosticResult, DeiTConfig, build_deit_attention_block_package, build_deit_mlp_block_package
 from budgetcuda.compiler import GraphBuilder, HostBuffer, upload_model
 from budgetcuda.dtypes import BufferUsage, DType, Layout, OpType
-from budgetcuda.packing import pack_transformer_activations_int8, pack_transformer_weights
+from budgetcuda.packing import (
+    pack_transformer_activations_int8,
+    pack_transformer_weights,
+    unpack_transformer_activations_int8,
+    unpack_transformer_weights,
+)
 
 
 def values(result):
@@ -27,6 +32,17 @@ class TransformerOpsTest(unittest.TestCase):
         self.assertEqual(HostBuffer("a", (3, 2), DType.INT8, Layout.TRANSFORMER_ACTIVATION_TILED_INT8).size_bytes, 16)
         self.assertEqual(HostBuffer("w8", (2, 9), DType.INT8, Layout.TRANSFORMER_WEIGHT_TILED_INT8).size_bytes, 32)
         self.assertEqual(HostBuffer("w4", (2, 9), DType.INT8, Layout.TRANSFORMER_WEIGHT_TILED_INT4).size_bytes, 16)
+
+    def test_packed_weight_round_trip(self):
+        values_in = [[-8, -1, 0, 7, 2], [1, 2, 3, 4, -5]]
+        for int4 in (False, True):
+            raw = pack_transformer_weights(values_in, 2, 5, int4=int4)
+            self.assertEqual(unpack_transformer_weights(raw, 2, 5, int4=int4), values_in)
+
+    def test_packed_activation_round_trip_with_padding(self):
+        values_in = [[row * 7 + column - 20 for column in range(7)] for row in range(11)]
+        raw = pack_transformer_activations_int8(values_in, 11, 7)
+        self.assertEqual(unpack_transformer_activations_int8(raw, 11, 7), values_in)
 
     def test_opcodes_append_without_changing_legacy_values(self):
         self.assertEqual(int(OpType.REQUANTIZE), 11)
@@ -106,6 +122,17 @@ class TransformerOpsTest(unittest.TestCase):
             model = upload_model(Device.mock(), package)
             sample = [-3, -1, 1, 3] * 3
             self.assertEqual(values(model.run(sample)), sample)
+
+    def test_transformer_gemm_applies_exported_int32_bias(self):
+        graph = GraphBuilder("biased")
+        inp = graph.add_transformer_activation("input", 1, 2)
+        weight = graph.add_transformer_weight("weight", 2, 2, [[0, 0], [0, 0]])
+        bias = graph.add_buffer("bias", (2,), DType.INT32, BufferUsage.WEIGHT, [3, -4])
+        acc = graph.add_buffer("acc", (1, 2), DType.INT32, BufferUsage.OUTPUT)
+        graph.transformer_gemm(inp, weight, acc, m=1, n=2, k=2, bias_idx=bias)
+        model = upload_model(Device.mock(), graph.package(inp, acc))
+        packed = pack_transformer_activations_int8([[1, 2]], 1, 2)
+        self.assertEqual(values(model.run(packed)), [3, -4])
 
     def test_dynamic_transpose_pack_enables_qk_transpose_gemm(self):
         graph = GraphBuilder("attention")

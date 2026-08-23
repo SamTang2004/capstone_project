@@ -71,10 +71,14 @@ rather than prerequisites for recovering accuracy.
   heuristic, not a guarantee of instance-independent evaluation.
 - Perfect INT8 accuracy may partly reflect dataset-specific backgrounds or
   acquisition conditions and must not be presented as field accuracy.
-- Quantization is simulated during QAT. Packed integer export and PYNQ-Z2
-  numerical equivalence have not yet been implemented.
+- The accuracy table measures fake-quantized QAT. The shared-scale W8A8 export
+  now has packed integer weights and one successful full-image PYNQ-Z2 smoke
+  run, but the complete 178-image board accuracy study has not been performed.
 - Per-output-channel weight scales improve accuracy but are not supported by
   the repository's current per-tensor BudgetCUDA deployment contract.
+- The corrected full-image host timing was 45.73 seconds. The path uses 27
+  streamed graph uploads and allocations, so it is not evidence for the
+  <500-ms latency goal.
 - The FP4 experiment is scaled E2M1 with matched INT4 scale granularity. It is
   not NVIDIA NVFP4 or OCP MXFP4 and does not include their block-scale metadata.
 

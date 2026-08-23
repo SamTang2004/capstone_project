@@ -52,6 +52,8 @@ def build_deit_mlp_block_package(
     *,
     gamma_q8=None,
     beta_q8=None,
+    fc1_bias_int32=None,
+    fc2_bias_int32=None,
     fc1_requant=(1, 0, 0, 0),
     fc2_requant=(1, 0, 0, 0),
     accelerator_layout: bool = False,
@@ -75,6 +77,8 @@ def build_deit_mlp_block_package(
           if accelerator_layout else
           graph.add_buffer("fc1.weight", (hidden_dim, mlp_dim), DType.INT8, BufferUsage.WEIGHT, fc1_weights))
     acc1 = graph.add_buffer("fc1.acc", (tokens, mlp_dim), DType.INT32)
+    b1 = (0 if fc1_bias_int32 is None else
+          graph.add_buffer("fc1.bias", (mlp_dim,), DType.INT32, BufferUsage.WEIGHT, fc1_bias_int32))
     q1_params = graph.requantize_params("fc1.requant", *fc1_requant)
     q1 = (graph.add_transformer_activation("fc1.q", tokens, mlp_dim) if accelerator_layout
           else graph.add_buffer("fc1.q", (tokens, mlp_dim), DType.INT8))
@@ -85,17 +89,21 @@ def build_deit_mlp_block_package(
           if accelerator_layout else
           graph.add_buffer("fc2.weight", (mlp_dim, hidden_dim), DType.INT8, BufferUsage.WEIGHT, fc2_weights))
     acc2 = graph.add_buffer("fc2.acc", (tokens, hidden_dim), DType.INT32)
+    b2 = (0 if fc2_bias_int32 is None else
+          graph.add_buffer("fc2.bias", (hidden_dim,), DType.INT32, BufferUsage.WEIGHT, fc2_bias_int32))
     q2_params = graph.requantize_params("fc2.requant", *fc2_requant)
     q2 = graph.add_buffer("fc2.q", (tokens, hidden_dim), DType.INT8)
     out = graph.add_buffer("output", (tokens, hidden_dim), DType.INT8, BufferUsage.OUTPUT)
     graph.layer_norm(inp, gamma, beta, norm, rows=tokens, features=hidden_dim)
-    (graph.transformer_gemm if accelerator_layout else graph.gemm)(norm, w1, acc1, m=tokens, n=mlp_dim, k=hidden_dim)
+    (graph.transformer_gemm if accelerator_layout else graph.gemm)(
+        norm, w1, acc1, m=tokens, n=mlp_dim, k=hidden_dim, bias_idx=b1)
     if accelerator_layout:
         graph.requantize_pack(acc1, q1, q1_params, rows=tokens, columns=mlp_dim)
     else:
         graph.requantize(acc1, q1, q1_params)
     graph.gelu(q1, gelu)
-    (graph.transformer_gemm if accelerator_layout else graph.gemm)(gelu, w2, acc2, m=tokens, n=hidden_dim, k=mlp_dim)
+    (graph.transformer_gemm if accelerator_layout else graph.gemm)(
+        gelu, w2, acc2, m=tokens, n=hidden_dim, k=mlp_dim, bias_idx=b2)
     graph.requantize(acc2, q2, q2_params)
     graph.residual_add(inp, q2, out)
     return graph.package(inp, out)
@@ -112,6 +120,10 @@ def build_deit_attention_block_package(
     *,
     gamma_q8=None,
     beta_q8=None,
+    q_bias_int32=None,
+    k_bias_int32=None,
+    v_bias_int32=None,
+    output_bias_int32=None,
     qkv_requant=(1, 0, 0, 0),
     score_requant=(1, 0, 0, 0),
     context_requant=(1, 0, 0, 0),
@@ -139,14 +151,18 @@ def build_deit_attention_block_package(
     for head in range(heads):
         prefix = f"head{head}"
         projected = []
-        for label, weights in (("q", q_weights), ("k", k_weights), ("v", v_weights)):
+        for label, weights, biases in (("q", q_weights, q_bias_int32), ("k", k_weights, k_bias_int32),
+                                       ("v", v_weights, v_bias_int32)):
             weight = graph.add_transformer_weight(
                 f"{prefix}.{label}.weight", hidden_dim, head_dim,
                 _head_columns(weights, hidden_dim, head_dim, head), int4=weight_int4,
             )
             acc = graph.add_buffer(f"{prefix}.{label}.acc", (tokens, head_dim), DType.INT32)
+            bias = (0 if biases is None else graph.add_buffer(
+                f"{prefix}.{label}.bias", (head_dim,), DType.INT32, BufferUsage.WEIGHT,
+                list(biases)[head * head_dim:(head + 1) * head_dim]))
             quantized = graph.add_transformer_activation(f"{prefix}.{label}", tokens, head_dim)
-            graph.transformer_gemm(norm, weight, acc, m=tokens, n=head_dim, k=hidden_dim)
+            graph.transformer_gemm(norm, weight, acc, m=tokens, n=head_dim, k=hidden_dim, bias_idx=bias)
             graph.requantize_pack(acc, quantized, qkv_params, rows=tokens, columns=head_dim)
             projected.append(quantized)
         query, key, value = projected
@@ -179,10 +195,60 @@ def build_deit_attention_block_package(
         _matrix(output_weights, hidden_dim, hidden_dim), int4=weight_int4,
     )
     out_acc = graph.add_buffer("output.acc", (tokens, hidden_dim), DType.INT32)
-    graph.transformer_gemm(merged_tiled, out_weight, out_acc, m=tokens, n=hidden_dim, k=hidden_dim)
+    out_bias = (0 if output_bias_int32 is None else graph.add_buffer(
+        "output.bias", (hidden_dim,), DType.INT32, BufferUsage.WEIGHT, output_bias_int32))
+    graph.transformer_gemm(merged_tiled, out_weight, out_acc, m=tokens, n=hidden_dim, k=hidden_dim,
+                           bias_idx=out_bias)
     out_params = graph.requantize_params("output.requant", *output_requant)
     projected_out = graph.add_buffer("output.q", (tokens, hidden_dim), DType.INT8)
     graph.requantize(out_acc, projected_out, out_params)
     out = graph.add_buffer("output", (tokens, hidden_dim), DType.INT8, BufferUsage.OUTPUT)
     graph.residual_add(inp, projected_out, out)
     return graph.package(inp, out)
+
+
+def build_deit_linear_package(
+    rows: int,
+    input_features: int,
+    output_features: int,
+    weights,
+    *,
+    bias_int32=None,
+    requant=(1, 0, 0, 0),
+    weight_int4: bool = False,
+    name: str = "deit_linear",
+) -> ModelPackage:
+    """Build one tiled accelerator linear layer with row-major INT8 output."""
+    graph = GraphBuilder(name)
+    inp = graph.add_transformer_activation("input", rows, input_features)
+    weight = graph.add_transformer_weight(
+        "weight", input_features, output_features,
+        _matrix(weights, input_features, output_features), int4=weight_int4,
+    )
+    bias = (0 if bias_int32 is None else graph.add_buffer(
+        "bias", (output_features,), DType.INT32, BufferUsage.WEIGHT, bias_int32))
+    accumulator = graph.add_buffer("acc", (rows, output_features), DType.INT32)
+    params = graph.requantize_params("requant", *requant)
+    output = graph.add_buffer("output", (rows, output_features), DType.INT8, BufferUsage.OUTPUT)
+    graph.transformer_gemm(inp, weight, accumulator, m=rows, n=output_features,
+                           k=input_features, bias_idx=bias)
+    graph.requantize(accumulator, output, params)
+    return graph.package(inp, output)
+
+
+def build_deit_layernorm_package(
+    rows: int,
+    features: int,
+    gamma_q8,
+    beta_q8,
+    *,
+    name: str = "deit_final_norm",
+) -> ModelPackage:
+    graph = GraphBuilder(name)
+    inp = graph.add_buffer("input", (rows, features), DType.INT8)
+    gamma = graph.add_buffer("gamma", (features,), DType.INT16, BufferUsage.WEIGHT, gamma_q8)
+    beta = graph.add_buffer("beta", (features,), DType.INT16, BufferUsage.WEIGHT, beta_q8)
+    output = graph.add_transformer_activation(
+        "output", rows, features, usage=BufferUsage.OUTPUT)
+    graph.layer_norm(inp, gamma, beta, output, rows=rows, features=features)
+    return graph.package(inp, output)
