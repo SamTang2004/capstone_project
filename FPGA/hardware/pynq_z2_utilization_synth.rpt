@@ -1,7 +1,7 @@
 Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2024 Advanced Micro Devices, Inc. All Rights Reserved.
 ---------------------------------------------------------------------------------------------------------------------------------------------
 | Tool Version : Vivado v.2024.2 (win64) Build 5239630 Fri Nov 08 22:35:27 MST 2024
-| Date         : Sat Aug 22 21:49:01 2026
+| Date         : Sun Aug 23 03:07:29 2026
 | Host         : Server_0 running 64-bit major release  (build 9200)
 | Command      : report_utilization -file C:/python_projects/capstone_project/FPGA/hardware/pynq_z2_utilization_synth.rpt
 | Design       : bcuda_ps_pl_wrapper
@@ -31,16 +31,16 @@ Table of Contents
 +----------------------------+-------+-------+------------+-----------+-------+
 |          Site Type         |  Used | Fixed | Prohibited | Available | Util% |
 +----------------------------+-------+-------+------------+-----------+-------+
-| Slice LUTs*                | 10747 |     0 |          0 |     53200 | 20.20 |
-|   LUT as Logic             | 10427 |     0 |          0 |     53200 | 19.60 |
-|   LUT as Memory            |   320 |     0 |          0 |     17400 |  1.84 |
-|     LUT as Distributed RAM |   254 |     0 |            |           |       |
+| Slice LUTs*                | 17760 |     0 |          0 |     53200 | 33.38 |
+|   LUT as Logic             | 11936 |     0 |          0 |     53200 | 22.44 |
+|   LUT as Memory            |  5824 |     0 |          0 |     17400 | 33.47 |
+|     LUT as Distributed RAM |  5758 |     0 |            |           |       |
 |     LUT as Shift Register  |    66 |     0 |            |           |       |
-| Slice Registers            | 10916 |     0 |          0 |    106400 | 10.26 |
-|   Register as Flip Flop    | 10916 |     0 |          0 |    106400 | 10.26 |
+| Slice Registers            | 11215 |     0 |          0 |    106400 | 10.54 |
+|   Register as Flip Flop    | 11215 |     0 |          0 |    106400 | 10.54 |
 |   Register as Latch        |     0 |     0 |          0 |    106400 |  0.00 |
-| F7 Muxes                   |  1516 |     0 |          0 |     26600 |  5.70 |
-| F8 Muxes                   |   411 |     0 |          0 |     13300 |  3.09 |
+| F7 Muxes                   |  2059 |     0 |          0 |     26600 |  7.74 |
+| F8 Muxes                   |   535 |     0 |          0 |     13300 |  4.02 |
 +----------------------------+-------+-------+------------+-----------+-------+
 * Warning! The Final LUT count, after physical optimizations and full implementation, is typically lower. Run opt_design after synthesis, if not already completed, for a more realistic count.
 Warning! LUT value is adjusted to account for LUT combining.
@@ -62,7 +62,7 @@ Warning! For any ECO changes, please run place_design if there are unplaced inst
 | 0     |          Yes |           - |          Set |
 | 0     |          Yes |           - |        Reset |
 | 24    |          Yes |         Set |            - |
-| 10892 |          Yes |       Reset |            - |
+| 11191 |          Yes |       Reset |            - |
 +-------+--------------+-------------+--------------+
 
 
@@ -72,10 +72,10 @@ Warning! For any ECO changes, please run place_design if there are unplaced inst
 +-------------------+------+-------+------------+-----------+-------+
 |     Site Type     | Used | Fixed | Prohibited | Available | Util% |
 +-------------------+------+-------+------------+-----------+-------+
-| Block RAM Tile    |    4 |     0 |          0 |       140 |  2.86 |
-|   RAMB36/FIFO*    |    4 |     0 |          0 |       140 |  2.86 |
-|     RAMB36E1 only |    4 |       |            |           |       |
-|   RAMB18          |    0 |     0 |          0 |       280 |  0.00 |
+| Block RAM Tile    |    1 |     0 |          0 |       140 |  0.71 |
+|   RAMB36/FIFO*    |    0 |     0 |          0 |       140 |  0.00 |
+|   RAMB18          |    2 |     0 |          0 |       280 |  0.71 |
+|     RAMB18E1 only |    2 |       |            |           |       |
 +-------------------+------+-------+------------+-----------+-------+
 * Note: Each Block RAM Tile only has one FIFO logic available and therefore can accommodate only one FIFO36E1 or one FIFO18E1. However, if a FIFO18E1 occupies a Block RAM Tile, that tile can still accommodate a RAMB18E1
 
@@ -153,17 +153,18 @@ Warning! For any ECO changes, please run place_design if there are unplaced inst
 +----------+-------+----------------------+
 | Ref Name |  Used |  Functional Category |
 +----------+-------+----------------------+
-| FDRE     | 10892 |         Flop & Latch |
-| LUT6     |  5653 |                  LUT |
-| LUT2     |  2369 |                  LUT |
-| LUT3     |  1645 |                  LUT |
-| MUXF7    |  1516 |                MuxFx |
-| LUT4     |  1222 |                  LUT |
-| LUT5     |  1092 |                  LUT |
-| CARRY4   |   998 |           CarryLogic |
-| MUXF8    |   411 |                MuxFx |
+| FDRE     | 11191 |         Flop & Latch |
+| LUT6     |  6699 |                  LUT |
+| RAMD64E  |  5504 |   Distributed Memory |
+| LUT2     |  2503 |                  LUT |
+| MUXF7    |  2059 |                MuxFx |
+| LUT3     |  1615 |                  LUT |
+| LUT5     |  1335 |                  LUT |
+| LUT4     |  1273 |                  LUT |
+| CARRY4   |  1013 |           CarryLogic |
+| MUXF8    |   535 |                MuxFx |
 | RAMS64E  |   220 |   Distributed Memory |
-| LUT1     |   154 |                  LUT |
+| LUT1     |   175 |                  LUT |
 | BIBUF    |   130 |                   IO |
 | DSP48E1  |    88 |     Block Arithmetic |
 | SRLC32E  |    47 |   Distributed Memory |
@@ -171,7 +172,7 @@ Warning! For any ECO changes, please run place_design if there are unplaced inst
 | FDSE     |    24 |         Flop & Latch |
 | SRL16E   |    19 |   Distributed Memory |
 | RAMS32   |    12 |   Distributed Memory |
-| RAMB36E1 |     4 |         Block Memory |
+| RAMB18E1 |     2 |         Block Memory |
 | PS7      |     1 | Specialized Resource |
 | BUFG     |     1 |                Clock |
 +----------+-------+----------------------+

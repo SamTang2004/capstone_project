@@ -23,8 +23,9 @@ module transformer_gemm_scheduler #(
     output logic [3:0] write_req_strb, output logic write_req_last,
     input logic memory_busy, memory_error
 );
-    typedef enum logic [3:0] {
-        IDLE, LOAD_A_REQ, LOAD_A_RECV, LOAD_B_REQ, LOAD_B_RECV,
+    typedef enum logic [4:0] {
+        IDLE, LOAD_A_PREP, LOAD_A_REQ, LOAD_A_RECV,
+        LOAD_B_PREP, LOAD_B_REQ, LOAD_B_RECV,
         CORE_START, CORE_PREFETCH, CORE_FEED, CORE_RESULT, WRITE_RESULT,
         WRITE_ARM, WRITE_WAIT, NEXT_TILE, FINISH, FAIL
     } state_t;
@@ -40,6 +41,11 @@ module transformer_gemm_scheduler #(
     logic [31:0] a_base_r, b_base_r, c_base_r, c_stride_r;
     logic [31:0] a_tile_addr, b_tile_addr, c_tile_addr;
     logic [31:0] a_tile_stride, b_tile_stride, c_m_tile_stride, write_addr_r;
+    logic [31:0] active_read_addr;
+    logic [16:0] active_read_bytes_remaining;
+    logic [6:0] active_read_line_remaining;
+    logic [31:0] read_req_addr_r;
+    logic [6:0] read_req_len_r;
     logic [15:0] m_r, n_r, k_r;
     logic core_start, core_busy, core_input_valid, core_input_ready;
     logic core_result_valid, core_result_ready, core_error;
@@ -55,10 +61,19 @@ module transformer_gemm_scheduler #(
     assign core_result_ready = state == NEXT_TILE && pipeline_enable;
 
     assign read_req_valid = pipeline_enable && (state == LOAD_A_REQ || state == LOAD_B_REQ);
-    assign read_req_addr = state == LOAD_A_REQ
+    assign active_read_addr = state == LOAD_A_PREP
         ? a_tile_addr + (load_index << 3)
         : b_tile_addr + (weight_int4_r ? (load_index << 2) : (load_index << 3));
-    assign read_req_len = state == LOAD_A_REQ || !weight_int4_r ? 7'd8 : 7'd4;
+    assign active_read_bytes_remaining = (k_r - load_index) *
+        ((state == LOAD_B_PREP && weight_int4_r) ? 17'd4 : 17'd8);
+    assign active_read_line_remaining = 7'd64 - {1'b0, active_read_addr[5:0]};
+    assign read_req_addr = read_req_addr_r;
+    /* W8 vectors are streamed a cache line at a time. Packed W4 retains its
+     * one-vector request until the wide W4 splitter is connected here. */
+    assign read_req_len = read_req_len_r;
+    wire [6:0] prepared_read_len = state == LOAD_B_PREP && weight_int4_r ? 7'd4 :
+        active_read_bytes_remaining < active_read_line_remaining
+            ? active_read_bytes_remaining[6:0] : active_read_line_remaining;
     assign read_req_wide = 1'b1;
     assign read_req_qword = 1'b1;
     assign read_req_allow_ahead = 1'b0;
@@ -96,6 +111,7 @@ module transformer_gemm_scheduler #(
             c_base_r <= '0; c_stride_r <= '0; m_r <= '0; n_r <= '0; k_r <= '0;
             a_tile_addr <= '0; b_tile_addr <= '0; c_tile_addr <= '0;
             a_tile_stride <= '0; b_tile_stride <= '0; c_m_tile_stride <= '0; write_addr_r <= '0;
+            read_req_addr_r <= '0; read_req_len_r <= '0;
         end else begin
             done <= 1'b0;
             if (memory_error || core_error) begin error <= 1'b1; state <= FAIL; end
@@ -117,25 +133,44 @@ module transformer_gemm_scheduler #(
                         c_m_tile_stride <= c_stride << 3;
                         valid_rows <= dim_m >= 8 ? 8 : dim_m[3:0];
                         valid_cols <= dim_n >= 8 ? 8 : dim_n[3:0];
-                        state <= LOAD_A_REQ;
+                        state <= LOAD_A_PREP;
                     end
+                end
+                LOAD_A_PREP: begin
+                    read_req_addr_r <= active_read_addr;
+                    read_req_len_r <= prepared_read_len;
+                    state <= LOAD_A_REQ;
                 end
                 LOAD_A_REQ: if (read_req_valid && read_req_ready) state <= LOAD_A_RECV;
                 LOAD_A_RECV: if (read_qword_valid) begin
-                    if (read_qword_keep != 8'hff || !read_qword_last) begin error <= 1'b1; state <= FAIL; end
+                    if (read_qword_keep != 8'hff ||
+                        (load_index + 1'b1 == k_r && !read_qword_last)) begin error <= 1'b1; state <= FAIL; end
                     else begin
                         activation_ram[load_index] <= read_qword_data;
-                        if (load_index + 1'b1 == k_r) begin load_index <= 0; state <= LOAD_B_REQ; end
-                        else begin load_index <= load_index + 1'b1; state <= LOAD_A_REQ; end
+                        if (load_index + 1'b1 == k_r) begin load_index <= 0; state <= LOAD_B_PREP; end
+                        else begin
+                            load_index <= load_index + 1'b1;
+                            if (read_qword_last) state <= LOAD_A_PREP;
+                        end
                     end
+                end
+                LOAD_B_PREP: begin
+                    read_req_addr_r <= active_read_addr;
+                    read_req_len_r <= prepared_read_len;
+                    state <= LOAD_B_REQ;
                 end
                 LOAD_B_REQ: if (read_req_valid && read_req_ready) state <= LOAD_B_RECV;
                 LOAD_B_RECV: if (read_qword_valid) begin
-                    if (read_qword_keep != (weight_int4_r ? 8'h0f : 8'hff) || !read_qword_last) begin error <= 1'b1; state <= FAIL; end
+                    if (read_qword_keep != (weight_int4_r ? 8'h0f : 8'hff) ||
+                        (weight_int4_r && !read_qword_last) ||
+                        (load_index + 1'b1 == k_r && !read_qword_last)) begin error <= 1'b1; state <= FAIL; end
                     else begin
                         weight_ram[load_index] <= weight_int4_r ? {32'd0, read_qword_data[31:0]} : read_qword_data;
                         if (load_index + 1'b1 == k_r) begin load_index <= 0; state <= CORE_START; end
-                        else begin load_index <= load_index + 1'b1; state <= LOAD_B_REQ; end
+                        else begin
+                            load_index <= load_index + 1'b1;
+                            if (read_qword_last) state <= LOAD_B_PREP;
+                        end
                     end
                 end
                 CORE_START: begin
@@ -151,7 +186,8 @@ module transformer_gemm_scheduler #(
                     if (feed_index + 1'b1 == k_r) state <= CORE_RESULT;
                     else begin
                         feed_index <= feed_index + 1'b1;
-                        state <= CORE_PREFETCH;
+                        feed_activation <= activation_ram[feed_index + 1'b1];
+                        feed_weight <= weight_ram[feed_index + 1'b1];
                     end
                 end
                 CORE_RESULT: if (core_result_valid) begin
@@ -177,14 +213,16 @@ module transformer_gemm_scheduler #(
                             c_tile_addr <= c_tile_addr + c_m_tile_stride - (n_index << 2);
                             valid_rows <= m_r - (m_index + 8) >= 8 ? 8 : m_r - (m_index + 8);
                             valid_cols <= n_r >= 8 ? 8 : n_r[3:0];
-                            load_index <= 0; state <= LOAD_A_REQ;
+                            load_index <= 0; state <= LOAD_A_PREP;
                         end
                     end else begin
                         n_index <= n_index + 8;
                         b_tile_addr <= b_tile_addr + b_tile_stride;
                         c_tile_addr <= c_tile_addr + 32;
                         valid_cols <= n_r - (n_index + 8) >= 8 ? 8 : n_r - (n_index + 8);
-                        load_index <= 0; state <= LOAD_A_REQ;
+                        /* activation_ram still contains this M tile; retain it
+                         * while walking every N tile. */
+                        load_index <= 0; state <= LOAD_B_PREP;
                     end
                 end
                 FINISH: begin done <= 1'b1; state <= IDLE; end

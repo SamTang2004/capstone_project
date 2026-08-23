@@ -12,21 +12,25 @@ module tb_transformer_gemm_scheduler;
     logic [31:0] write_req_addr,write_req_data; logic [3:0] write_req_strb;
     logic [7:0] mem[0:4095];
     logic pending; logic [31:0] pending_addr; logic [6:0] pending_len;
-    integer errors=0;
+    integer errors=0, read_requests=0;
     always #5 clk=~clk;
 
     transformer_gemm_scheduler #(.MAX_K(16)) dut(.*);
     assign read_req_ready = !pending && !read_qword_valid;
 
     always_ff @(posedge clk) begin
-        if(!rst_n) begin pending<=0;read_qword_valid<=0;read_qword_data<=0;read_qword_keep<=0;read_qword_last<=0; end
+        if(!rst_n) begin pending<=0;read_qword_valid<=0;read_qword_data<=0;read_qword_keep<=0;read_qword_last<=0;read_requests<=0; end
         else begin
-            if(read_req_valid&&read_req_ready) begin pending<=1;pending_addr<=read_req_addr;pending_len<=read_req_len; end
+            if(read_req_valid&&read_req_ready) begin pending<=1;pending_addr<=read_req_addr;pending_len<=read_req_len;read_requests<=read_requests+1; end
             if(pending&&!read_qword_valid) begin
                 read_qword_data<=0;read_qword_keep<=0;
                 for(int i=0;i<8;i++) if(i<pending_len) begin read_qword_data[i*8+:8]<=mem[pending_addr+i];read_qword_keep[i]<=1;end
-                read_qword_last<=1;read_qword_valid<=1;pending<=0;
-            end else if(read_qword_valid&&read_qword_ready) begin read_qword_valid<=0;read_qword_last<=0; end
+                read_qword_last<=pending_len<=8;read_qword_valid<=1;
+            end else if(read_qword_valid&&read_qword_ready) begin
+                read_qword_valid<=0;read_qword_last<=0;
+                if(read_qword_last) pending<=0;
+                else begin pending_addr<=pending_addr+8;pending_len<=pending_len-8;end
+            end
             if(write_req_valid&&write_req_ready)
                 for(int i=0;i<4;i++) if(write_req_strb[i]) mem[write_req_addr+i]<=write_req_data[i*8+:8];
         end
@@ -52,6 +56,7 @@ module tb_transformer_gemm_scheduler;
         launch();
         expect_i32('h800,25);expect_i32('h804,28);expect_i32('h808,57);
         expect_i32('h80c,64);expect_i32('h810,89);expect_i32('h814,100);
+        if(read_requests!=2)begin $error("W8 line requests expected=2 got=%0d",read_requests);errors++;end
 
         for(int i='h800;i<'h818;i++)mem[i]=0;
         weight_int4=1;
@@ -61,6 +66,7 @@ module tb_transformer_gemm_scheduler;
         launch();
         expect_i32('h800,6);expect_i32('h804,1);expect_i32('h808,10);
         expect_i32('h80c,5);expect_i32('h810,14);expect_i32('h814,9);
+        if(read_requests!=5)begin $error("cumulative W8/W4 requests expected=5 got=%0d",read_requests);errors++;end
         if(error||errors)$fatal(1,"Transformer scheduler failed errors=%0d",errors);
         $display("Transformer tiled GEMM scheduler golden trace passed");$finish;
     end

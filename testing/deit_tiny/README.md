@@ -90,7 +90,8 @@ The runner validates the manifest and uploads one fused full-model graph into a
 and the descriptor all remain allocated. `--repeat` therefore performs exactly
 one input write, one graph command, and one logits read per image. The physical
 W8 graph occupies 44,162,214 bytes including its 98,712-byte descriptor, loads once in
-56.26 seconds, and runs in 9.02 seconds with unchanged logits. This is 5.02x
+58.65 seconds, and the optimized diagnostic run completes in 8.61 seconds with
+unchanged logits. This is 5.27x
 faster than the 45.31-second streamed baseline, though still above the
 less-than-500-ms deployment target.
 

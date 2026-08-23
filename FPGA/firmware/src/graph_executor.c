@@ -403,13 +403,18 @@ static int bcuda_execute_gemm_layer(BcudaGraphRuntime *runtime, const BcudaBuffe
             output->dtype != BC_DTYPE_INT32 || output->size_bytes < (uint64_t)layer->n * layer->out_c * sizeof(int32_t)) {
             return BC_STATUS_SHAPE_MISMATCH;
         }
-        for (uint32_t row = 0; row < layer->n; row++) {
-            for (uint32_t column = 0; column < layer->out_c; column++) {
-                uint8_t *destination = (uint8_t *)output->virtual_address +
-                    ((uint64_t)row * layer->out_c + column) * sizeof(int32_t);
-                const uint8_t *bias_value = (const uint8_t *)bias->virtual_address +
-                    (uint64_t)column * sizeof(int32_t);
-                bcuda_write_i32(destination, bcuda_read_i32(destination) + bcuda_read_i32(bias_value));
+        /* XRT allocations and every INT32 graph offset are word aligned. Keep
+         * this as a dense row loop so ARM NEON can vectorize it; board builds
+         * also divide independent rows across the two Cortex-A9 cores. */
+        int32_t *destination = (int32_t *)output->virtual_address;
+        const int32_t *bias_values = (const int32_t *)bias->virtual_address;
+        uint32_t rows = layer->n;
+        uint32_t columns = layer->out_c;
+        #pragma omp parallel for if(rows >= 8u)
+        for (uint32_t row = 0; row < rows; row++) {
+            int32_t *row_values = destination + (uint64_t)row * columns;
+            for (uint32_t column = 0; column < columns; column++) {
+                row_values[column] += bias_values[column];
             }
         }
     }

@@ -29,8 +29,10 @@ done, and bit 2 is error. Debug and 64-bit cycle counters occupy 0x80-0xc8.
 
 The scheduler loads one A tile and one B tile into BRAM, prefetches synchronous
 BRAM outputs, runs K vectors through the shared array, and writes valid C
-elements to DDR. A is currently reloaded for every N tile; this is correct but
-leaves bandwidth optimization for a later cache-aware scheduler.
+elements to DDR. It retains each A tile while walking every N tile, eliminating
+the former repeated activation reads. W8 loads use cache-line-sized requests
+and stream up to eight vectors per request. The synchronous BRAM feed is
+pipelined after its first read, sustaining one K-vector per clock.
 
 Control bit 12 selects the fused INT32-to-tile-major-INT8 requantize-pack path.
 This removes the row-major-to-tile-major host copy between consecutive linear

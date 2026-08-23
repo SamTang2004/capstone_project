@@ -82,8 +82,12 @@ rather than prerequisites for recovering accuracy.
   remaining transient workspaces, descriptors, and 28 graph commands mean this
   is still not evidence for the <500-ms latency goal.
 - A 64 MiB arena now holds the complete 44,162,214-byte working set, including
-  one 666-layer descriptor. The exact host-device-host path took 9.02 seconds with
-  unchanged logits: one input write, one graph command, and one output read.
+  one 666-layer descriptor. After firmware bias parallelization, cache-line
+  GEMM reads, activation-tile retention, and LayerNorm parameter caching, the
+  exact PL windows total 8.388 seconds and the host-observed path takes 8.605
+  seconds with unchanged logits: one input write, one graph command, and one
+  output read. The hardware changes saved only 28.25 ms over the bias-optimized
+  8.416-second baseline because repeated B-tile delivery remains dominant.
   Remaining latency is therefore device execution efficiency, not intermediate
   host transfers.
 - The FP4 experiment is scaled E2M1 with matched INT4 scale granularity. It is
