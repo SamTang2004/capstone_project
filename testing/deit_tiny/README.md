@@ -89,10 +89,11 @@ The runner validates the manifest and uploads one fused full-model graph into a
 64 MiB DDR3 arena. Weights, class/position embeddings, activation workspaces,
 and the descriptor all remain allocated. `--repeat` therefore performs exactly
 one input write, one graph command, and one logits read per image. The physical
-W8 graph occupies 44,162,214 bytes including its 98,712-byte descriptor, loads once in
-58.65 seconds, and the optimized diagnostic run completes in 8.61 seconds with
-unchanged logits. This is 5.27x
-faster than the 45.31-second streamed baseline, though still above the
+W8 graph occupies 44,162,214 bytes including its 98,712-byte descriptor. With
+two 8x8 GEMM cores, the measured graph loads once in 49.91 seconds and inference
+completes in 4.71 seconds with unchanged logits. The exact PL window is 4.517
+seconds, 46.15% below the optimized one-core 8.388-second result and 10.03x
+faster than the 45.31-second streamed baseline. It remains above the
 less-than-500-ms deployment target.
 
 See `RESULTS.md` for the measured comparison and limitations.

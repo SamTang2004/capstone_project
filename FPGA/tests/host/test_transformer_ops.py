@@ -135,6 +135,7 @@ class TransformerOpsTest(unittest.TestCase):
 
     def test_v3_diagnostics_preserve_counters_beyond_32_bits(self):
         settings = DiagnosticsSettings()
+        self.assertEqual(settings.peak_operations_per_cycle, 256)
         raw = bytearray(settings.initial_buffer(1))
         large = (1 << 40) + 123
         header = list(DIAGNOSTICS_HEADER_STRUCT.unpack_from(raw))

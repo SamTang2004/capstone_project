@@ -58,15 +58,29 @@ module tb_transformer_gemm_scheduler;
         expect_i32('h80c,64);expect_i32('h810,89);expect_i32('h814,100);
         if(read_requests!=2)begin $error("W8 line requests expected=2 got=%0d",read_requests);errors++;end
 
+        // Two M tiles execute concurrently and share one B-tile load.
+        dim_m=10;dim_n=2;dim_k=2;c_stride=8;
+        put_qword('h100,64'h0807060504030201);put_qword('h108,0);
+        put_qword('h110,64'h0000000000000a09);put_qword('h118,0);
+        put_qword('h400,64'h0000000000000302);put_qword('h408,0);
+        for(int i='h800;i<'h850;i++)mem[i]=0;
+        launch();
+        for(int row=0;row<10;row++)begin
+            expect_i32('h800+row*8,(row+1)*2);
+            expect_i32('h804+row*8,(row+1)*3);
+        end
+        if(read_requests!=5)begin $error("dual-core W8 expected 3 additional requests, cumulative=%0d",read_requests);errors++;end
+
         for(int i='h800;i<'h818;i++)mem[i]=0;
-        weight_int4=1;
+        dim_m=3;dim_n=2;dim_k=2;c_stride=8;weight_int4=1;
+        put_qword('h100,64'h0000000000050301); put_qword('h108,64'h0000000000060402);
         // W4 vectors: k0=[-2,3], k1=[4,-1].
         mem['h400]=8'h3e;mem['h401]=0;mem['h402]=0;mem['h403]=0;
         mem['h404]=8'hf4;mem['h405]=0;mem['h406]=0;mem['h407]=0;
         launch();
         expect_i32('h800,6);expect_i32('h804,1);expect_i32('h808,10);
         expect_i32('h80c,5);expect_i32('h810,14);expect_i32('h814,9);
-        if(read_requests!=5)begin $error("cumulative W8/W4 requests expected=5 got=%0d",read_requests);errors++;end
+        if(read_requests!=8)begin $error("cumulative W8/dual/W4 requests expected=8 got=%0d",read_requests);errors++;end
         if(error||errors)$fatal(1,"Transformer scheduler failed errors=%0d",errors);
         $display("Transformer tiled GEMM scheduler golden trace passed");$finish;
     end

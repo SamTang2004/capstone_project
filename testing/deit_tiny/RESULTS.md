@@ -82,14 +82,14 @@ rather than prerequisites for recovering accuracy.
   remaining transient workspaces, descriptors, and 28 graph commands mean this
   is still not evidence for the <500-ms latency goal.
 - A 64 MiB arena now holds the complete 44,162,214-byte working set, including
-  one 666-layer descriptor. After firmware bias parallelization, cache-line
-  GEMM reads, activation-tile retention, and LayerNorm parameter caching, the
-  exact PL windows total 8.388 seconds and the host-observed path takes 8.605
-  seconds with unchanged logits: one input write, one graph command, and one
-  output read. The hardware changes saved only 28.25 ms over the bias-optimized
-  8.416-second baseline because repeated B-tile delivery remains dominant.
-  Remaining latency is therefore device execution efficiency, not intermediate
-  host transfers.
+  one 666-layer descriptor. Two 8x8 GEMM cores process separate M tiles while
+  sharing each B tile. The exact PL window is 4.517 seconds and the complete
+  host-observed inference is 4.708 seconds with unchanged logits: one input
+  write, one graph command, and one output read. This is a 46.15% reduction
+  from the optimized one-core 8.388-second result. GEMM falls from 5.200 to
+  1.887 seconds, but requantization, LayerNorm, Softmax, and activation packing
+  still total about 2.50 seconds. Remaining latency is therefore device
+  execution efficiency, not intermediate host transfers.
 - The FP4 experiment is scaled E2M1 with matched INT4 scale granularity. It is
   not NVIDIA NVFP4 or OCP MXFP4 and does not include their block-scale metadata.
 

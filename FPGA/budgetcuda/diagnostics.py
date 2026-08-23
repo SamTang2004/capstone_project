@@ -20,7 +20,7 @@ class DiagnosticsSettings:
     operations: bool = True
     utilization: bool = True
     clock_hz: int = 100_000_000
-    peak_operations_per_cycle: int = 128  # one 8x8 array, two operations per MAC
+    peak_operations_per_cycle: int = 256  # two 8x8 arrays, two operations per MAC
 
     def __post_init__(self):
         if self.clock_hz <= 0 or self.peak_operations_per_cycle <= 0:

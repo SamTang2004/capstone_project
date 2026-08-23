@@ -2,8 +2,9 @@
 
 `bcuda_transformer_ddr_top` is the first deployable top for the Transformer
 migration. It connects AXI-Lite control, the cached DDR memory driver, debug
-counters, and one 8x8 DSP GEMM array. It supports W8A8 and packed W4A8 weights,
-arbitrary positive M/N edge sizes, K up to 1024, and row-major INT32 output.
+counters, and two independent 8x8 DSP GEMM arrays. It supports W8A8 and packed
+W4A8 weights, arbitrary positive M/N edge sizes, K up to 1024, and row-major
+INT32 output.
 
 ## DDR layouts
 
@@ -27,12 +28,17 @@ The existing AXI-Lite offsets are retained. Program A/B/C base addresses,
 operation; bit 11 selects packed W4 weights. STATUS bit 0 is busy, bit 1 is
 done, and bit 2 is error. Debug and 64-bit cycle counters occupy 0x80-0xc8.
 
-The scheduler loads one A tile and one B tile into BRAM, prefetches synchronous
-BRAM outputs, runs K vectors through the shared array, and writes valid C
-elements to DDR. It retains each A tile while walking every N tile, eliminating
-the former repeated activation reads. W8 loads use cache-line-sized requests
-and stream up to eight vectors per request. The synchronous BRAM feed is
-pipelined after its first read, sustaining one K-vector per clock.
+The scheduler loads up to two independent A tiles and one shared B tile into
+BRAM. For M dimensions larger than eight, it assigns adjacent 8-row M tiles to
+the two cores and broadcasts each B vector to both, producing up to 16 rows in
+parallel without reading the weight tile twice. Either core has its own start,
+feed, completion, and result state; the final unpaired M tile runs only on core
+0. The scheduler retains both A tiles while walking every N tile, eliminating
+repeated activation reads. W8 loads use cache-line-sized requests and stream up
+to eight vectors per request. The synchronous BRAM feeds are pipelined after
+their first read and use a lock-step issue handshake whenever both cores are
+active, sustaining one K-vector per clock without allowing their K indices to
+diverge.
 
 Control bit 12 selects the fused INT32-to-tile-major-INT8 requantize-pack path.
 This removes the row-major-to-tile-major host copy between consecutive linear
@@ -41,13 +47,15 @@ weights, and W4 weights respectively.
 
 ## Verified checkpoint
 
-The scheduler passes direct W8/W4 golden tests and an integrated DDR-top golden
-test. The complete PS/PL implementation meets 100 MHz with +0.229 ns setup
-slack and +0.044 ns hold slack and uses 68 of 220 DSP48E1s. Vivado emits `.bit`,
-`.hwh`, `.bin`, and `.xsa` board artifacts under `FPGA/hardware`.
+The scheduler passes direct W8/W4 golden tests, a dual-core asymmetric-edge
+test (M=10), and an integrated DDR-top golden test. The complete PS/PL
+implementation meets 100 MHz with +0.056 ns setup slack and +0.034 ns hold
+slack. It uses 152 of 220 DSP48E1s, 7 BRAM tiles, 11,652 slice LUTs, and 11,445
+slice registers. Vivado emits `.bit`, `.hwh`, `.bin`, and `.xsa` board artifacts
+under `FPGA/hardware`.
 
-This top is a GEMM execution engine, not yet a complete DeiT encoder engine.
-LayerNorm, GELU, Softmax, bias, and residual blocks have standalone RTL tests
-but still need DDR-stream wrappers and top-level operation scheduling.
-Until then, the firmware graph executor supplies CPU fallbacks for these ops,
-allowing hybrid MLP-block execution around the accelerated GEMMs.
+The top executes one graph operation at a time; firmware remains responsible
+for issuing the full DeiT graph. LayerNorm, GELU, Softmax, residual addition,
+requantization, and activation packing have DDR-backed hardware paths. The two
+GEMM cores are scheduled independently at tile granularity inside a launch,
+while data-dependent graph operations remain sequential across launches.
