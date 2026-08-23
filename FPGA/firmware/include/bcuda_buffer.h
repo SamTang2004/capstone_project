@@ -6,7 +6,7 @@
 
 #include "bcuda_protocol.h"
 
-#define BCUDA_MAX_BUFFERS 512
+#define BCUDA_MAX_BUFFERS 2048
 
 typedef int (*BcudaBufferSyncFn)(uint64_t offset, uint64_t bytes, void *context);
 

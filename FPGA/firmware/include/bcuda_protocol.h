@@ -71,7 +71,8 @@ enum {
     BC_OP_SOFTMAX = 14,
     BC_OP_RESIDUAL_ADD = 15,
     BC_OP_ACTIVATION_B_PACK = 16,
-    BC_OP_TOKEN_CONCAT = 17
+    BC_OP_TOKEN_CONCAT = 17,
+    BC_OP_TOKEN_EMBEDDING = 18
 };
 
 /* Transformer primitive flags. Existing opcodes and descriptor layout remain ABI-compatible. */

@@ -232,6 +232,57 @@ class ResidentBufferPool:
             raise first_error
 
 
+def compose_model_packages(name: str, packages: Iterable[ModelPackage]) -> ModelPackage:
+    """Fuse sequential packages, aliasing each output to the next input."""
+    packages = list(packages)
+    if not packages:
+        raise ValueError("At least one package is required")
+    buffers = []
+    layers = []
+    previous_output = None
+    first_input = None
+    for package_number, package in enumerate(packages):
+        mapping = {}
+        if previous_output is not None:
+            expected = package.buffers[package.input_index]
+            actual = buffers[previous_output]
+            if (expected.dtype != actual.dtype or expected.layout != actual.layout or
+                    expected.size_bytes > actual.size_bytes):
+                raise ValueError(
+                    f"Package {package_number} input is incompatible with the previous output")
+            mapping[package.input_index] = previous_output
+        for index, buffer in enumerate(package.buffers):
+            if index in mapping:
+                continue
+            mapping[index] = len(buffers)
+            buffers.append(buffer)
+        if first_input is None:
+            first_input = mapping[package.input_index]
+
+        def required(index: int) -> int:
+            return mapping[index]
+
+        def optional(index: int) -> int:
+            return 0 if index == 0 else mapping[index]
+
+        for layer in package.layers:
+            layers.append(replace(
+                layer,
+                input0=required(layer.input0),
+                input1=optional(layer.input1),
+                input2=optional(layer.input2),
+                output=required(layer.output),
+                weight=optional(layer.weight),
+                bias=optional(layer.bias),
+                scale=optional(layer.scale),
+            ))
+        previous_output = mapping[package.output_index]
+    return ModelPackage(
+        buffers, layers, first_input, previous_output,
+        flags=packages[-1].flags,
+    )
+
+
 class GraphBuilder:
     def __init__(self, name: str = "graph"):
         self.name = name
@@ -508,6 +559,30 @@ class GraphBuilder:
         self.layers.append(Layer(OpType.TOKEN_CONCAT, input0=padded_inputs[0], input1=padded_inputs[1],
                                  input2=padded_inputs[2], output=output_idx, n=rows,
                                  c=padded_widths[0], h=padded_widths[1], w=padded_widths[2], out_c=sum(widths)))
+
+    def token_embedding(
+        self, patches_idx: int, position_idx: int, scale_idx: int,
+        output_idx: int, *, patch_rows: int, features: int,
+    ) -> None:
+        patches = self.buffers[patches_idx]
+        position = self.buffers[position_idx]
+        scale = self.buffers[scale_idx]
+        output = self.buffers[output_idx]
+        if (patches.dtype != DType.INT8 or patches.layout != Layout.ROW_MAJOR or
+                patches.shape != (patch_rows, features)):
+            raise ValueError("Token embedding patches must be row-major INT8")
+        if (position.dtype != DType.INT8 or position.layout != Layout.ROW_MAJOR or
+                position.shape != (patch_rows + 1, features)):
+            raise ValueError("Token embedding position tensor has the wrong shape")
+        if scale.dtype != DType.INT8 or scale.shape != (256,):
+            raise ValueError("Token embedding scale must be a 256-entry INT8 LUT")
+        if (output.dtype != DType.INT8 or output.layout != Layout.ROW_MAJOR or
+                output.shape != (patch_rows + 1, features)):
+            raise ValueError("Token embedding output has the wrong shape")
+        self.layers.append(Layer(
+            OpType.TOKEN_EMBEDDING, input0=patches_idx, output=output_idx,
+            weight=position_idx, scale=scale_idx, n=patch_rows, c=features,
+        ))
 
     def package(self, input_idx: int, output_idx: int) -> ModelPackage:
         return ModelPackage(self.buffers, self.layers, input_idx, output_idx)

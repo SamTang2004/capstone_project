@@ -5,7 +5,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from budgetcuda import Device, DiagnosticResult, DeiTConfig, build_deit_attention_block_package, build_deit_mlp_block_package
-from budgetcuda.compiler import GraphBuilder, HostBuffer, upload_model
+from budgetcuda.compiler import GraphBuilder, HostBuffer, compose_model_packages, upload_model
 from budgetcuda.dtypes import BufferUsage, DType, Layout, OpType
 from budgetcuda.packing import (
     pack_transformer_activations_int8,
@@ -48,6 +48,37 @@ class TransformerOpsTest(unittest.TestCase):
         self.assertEqual(int(OpType.REQUANTIZE), 11)
         self.assertEqual([int(OpType.LAYERNORM), int(OpType.GELU), int(OpType.SOFTMAX), int(OpType.RESIDUAL_ADD)], [12, 13, 14, 15])
         self.assertEqual(int(OpType.ACTIVATION_B_PACK), 16)
+        self.assertEqual(int(OpType.TOKEN_EMBEDDING), 18)
+
+    def test_token_embedding_prepends_class_position_and_adds_patches(self):
+        graph = GraphBuilder("tokens")
+        patches = graph.add_buffer("patches", (2, 2), DType.INT8)
+        position = graph.add_buffer(
+            "position", (3, 2), DType.INT8, BufferUsage.WEIGHT,
+            [[10, 11], [1, 2], [3, 4]])
+        identity_lut = list(range(128)) + list(range(-128, 0))
+        scale = graph.add_buffer(
+            "scale", (256,), DType.INT8, BufferUsage.WEIGHT, identity_lut)
+        output = graph.add_buffer("output", (3, 2), DType.INT8, BufferUsage.OUTPUT)
+        graph.token_embedding(patches, position, scale, output, patch_rows=2, features=2)
+        model = upload_model(Device.mock(), graph.package(patches, output))
+        self.assertEqual(values(model.run([[5, -5], [7, -7]])), [10, 11, 6, -3, 10, -3])
+
+    def test_sequential_packages_compose_to_one_graph(self):
+        first = GraphBuilder("first")
+        first_input = first.add_buffer("input", (4,), DType.INT8)
+        first_output = first.add_buffer("output", (4,), DType.INT8, BufferUsage.OUTPUT)
+        first.relu(first_input, first_output)
+        second = GraphBuilder("second")
+        second_input = second.add_buffer("input", (4,), DType.INT8)
+        second_output = second.add_buffer("output", (4,), DType.INT8, BufferUsage.OUTPUT)
+        second.relu(second_input, second_output)
+        package = compose_model_packages(
+            "composed", [first.package(first_input, first_output),
+                         second.package(second_input, second_output)])
+        self.assertEqual((len(package.buffers), len(package.layers)), (3, 2))
+        model = upload_model(Device.mock(), package)
+        self.assertEqual(values(model.run([-4, 0, 3, 8])), [0, 0, 3, 8])
 
     def test_layernorm_matches_rtl_golden_vector(self):
         graph = GraphBuilder("ln")

@@ -9,7 +9,7 @@ Type=simple
 User=root
 WorkingDirectory=/opt/budgetcuda
 Environment=XILINX_XRT=/usr
-ExecStart=/opt/budgetcuda/budgetcuda-server 9000 16
+ExecStart=/opt/budgetcuda/budgetcuda-server 9000 64
 Restart=on-failure
 RestartSec=2
 

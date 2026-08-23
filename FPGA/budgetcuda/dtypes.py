@@ -69,6 +69,7 @@ class OpType(IntEnum):
     RESIDUAL_ADD = 15
     ACTIVATION_B_PACK = 16
     TOKEN_CONCAT = 17
+    TOKEN_EMBEDDING = 18
 
 
 DTYPE_ALIASES = {

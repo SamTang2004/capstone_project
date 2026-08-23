@@ -12,7 +12,7 @@ from .deit import (
     build_deit_linear_package,
     build_deit_mlp_block_package,
 )
-from .compiler import GraphBuilder, ResidentBufferPool
+from .compiler import GraphBuilder, ResidentBufferPool, compose_model_packages
 from .dtypes import BufferUsage, DType
 from .packing import (
     pack_transformer_activations_int8,
@@ -52,12 +52,7 @@ class DeiTInferenceResult:
 
 
 class DeiTManifestRunner:
-    """Run a complete exported DeiT with model constants resident in DDR.
-
-    All weights, biases, normalization values, and requantization constants are
-    uploaded once. One attention or MLP activation workspace is allocated at a
-    time, keeping a 16 MiB CMA arena usable for all 12 blocks.
-    """
+    """Load a complete DeiT into DDR and execute it with one graph command."""
 
     def __init__(self, device, manifest_path: str | Path):
         self.device = device
@@ -66,16 +61,45 @@ class DeiTManifestRunner:
         self.manifest = json.loads(self.manifest_path.read_text(encoding="utf-8"))
         self._packages = {}
         self._resident = ResidentBufferPool(device)
+        self._full_package = None
+        self._full_model = None
         self._closed = False
         self._validate_manifest()
 
     @property
     def resident_weight_bytes(self) -> int:
+        if self._full_package is not None:
+            return sum(
+                buffer.size_bytes for buffer in self._full_package.buffers
+                if buffer.usage == BufferUsage.WEIGHT)
         return self._resident.bytes
 
     @property
     def resident_buffer_count(self) -> int:
+        if self._full_package is not None:
+            return sum(
+                buffer.usage == BufferUsage.WEIGHT
+                for buffer in self._full_package.buffers)
         return len(self._resident.tensors)
+
+    @property
+    def resident_total_bytes(self) -> int:
+        if self._full_package is None:
+            return self._resident.bytes
+        return (sum(buffer.size_bytes for buffer in self._full_package.buffers) +
+                self.resident_descriptor_bytes)
+
+    @property
+    def resident_descriptor_bytes(self) -> int:
+        if self._full_package is None:
+            return 0
+        return len(self._full_package.serialize_descriptor())
+
+    @property
+    def resident_total_buffer_count(self) -> int:
+        if self._full_package is None:
+            return len(self._resident.tensors)
+        return len(self._full_package.buffers) + 1  # Model descriptor allocation.
 
     def __enter__(self):
         return self
@@ -87,6 +111,9 @@ class DeiTManifestRunner:
         if self._closed:
             return
         self._closed = True
+        if self._full_model is not None:
+            self._full_model.close()
+            self._full_model = None
         self._resident.close()
 
     def _cache_package(self, name: str, build):
@@ -96,8 +123,6 @@ class DeiTManifestRunner:
         if package is None:
             package = build()
             self._packages[name] = package
-            self._resident.upload(
-                buffer for buffer in package.buffers if buffer.usage == BufferUsage.WEIGHT)
         return package
 
     def _attention_package(self, block_index: int):
@@ -197,26 +222,48 @@ class DeiTManifestRunner:
                     row.append(max(-128, min(127, int(round(signed * position_scale / token_scale)))))
                 position.append(row)
             graph = GraphBuilder("deit_token_embedding")
-            inp = graph.add_buffer("input", (rows, hidden), DType.INT8)
+            inp = graph.add_buffer("input", (rows - 1, hidden), DType.INT8)
             constant = graph.add_buffer(
                 "class_position", (rows, hidden), DType.INT8,
                 BufferUsage.WEIGHT, position)
+            scale_ratio = patch_scale / token_scale
+            scale_lut = [
+                max(-128, min(127, int(round(value * scale_ratio))))
+                for value in range(-128, 128)
+            ]
+            scale_lut = scale_lut[128:] + scale_lut[:128]
+            scale = graph.add_buffer(
+                "patch_scale_lut", (256,), DType.INT8,
+                BufferUsage.WEIGHT, scale_lut)
             output = graph.add_buffer(
                 "output", (rows, hidden), DType.INT8, BufferUsage.OUTPUT)
-            graph.residual_add(inp, constant, output)
+            graph.token_embedding(
+                inp, constant, scale, output, patch_rows=rows - 1, features=hidden)
             return graph.package(inp, output)
         return self._cache_package("token_embedding", build)
 
     def load(self, *, include_patch: bool = True):
-        """Upload all model constants to DDR once, before timed inference."""
-        if include_patch:
-            self._patch_package()
-            self._token_embedding_package()
+        """Upload the full graph, constants, and workspaces to DDR once."""
+        if not include_patch:
+            return self._load_streaming_encoder()
+        if self._full_model is not None:
+            return self
+        sequence = [self._patch_package(), self._token_embedding_package()]
         for block_index in range(int(self.manifest["depth"])):
-            self._attention_package(block_index)
-            self._mlp_package(block_index)
-        self._final_norm_package()
-        self._head_package()
+            sequence.extend((self._attention_package(block_index), self._mlp_package(block_index)))
+        sequence.extend((self._final_norm_package(), self._head_package()))
+        self._full_package = compose_model_packages("deit_full_model", sequence)
+        self._full_model = self.device.load_model(self._full_package)
+        return self
+
+    def _load_streaming_encoder(self):
+        packages = []
+        for block_index in range(int(self.manifest["depth"])):
+            packages.extend((self._attention_package(block_index), self._mlp_package(block_index)))
+        packages.extend((self._final_norm_package(), self._head_package()))
+        self._resident.upload(
+            buffer for package in packages for buffer in package.buffers
+            if buffer.usage == BufferUsage.WEIGHT)
         return self
 
     def _validate_manifest(self) -> None:
@@ -333,31 +380,20 @@ class DeiTManifestRunner:
 
         metadata = self.manifest["tensors"]["patch_embed.linear"]
         input_scale = float(metadata["input_scale"])
-        quantized = np.clip(np.rint(patches / input_scale), -128, 127).astype(np.int8).reshape(-1).tolist()
-        package = self._patch_package()
-        patch_started = perf_counter()
-        patch_values = self._execute(package, quantized, tiled_input=True, stage="patch_embedding")
-        patch_seconds = perf_counter() - patch_started
-
-        position_meta = self.manifest["class_position_tokens"]
-        patch_scale = float(metadata["output_scale"])
-        position_scale = float(position_meta["scale"])
-        token_scale = max(patch_scale, position_scale)
-        patch_matrix = np.asarray(patch_values, dtype=np.int32).reshape(grid * grid, -1)
-        patch_matrix = np.rint(patch_matrix * (patch_scale / token_scale)).astype(np.int32)
-        token_input = np.zeros((grid * grid + 1, int(self.manifest["hidden_dim"])), dtype=np.int8)
-        token_input[1:] = np.clip(patch_matrix, -128, 127).astype(np.int8)
-        token_started = perf_counter()
-        tokens = self._execute(
-            self._token_embedding_package(), token_input.reshape(-1).tolist(),
-            stage="token_embedding")
-        token_seconds = perf_counter() - token_started
-        result = self.run_tokens(tokens)
+        quantized = np.clip(np.rint(patches / input_scale), -128, 127).astype(np.int8)
+        payload = pack_transformer_activations_int8(
+            quantized.tolist(), quantized.shape[0], quantized.shape[1])
+        graph_started = perf_counter()
+        try:
+            logits = _flat_int8(self._full_model.run(payload))
+        except Exception as exc:
+            raise RuntimeError("Full resident DeiT graph failed") from exc
+        graph_seconds = perf_counter() - graph_started
+        class_index = max(range(len(logits)), key=logits.__getitem__)
         return DeiTInferenceResult(
-            result.class_index,
-            result.class_name,
-            result.logits,
+            class_index,
+            self.manifest["classes"][class_index],
+            tuple(logits),
             perf_counter() - started,
-            (("patch_embedding", patch_seconds), ("token_embedding", token_seconds),
-             *result.stage_seconds),
+            (("full_device_graph", graph_seconds),),
         )

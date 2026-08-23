@@ -21,9 +21,12 @@
   attention validation on the PYNQ-Z2
 - A streamed manifest runner covering image preprocessing, patch embedding,
   class/position tokens, all 12 encoder blocks, final LayerNorm, and the head
-- CUDA-style resident model storage: 417 W8 model-constant buffers totaling
-  5,599,352 bytes remain in DDR3 and are borrowed by each graph invocation;
+- CUDA-style resident model storage: 418 W8 model-constant buffers totaling
+  5,599,608 bytes remain in DDR3, including an exact token-scaling LUT;
   this includes class and position embeddings
+- A fused 666-layer full-model descriptor: patch embedding, device-side token
+  construction, all encoder blocks, final norm, and head execute through one
+  graph command with no intermediate host reads or writes
 
 ## Completed encoder requirements
 
@@ -64,6 +67,15 @@
 - Moving the class and position embeddings into the resident set preserved the
   logits. The final strict device-owned model loaded in 12.28 seconds and ran
   in 28.48 seconds; its token-embedding accelerator stage took 0.14 seconds.
+- Expanding the XRT arena to 64 MiB permits every constant, activation,
+  workspace, and descriptor to remain allocated. The final W8 graph occupies
+  44,063,502 tensor bytes plus its 98,712-byte descriptor—44,162,214 bytes in
+  1,086 allocations.
+- The final one-command physical run preserved logits
+  `[3, -2, 1, 1, -1, -6]`. One-time model loading took 56.26 seconds; warm
+  inference took 9.02 seconds, including 8.93 seconds for the full device graph.
+  This is 5.02x faster than the 45.31-second baseline and 3.16x faster than the
+  prior constants-only resident path.
 - Peak persistent constants plus the largest transient attention workspace and
   descriptor occupy approximately 7.60 MB of the 16 MiB arena. The firmware
   allocation table now has 512 slots; the final resident configuration uses
@@ -71,11 +83,12 @@
 
 ## Remaining deployment requirements
 
-The complete-image path is functionally integrated, but its 28.48-second warm
-host time does not meet the less-than-500-ms objective. Weights are now
-persistent; the next step is to retain reusable activation workspaces and all
-28 descriptors, then execute the schedule through one command instead of 28
-host round trips. Adjacent scheduling steps can subsequently be fused and
-hardware-only counters profiled separately from transport time. End-to-end
-board accuracy must also be measured over the held-out split; one correctly
-classified smoke image is not an accuracy result.
+The host/device execution model now meets the intended CUDA contract: one input
+write, one graph command, and one logits read per image. The remaining
+9.02-second latency is inside the resident path, not graph upload or stage
+round trips. DeiT-Tiny contains about 1.253 GMAC of matrix work, so the measured
+8.93-second graph corresponds to roughly 0.140 GMAC/s—about 2.2% of the 8x8
+array's 6.4-GMAC/s 100-MHz peak. The next optimization must profile layer-level
+hardware counters and reduce tile-launch, DDR scheduling, and non-GEMM overhead.
+End-to-end board accuracy must also be measured over the held-out split; one
+correctly classified smoke image is not an accuracy result.

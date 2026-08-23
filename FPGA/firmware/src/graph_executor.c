@@ -630,6 +630,35 @@ static int8_t bcuda_saturate_int8(int32_t value) {
     return (int8_t)value;
 }
 
+static int bcuda_execute_token_embedding_layer(const BcudaBuffer *model_buffer, const BcudaModelDesc *model, const BcudaLayerDesc *layer) {
+    BcudaBuffer *patches = 0, *position = 0, *scale = 0, *output = 0;
+    int status = bcuda_graph_table_buffer(model_buffer, model, layer->input0, &patches);
+    if (status == BC_STATUS_OK) status = bcuda_graph_table_buffer(model_buffer, model, layer->weight, &position);
+    if (status == BC_STATUS_OK) status = bcuda_graph_table_buffer(model_buffer, model, layer->scale, &scale);
+    if (status == BC_STATUS_OK) status = bcuda_graph_table_buffer(model_buffer, model, layer->output, &output);
+    if (status != BC_STATUS_OK) return status;
+    uint64_t patch_elements = (uint64_t)layer->n * layer->c;
+    uint64_t token_elements = (uint64_t)(layer->n + 1u) * layer->c;
+    if (layer->n == 0 || layer->c == 0 || patches->dtype != BC_DTYPE_INT8 ||
+        position->dtype != BC_DTYPE_INT8 || output->dtype != BC_DTYPE_INT8 ||
+        scale->dtype != BC_DTYPE_INT8 || patches->layout != BC_LAYOUT_ROW_MAJOR ||
+        position->layout != BC_LAYOUT_ROW_MAJOR || output->layout != BC_LAYOUT_ROW_MAJOR ||
+        patches->size_bytes < patch_elements || position->size_bytes < token_elements ||
+        output->size_bytes < token_elements || scale->size_bytes < 256u) {
+        return BC_STATUS_SHAPE_MISMATCH;
+    }
+    const int8_t *src = (const int8_t *)patches->virtual_address;
+    const int8_t *pos = (const int8_t *)position->virtual_address;
+    const int8_t *lut = (const int8_t *)scale->virtual_address;
+    int8_t *dst = (int8_t *)output->virtual_address;
+    memcpy(dst, pos, layer->c);
+    for (uint64_t i = 0; i < patch_elements; ++i) {
+        int8_t scaled = lut[(uint8_t)src[i]];
+        dst[layer->c + i] = bcuda_saturate_int8((int32_t)scaled + pos[layer->c + i]);
+    }
+    return BC_STATUS_OK;
+}
+
 static uint32_t bcuda_integer_sqrt(uint64_t value) {
     uint64_t op = value, result = 0, one = 1ull << 62;
     for (uint32_t i = 0; i < 32; ++i) {
@@ -1185,6 +1214,9 @@ int bcuda_execute_graph(BcudaGraphRuntime *runtime, const BcudaGraphExecDesc *de
                 break;
             case BC_OP_TOKEN_CONCAT:
                 status = bcuda_execute_token_concat_layer(model, &model_desc, &layer);
+                break;
+            case BC_OP_TOKEN_EMBEDDING:
+                status = bcuda_execute_token_embedding_layer(model, &model_desc, &layer);
                 break;
             default:
                 status = BC_STATUS_INVALID_COMMAND;

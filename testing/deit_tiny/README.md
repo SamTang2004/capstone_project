@@ -82,13 +82,13 @@ python testing/deit_tiny/run_budgetcuda_deit.py path/to/image.jpg `
   --address 192.168.2.99 --repeat 2
 ```
 
-The runner validates the manifest, uploads all model constants to DDR3 once,
-and then runs patch embedding, class/position token embedding, each
-attention/MLP block, final LayerNorm, and the six-class head. `--repeat` reuses
-the same resident model. The final physical resident-model test retained
-5,599,352 bytes in 417 buffers, loaded in 12.28 seconds, and ran in 28.48
-seconds, down from the 45.31-second streamed-weight baseline. Activation
-workspaces and graph descriptors are still transient, so this remains well
-above the less-than-500-ms deployment target.
+The runner validates the manifest and uploads one fused full-model graph into a
+64 MiB DDR3 arena. Weights, class/position embeddings, activation workspaces,
+and the descriptor all remain allocated. `--repeat` therefore performs exactly
+one input write, one graph command, and one logits read per image. The physical
+W8 graph occupies 44,162,214 bytes including its 98,712-byte descriptor, loads once in
+56.26 seconds, and runs in 9.02 seconds with unchanged logits. This is 5.02x
+faster than the 45.31-second streamed baseline, though still above the
+less-than-500-ms deployment target.
 
 See `RESULTS.md` for the measured comparison and limitations.

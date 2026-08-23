@@ -18,6 +18,7 @@ from common import (
     BC_OP_RESIDUAL_ADD,
     BC_OP_ACTIVATION_B_PACK,
     BC_OP_TOKEN_CONCAT,
+    BC_OP_TOKEN_EMBEDDING,
     BCUDA_DIAG_ALL,
     BCUDA_DIAGNOSTICS_MAGIC,
     BCUDA_DIAGNOSTICS_VERSION,
@@ -614,6 +615,34 @@ class FirmwareGraphExecutorTest(unittest.TestCase):
         write_buffer(self.lib, model, descriptor)
         self.assertEqual(self.lib.bcuda_execute_graph(ctypes.byref(self.runtime), ctypes.byref(BcudaGraphExecDesc(model, a, out, 0, 0))), BC_STATUS_OK)
         self.assertEqual(read_buffer(self.lib, out, 6), bytes([1, 2, 5, 3, 4, 6]))
+
+    def test_bcuda_execute_graph_builds_class_and_position_tokens(self):
+        patches = alloc_buffer(self.lib, 4, tensor_desc(BC_DTYPE_INT8, 2, 2, 2))
+        position = alloc_buffer(self.lib, 6, tensor_desc(BC_DTYPE_INT8, 2, 3, 2))
+        scale = alloc_buffer(self.lib, 256, tensor_desc(BC_DTYPE_INT8, 1, 256))
+        out = alloc_buffer(self.lib, 6, tensor_desc(BC_DTYPE_INT8, 2, 3, 2), usage=BC_USAGE_OUTPUT)
+        write_buffer(self.lib, patches, bytes([5, 251, 7, 249]))
+        write_buffer(self.lib, position, bytes([10, 11, 1, 2, 3, 4]))
+        write_buffer(self.lib, scale, bytes(range(256)))
+        descriptor = pack_model_descriptor(
+            [
+                (patches, BC_DTYPE_INT8, BC_LAYOUT_ROW_MAJOR, 2, 4, 2, 2, 2),
+                (position, BC_DTYPE_INT8, BC_LAYOUT_ROW_MAJOR, 1, 6, 2, 3, 2),
+                (scale, BC_DTYPE_INT8, BC_LAYOUT_ROW_MAJOR, 1, 256, 1, 256, 1),
+                (out, BC_DTYPE_INT8, BC_LAYOUT_ROW_MAJOR, 4, 6, 2, 3, 2),
+            ],
+            [layer_entry(BC_OP_TOKEN_EMBEDDING, input0=0, weight=1, scale=2,
+                         output=3, n=2, c=2)],
+            output_index=3,
+        )
+        model = alloc_buffer(self.lib, len(descriptor), tensor_desc(BC_DTYPE_INT8, 1, len(descriptor)), usage=BC_USAGE_DESCRIPTOR)
+        write_buffer(self.lib, model, descriptor)
+        self.assertEqual(
+            self.lib.bcuda_execute_graph(
+                ctypes.byref(self.runtime), ctypes.byref(BcudaGraphExecDesc(model, patches, out, 0, 0))),
+            BC_STATUS_OK,
+        )
+        self.assertEqual(read_buffer(self.lib, out, 6), bytes([10, 11, 6, 253, 10, 253]))
 
     def test_bcuda_execute_graph_runs_layernorm_and_softmax(self):
         inp = alloc_buffer(self.lib, 4, tensor_desc(BC_DTYPE_INT8, 1, 4))

@@ -32,11 +32,17 @@ def main() -> None:
         results = [runner.run_image(args.image) for _ in range(args.repeat)]
         resident_weight_bytes = runner.resident_weight_bytes
         resident_buffer_count = runner.resident_buffer_count
+        resident_total_bytes = runner.resident_total_bytes
+        resident_total_buffer_count = runner.resident_total_buffer_count
+        resident_descriptor_bytes = runner.resident_descriptor_bytes
     result = results[-1]
     print(json.dumps({
         "model_load_seconds": load_seconds,
         "resident_weight_bytes": resident_weight_bytes,
         "resident_buffer_count": resident_buffer_count,
+        "resident_total_bytes": resident_total_bytes,
+        "resident_total_buffer_count": resident_total_buffer_count,
+        "resident_descriptor_bytes": resident_descriptor_bytes,
         "class_index": result.class_index,
         "class_name": result.class_name,
         "logits": result.logits,

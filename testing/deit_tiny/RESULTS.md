@@ -81,6 +81,11 @@ rather than prerequisites for recovering accuracy.
   produced a final 28.48-second physical run with unchanged logits. The
   remaining transient workspaces, descriptors, and 28 graph commands mean this
   is still not evidence for the <500-ms latency goal.
+- A 64 MiB arena now holds the complete 44,162,214-byte working set, including
+  one 666-layer descriptor. The exact host-device-host path took 9.02 seconds with
+  unchanged logits: one input write, one graph command, and one output read.
+  Remaining latency is therefore device execution efficiency, not intermediate
+  host transfers.
 - The FP4 experiment is scaled E2M1 with matched INT4 scale granularity. It is
   not NVIDIA NVFP4 or OCP MXFP4 and does not include their block-scale metadata.
 

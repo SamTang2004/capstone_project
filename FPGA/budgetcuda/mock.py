@@ -189,6 +189,8 @@ class MockBackend:
                 self._execute_graph_activation_b_pack(table, layer)
             elif op_type == OpType.TOKEN_CONCAT:
                 self._execute_graph_token_concat(table, layer)
+            elif op_type == OpType.TOKEN_EMBEDDING:
+                self._execute_graph_token_embedding(table, layer)
             else:
                 raise ValueError(f"Unsupported graph op: {op_type}")
             if diag is not None:
@@ -386,6 +388,25 @@ class MockBackend:
                 start = row * width
                 dst[cursor:cursor + width] = src[start:start + width]
                 cursor += width
+
+    def _execute_graph_token_embedding(self, table, layer) -> None:
+        patches_index, output_index = layer[1], layer[4]
+        position_index, scale_index = layer[5], layer[7]
+        patch_rows, features = layer[8], layer[9]
+        patches = self._get_buffer(table[patches_index][0])
+        position = self._get_buffer(table[position_index][0])
+        scale = self._get_buffer(table[scale_index][0])
+        output = self._get_buffer(table[output_index][0])
+        patch_elements = patch_rows * features
+        token_elements = (patch_rows + 1) * features
+        if (len(patches) < patch_elements or len(position) < token_elements or
+                len(output) < token_elements or len(scale) < 256):
+            raise ValueError("Invalid token embedding buffers")
+        output[:features] = position[:features]
+        for index in range(patch_elements):
+            scaled = self._signed8(scale[patches[index]])
+            value = scaled + self._signed8(position[features + index])
+            output[features + index] = max(-128, min(127, value)) & 0xFF
 
     def _execute_graph_softmax(self, table, layer) -> None:
         _, input0, _, _, output, _, _, _, rows, length, *_ = layer
