@@ -11,9 +11,9 @@ import struct
 REGISTER_NAMES = (
     "control", "status", "a_base", "b_base", "c_base", "a_stride", "b_stride", "c_stride",
     "m", "n", "k", "tile_size", "array_count", "rq_multiplier", "rq_right_shift", "rq_zero_point",
-    "conv_total", "conv_zero_a", "conv_load_a", "conv_zero_b", "conv_load_b", "conv_bias",
-    "conv_compute", "conv_accumulate", "conv_write", "loader_address", "loader_request",
-    "loader_receive", "cache_hits", "cache_misses", "fill_cycles", "bytes_delivered",
+    "scheduler_state", "memory_state", "reserved_18", "reserved_19", "reserved_20", "reserved_21",
+    "reserved_22", "reserved_23", "reserved_24", "reserved_25", "hp0_read_shape",
+    "hp0_read_response", "cache_hits", "cache_misses", "fill_cycles", "bytes_delivered",
 )
 
 

@@ -24,7 +24,7 @@ module tb_pe_int8_mac;
 
     always #5 clk = ~clk;
 
-    pe_int8_mac dut (
+    pe_int8_mac #(.USE_DSP(1'b1)) dut (
         .clk(clk),
         .rst_n(rst_n),
         .clear(clear),
@@ -56,7 +56,8 @@ module tb_pe_int8_mac;
         enable = 0;
         a = 0;
         b = 0;
-        repeat (2) @(posedge clk);
+        // The UNISIM glbl model holds DSP48E1 in global reset for 100 ns.
+        repeat (12) @(posedge clk);
         rst_n = 1;
 
         for (i = 0; i < trace_count; i = i + 1) begin

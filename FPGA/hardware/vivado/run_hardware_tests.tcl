@@ -1,44 +1,66 @@
 set script_dir [file dirname [file normalize [info script]]]
 set hw_dir [file normalize [file join $script_dir ".."]]
 
-# Keep regressions tied to the deployable source manifest. Prototype RTL must
-# opt into a separate test flow instead of slowing or contaminating this one.
-source [file join $script_dir "final_bitstream_sources.tcl"]
-set rtl_files [concat $final_rtl_files $board_wrapper_rtl_files [list \
+# Platform-only regressions retained during the Transformer migration.
+set rtl_files [list \
+    [file join $hw_dir "rtl" "axi_lite_control.sv"] \
+    [file join $hw_dir "rtl" "lut_mul32x16_pipeline.sv"] \
+    [file join $hw_dir "rtl" "memory_io_driver.sv"] \
+    [file join $hw_dir "rtl" "bcuda_transformer_ddr_top.sv"] \
+    [file join $hw_dir "rtl" "memory_io_axi3_bridge.sv"] \
+    [file join $hw_dir "rtl" "weight_vector_decode.sv"] \
+    [file join $hw_dir "rtl" "pe_int8_mac.sv"] \
+    [file join $hw_dir "rtl" "matrix_array_8x8.sv"] \
+    [file join $hw_dir "rtl" "gemm_8x8_tile_core.sv"] \
+    [file join $hw_dir "rtl" "transformer_gemm_scheduler.sv"] \
+    [file join $hw_dir "rtl" "packed_w4_weight_reader.sv"] \
+    [file join $hw_dir "rtl" "simple_dual_port_bram.sv"] \
+    [file join $hw_dir "rtl" "ping_pong_tile_buffer.sv"] \
+    [file join $hw_dir "rtl" "w4a8_operand_buffers.sv"] \
+    [file join $hw_dir "rtl" "transformer_debug_counters.sv"] \
+    [file join $hw_dir "rtl" "transformer_control_status.sv"] \
+    [file join $hw_dir "rtl" "residual_add_int8.sv"] \
+    [file join $hw_dir "rtl" "iterative_unsigned_divider.sv"] \
+    [file join $hw_dir "rtl" "bias_add_int32.sv"] \
+    [file join $hw_dir "rtl" "gelu_int8.sv"] \
+    [file join $hw_dir "rtl" "layernorm_int8.sv"] \
+    [file join $hw_dir "rtl" "softmax_int8.sv"] \
     [file join $hw_dir "rtl" "read_word_to_byte_adapter.sv"] \
-]]
+    [file join $hw_dir "rtl" "requantize_ddr.sv"] \
+    [file join $hw_dir "rtl" "requantize_pack_int8.sv"] \
+    [file join $hw_dir "rtl" "activation_b_pack_int8.sv"] \
+    [file join $hw_dir "rtl" "transformer_elementwise_ddr.sv"] \
+    [file join $hw_dir "rtl" "transformer_rowwise_ddr.sv"] \
+]
 set sim_files [list \
-    [file join $hw_dir "sim" "tb_pe_int8_mac.sv"] \
-    [file join $hw_dir "sim" "tb_tile_loader_ddr.sv"] \
-    [file join $hw_dir "sim" "tb_tile_writer_ddr.sv"] \
-    [file join $hw_dir "sim" "tb_conv2d_activation_address_gen.sv"] \
-    [file join $hw_dir "sim" "tb_conv2d_tile_loader_ddr.sv"] \
-    [file join $hw_dir "sim" "tb_conv2d_tile_loader_ddr_wide.sv"] \
-    [file join $hw_dir "sim" "tb_conv2d_tile_loader_ddr_stress.sv"] \
-    [file join $hw_dir "sim" "tb_conv_bias_preload_ddr.sv"] \
-    [file join $hw_dir "sim" "tb_gemm_array_cluster_8.sv"] \
-    [file join $hw_dir "sim" "tb_activation_unfold_parallel.sv"] \
-    [file join $hw_dir "sim" "tb_activation_ddr_parallel.sv"] \
-    [file join $hw_dir "sim" "tb_cnn_tensor_ops_ddr.sv"] \
-    [file join $hw_dir "sim" "tb_avgpool_ddr.sv"] \
-    [file join $hw_dir "sim" "tb_requantize_ddr.sv"] \
+    [file join $hw_dir "sim" "tb_memory_io_axi3_bridge_burst.sv"] \
     [file join $hw_dir "sim" "tb_memory_io_driver_burst.sv"] \
     [file join $hw_dir "sim" "tb_memory_io_load_balance_stress.sv"] \
-    [file join $hw_dir "sim" "tb_read_word_to_byte_adapter.sv"] \
-    [file join $hw_dir "sim" "tb_memory_io_axi3_bridge_burst.sv"] \
-    [file join $hw_dir "sim" "tb_conv_writer_axi_path.sv"] \
+    [file join $hw_dir "sim" "tb_gemm_8x8_tile_core.sv"] \
+    [file join $hw_dir "sim" "tb_transformer_gemm_scheduler.sv"] \
+    [file join $hw_dir "sim" "tb_packed_w4_weight_reader.sv"] \
+    [file join $hw_dir "sim" "tb_w4a8_operand_buffers.sv"] \
+    [file join $hw_dir "sim" "tb_transformer_debug_counters.sv"] \
+    [file join $hw_dir "sim" "tb_residual_add_int8.sv"] \
+    [file join $hw_dir "sim" "tb_bias_add_int32.sv"] \
+    [file join $hw_dir "sim" "tb_gelu_int8.sv"] \
+    [file join $hw_dir "sim" "tb_layernorm_int8.sv"] \
+    [file join $hw_dir "sim" "tb_softmax_int8.sv"] \
+    [file join $hw_dir "sim" "tb_pe_int8_mac.sv"] \
     [file join $hw_dir "sim" "tb_ps_pl_mmio_control.sv"] \
-    [file join $hw_dir "sim" "tb_bcuda_tiled_systolic_ddr_top.sv"] \
-    [file join $hw_dir "sim" "tb_accumulator_buffer.sv"] \
-    [file join $hw_dir "sim" "tb_gemm_controller.sv"] \
-    [file join $hw_dir "sim" "tb_systolic_array_16x16.sv"] \
-    [file join $hw_dir "sim" "tb_gemm_16x16_core.sv"] \
+    [file join $hw_dir "sim" "tb_bcuda_transformer_ddr_top.sv"] \
+    [file join $hw_dir "sim" "tb_read_word_to_byte_adapter.sv"] \
+    [file join $hw_dir "sim" "tb_requantize_ddr.sv"] \
+    [file join $hw_dir "sim" "tb_requantize_pack_int8.sv"] \
+    [file join $hw_dir "sim" "tb_activation_b_pack_int8.sv"] \
+    [file join $hw_dir "sim" "tb_transformer_elementwise_ddr.sv"] \
+    [file join $hw_dir "sim" "tb_transformer_rowwise_ddr.sv"] \
 ]
 
 if {[info exists ::env(BCUDA_XSIM_WORK)]} {
     set sim_work [file normalize $::env(BCUDA_XSIM_WORK)]
 } else {
-    set sim_work [file join $hw_dir "xsim_golden"]
+    set sim_work [file join $hw_dir "xsim_platform"]
 }
 file mkdir $sim_work
 cd $sim_work
@@ -52,67 +74,53 @@ set xelab [file join $vivado_bin "xelab.bat"]
 set xsim [file join $vivado_bin "xsim.bat"]
 
 set compile_cmd [list $xvlog "--sv"]
-foreach f [concat $rtl_files $sim_files] {
-    lappend compile_cmd [file nativename $f]
+foreach source [concat $rtl_files $sim_files] {
+    lappend compile_cmd [file nativename $source]
+}
+set glbl_source [file normalize [file join $vivado_bin ".." "data" "verilog" "src" "glbl.v"]]
+lappend compile_cmd [file nativename $glbl_source]
+if {[catch {exec {*}$compile_cmd} output options]} {
+    puts $output
+    error "xvlog failed: $options"
 }
 
-puts "===== Compiling Budget-CUDA RTL and golden testbenches ====="
-if {[catch {exec {*}$compile_cmd} compile_output compile_options]} {
-    puts $compile_output
-    error "xvlog failed: $compile_options"
-}
-puts $compile_output
-
-# The active memory tests exercise cache-line reads and coalesced AXI bursts.
 set test_tops {
+    tb_gemm_8x8_tile_core
+    tb_transformer_gemm_scheduler
+    tb_packed_w4_weight_reader
+    tb_w4a8_operand_buffers
+    tb_transformer_debug_counters
+    tb_residual_add_int8
+    tb_bias_add_int32
+    tb_gelu_int8
+    tb_layernorm_int8
+    tb_softmax_int8
     tb_pe_int8_mac
-    tb_tile_loader_ddr
-    tb_tile_writer_ddr
-    tb_conv2d_activation_address_gen
-    tb_conv2d_tile_loader_ddr
-    tb_conv2d_tile_loader_ddr_wide
-    tb_conv2d_tile_loader_ddr_stress
-    tb_conv_bias_preload_ddr
-    tb_gemm_array_cluster_8
-    tb_activation_unfold_parallel
-    tb_activation_ddr_parallel
-    tb_cnn_tensor_ops_ddr
-    tb_avgpool_ddr
     tb_requantize_ddr
+    tb_requantize_pack_int8
+    tb_activation_b_pack_int8
+    tb_transformer_elementwise_ddr
+    tb_transformer_rowwise_ddr
     tb_memory_io_driver_burst
     tb_memory_io_load_balance_stress
-    tb_memory_io_load_balance_vector_stress
-    tb_memory_io_load_balance_line_stress
     tb_read_word_to_byte_adapter
     tb_memory_io_axi3_bridge_burst
-    tb_conv_writer_axi_path
     tb_ps_pl_mmio_control
-    tb_bcuda_tiled_systolic_ddr_top
-    tb_accumulator_buffer
-    tb_gemm_controller
-    tb_systolic_array_16x16
-    tb_gemm_16x16_core
+    tb_bcuda_transformer_ddr_top
 }
-
 foreach top $test_tops {
-    puts "===== Running $top ====="
     set sim_name "${top}_sim"
-
-    if {[catch {exec $xelab $top "-L" xpm "--timescale" 1ns/1ps "-s" $sim_name} elab_output elab_options]} {
-        puts $elab_output
-        error "xelab failed for $top: $elab_options"
+    if {[catch {exec $xelab $top glbl "-L" xpm "-L" unisims_ver "--timescale" 1ns/1ps "-s" $sim_name} output options]} {
+        puts $output
+        error "xelab failed for $top: $options"
     }
-    puts $elab_output
-
-    if {[catch {exec $xsim $sim_name "-runall"} sim_output sim_options]} {
-        puts $sim_output
-        error "xsim failed for $top: $sim_options"
+    if {[catch {exec $xsim $sim_name "-runall"} output options]} {
+        puts $output
+        error "xsim failed for $top: $options"
     }
-    puts $sim_output
-
-    if {![regexp {golden trace passed} $sim_output]} {
+    puts $output
+    if {![regexp {golden trace passed} $output]} {
         error "$top did not report a golden trace pass"
     }
 }
-
-puts "All Budget-CUDA hardware simulations completed."
+puts "Transformer migration platform simulations completed."

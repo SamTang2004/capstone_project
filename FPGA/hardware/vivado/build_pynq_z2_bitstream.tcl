@@ -60,8 +60,10 @@ if {![file exists $generated_hwh]} {
     error "Vivado did not generate the production HWH at $generated_hwh"
 }
 file copy -force $generated_hwh [file join $hw_dir "bcuda_pynq_z2.hwh"]
-write_cfgmem -force -format bin -interface smapx32 -size 16 \
-    -loadbit "up 0x0 [file join $hw_dir bcuda_pynq_z2.bit]" \
-    -file [file join $hw_dir "bcuda_pynq_z2.bin"]
+# fpga_manager consumes a raw byte-swapped configuration payload, not the
+# SMAPx32 flash image produced by write_cfgmem.
+source [file join $script_dir "fpga_manager_bin.tcl"]
+export_fpga_manager_bin $script_dir \
+    [file join $hw_dir "bcuda_pynq_z2.bit"] [file join $hw_dir "bcuda_pynq_z2.bin"]
 write_hw_platform -fixed -include_bit -force [file join $hw_dir "bcuda_pynq_z2.xsa"]
 puts "Built PYNQ-Z2 bitstream: [file join $hw_dir bcuda_pynq_z2.bit]"

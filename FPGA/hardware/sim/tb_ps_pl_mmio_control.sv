@@ -20,6 +20,8 @@ module tb_ps_pl_mmio_control;
     logic rready;
     logic [31:0] status_word;
     logic [31:0] ctrl_word;
+    logic [31:0] debug_ctrl_word;
+    logic [32*18-1:0] debug_regs_flat;
     int errors;
 
     always #5 clk = ~clk;
@@ -46,10 +48,12 @@ module tb_ps_pl_mmio_control;
         .s_axi_rready(rready),
         .status_word(status_word),
         .perf_regs_flat('0),
-        .ctrl_word(ctrl_word)
+        .debug_regs_flat(debug_regs_flat),
+        .ctrl_word(ctrl_word),
+        .debug_ctrl_word(debug_ctrl_word)
     );
 
-    task automatic axi_write(input logic [5:0] addr, input logic [31:0] data, input logic [3:0] strobe);
+    task automatic axi_write(input logic [7:0] addr, input logic [31:0] data, input logic [3:0] strobe);
         begin
             @(negedge clk);
             awaddr = addr;
@@ -71,7 +75,7 @@ module tb_ps_pl_mmio_control;
         end
     endtask
 
-    task automatic axi_read(input logic [5:0] addr, output logic [31:0] data);
+    task automatic axi_read(input logic [7:0] addr, output logic [31:0] data);
         begin
             @(negedge clk);
             araddr = addr;
@@ -83,6 +87,8 @@ module tb_ps_pl_mmio_control;
                 $error("AXI-lite read response error at addr=0x%02h", addr);
                 errors++;
             end
+            @(posedge clk);
+            @(negedge clk);
             arvalid = 1'b0;
             rready = 1'b0;
         end
@@ -101,6 +107,8 @@ module tb_ps_pl_mmio_control;
         arvalid = 1'b0;
         rready = 1'b0;
         status_word = 32'h0000_0000;
+        debug_regs_flat = '0;
+        debug_regs_flat[0 +: 32] = 32'h1234_5678;
 
         repeat (5) @(posedge clk);
         rst_n = 1'b1;
@@ -122,6 +130,17 @@ module tb_ps_pl_mmio_control;
         axi_read(6'h04, got);
         if (got !== 32'h8000_0005) begin
             $error("Status read mismatch expected=0x80000005 got=0x%08h", got);
+            errors++;
+        end
+
+        axi_write(8'h80, 32'h0000_000d, 4'hF);
+        if (debug_ctrl_word !== 32'h0000_000d) begin
+            $error("Debug control write mismatch got=0x%08h", debug_ctrl_word);
+            errors++;
+        end
+        axi_read(8'h84, got);
+        if (got !== 32'h1234_5678) begin
+            $error("Debug counter read mismatch got=0x%08h", got);
             errors++;
         end
 

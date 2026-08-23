@@ -6,7 +6,6 @@ if {![file exists $bit_file]} {
     error "Missing bitstream: $bit_file"
 }
 
-write_cfgmem -force -format bin -interface smapx32 -size 16 \
-    -loadbit "up 0x0 $bit_file" \
-    -file [file join $hw_dir "bcuda_pynq_z2.bin"]
+source [file join $script_dir "fpga_manager_bin.tcl"]
+export_fpga_manager_bin $script_dir $bit_file [file join $hw_dir "bcuda_pynq_z2.bin"]
 puts "Exported PYNQ-Z2 FPGA-manager image: [file join $hw_dir bcuda_pynq_z2.bin]"

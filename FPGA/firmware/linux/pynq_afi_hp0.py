@@ -13,7 +13,13 @@ AFI_HP0_BASE = 0xF8008000
 AFI_MAP_SIZE = 0x1000
 AFI_RDCHAN_CTRL = 0x00
 AFI_WRCHAN_CTRL = 0x14
+AFI_WRCHAN_ISSUINGCAP = 0x18
+AFI_WRDATAFIFO_LEVEL = 0x20
+AFI_WRDEBUG = 0x24
 AFI_BUSWIDTH_MASK = 0x1
+SLCR_BASE = 0xF8000000
+FPGA_RST_CTRL = 0x240
+LVL_SHFTR_EN = 0x900
 
 
 def read32(mapping: mmap.mmap, offset: int) -> int:
@@ -32,6 +38,9 @@ def main() -> None:
     args = parser.parse_args()
 
     with open("/dev/mem", "r+b", buffering=0) as memory:
+        with mmap.mmap(memory.fileno(), AFI_MAP_SIZE, offset=SLCR_BASE) as slcr:
+            fpga_reset = read32(slcr, FPGA_RST_CTRL)
+            level_shifters = read32(slcr, LVL_SHFTR_EN)
         with mmap.mmap(memory.fileno(), AFI_MAP_SIZE, offset=AFI_HP0_BASE) as registers:
             before_read = read32(registers, AFI_RDCHAN_CTRL)
             before_write = read32(registers, AFI_WRCHAN_CTRL)
@@ -41,11 +50,19 @@ def main() -> None:
                 write32(registers, AFI_WRCHAN_CTRL, (before_write & ~AFI_BUSWIDTH_MASK) | width_bit)
             after_read = read32(registers, AFI_RDCHAN_CTRL)
             after_write = read32(registers, AFI_WRCHAN_CTRL)
+            write_fifo_level = read32(registers, AFI_WRDATAFIFO_LEVEL)
+            write_debug = read32(registers, AFI_WRDEBUG)
+            write_issuing_cap = read32(registers, AFI_WRCHAN_ISSUINGCAP)
 
     actual_width = 32 if (after_read & 1 and after_write & 1) else 64
     print(
         f"HP0 AFI read=0x{before_read:08x}->0x{after_read:08x} "
         f"write=0x{before_write:08x}->0x{after_write:08x} width={actual_width}"
+        f" write_fifo_dwords={write_fifo_level & 0xff}"
+        f" outstanding_writes={(write_debug >> 1) & 0xf}"
+        f" write_fifo_overflow={write_debug & 1}"
+        f" write_issuing_cap=0x{write_issuing_cap:08x}"
+        f" fpga_reset=0x{fpga_reset:08x} level_shifters=0x{level_shifters:08x}"
     )
     if args.width is not None and actual_width != args.width:
         raise RuntimeError(f"failed to configure HP0 AFI for {args.width}-bit operation")

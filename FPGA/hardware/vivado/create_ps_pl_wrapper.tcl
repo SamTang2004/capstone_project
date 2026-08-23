@@ -19,6 +19,7 @@ set_property board_part tul.com.tw:pynq-z2:part0:1.0 [current_project]
 add_files -norecurse $final_rtl_files
 add_files -norecurse $board_wrapper_rtl_files
 set_property file_type SystemVerilog [get_files *.sv]
+update_compile_order -fileset sources_1
 
 create_bd_design "bcuda_ps_pl"
 set ps7 [create_bd_cell -type ip -vlnv xilinx.com:ip:processing_system7:5.5 processing_system7_0]
@@ -39,7 +40,7 @@ set_property -dict [list \
 set reset [create_bd_cell -type ip -vlnv xilinx.com:ip:proc_sys_reset:5.0 rst_ps7_0_100M]
 set interconnect [create_bd_cell -type ip -vlnv xilinx.com:ip:axi_interconnect:2.1 axi_gp0_interconnect]
 set_property -dict [list CONFIG.NUM_SI {1} CONFIG.NUM_MI {1}] $interconnect
-set accelerator [create_bd_cell -type module -reference bcuda_tiled_systolic_ddr_ip bcuda_accelerator_0]
+set accelerator [create_bd_cell -type module -reference bcuda_transformer_ddr_ip bcuda_accelerator_0]
 set ddr_bridge [create_bd_cell -type module -reference memory_io_axi3_bridge_ip ddr_bridge_0]
 
 connect_bd_intf_net [get_bd_intf_pins processing_system7_0/M_AXI_GP0] [get_bd_intf_pins axi_gp0_interconnect/S00_AXI]

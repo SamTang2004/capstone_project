@@ -1,0 +1,143 @@
+import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from budgetcuda import Device, DiagnosticResult, DeiTConfig, build_deit_attention_block_package, build_deit_mlp_block_package
+from budgetcuda.compiler import GraphBuilder, HostBuffer, upload_model
+from budgetcuda.dtypes import BufferUsage, DType, Layout, OpType
+from budgetcuda.packing import pack_transformer_activations_int8, pack_transformer_weights
+
+
+def values(result):
+    return result.reshape(-1).tolist() if hasattr(result, "reshape") else list(result)
+
+
+class TransformerOpsTest(unittest.TestCase):
+    def test_transformer_layout_abi_and_tile_packing(self):
+        self.assertEqual([int(Layout.TRANSFORMER_ACTIVATION_TILED_INT8),
+                          int(Layout.TRANSFORMER_WEIGHT_TILED_INT8),
+                          int(Layout.TRANSFORMER_WEIGHT_TILED_INT4)], [5, 6, 7])
+        activation = pack_transformer_activations_int8([[1, 2], [3, 4], [5, 6]], 3, 2)
+        self.assertEqual(list(activation[:8]), [1, 3, 5, 0, 0, 0, 0, 0])
+        self.assertEqual(list(activation[8:16]), [2, 4, 6, 0, 0, 0, 0, 0])
+        w4 = pack_transformer_weights([[-8, -1, 0, 7], [1, 2, 3, 4]], 2, 4, int4=True)
+        self.assertEqual(list(w4), [0xF8, 0x70, 0, 0, 0x21, 0x43, 0, 0])
+        self.assertEqual(HostBuffer("a", (3, 2), DType.INT8, Layout.TRANSFORMER_ACTIVATION_TILED_INT8).size_bytes, 16)
+        self.assertEqual(HostBuffer("w8", (2, 9), DType.INT8, Layout.TRANSFORMER_WEIGHT_TILED_INT8).size_bytes, 32)
+        self.assertEqual(HostBuffer("w4", (2, 9), DType.INT8, Layout.TRANSFORMER_WEIGHT_TILED_INT4).size_bytes, 16)
+
+    def test_opcodes_append_without_changing_legacy_values(self):
+        self.assertEqual(int(OpType.REQUANTIZE), 11)
+        self.assertEqual([int(OpType.LAYERNORM), int(OpType.GELU), int(OpType.SOFTMAX), int(OpType.RESIDUAL_ADD)], [12, 13, 14, 15])
+        self.assertEqual(int(OpType.ACTIVATION_B_PACK), 16)
+
+    def test_layernorm_matches_rtl_golden_vector(self):
+        graph = GraphBuilder("ln")
+        inp = graph.add_buffer("input", (1, 4), DType.INT8)
+        gamma = graph.add_buffer("gamma", (4,), DType.INT16, BufferUsage.WEIGHT, [256] * 4)
+        beta = graph.add_buffer("beta", (4,), DType.INT16, BufferUsage.WEIGHT, [0] * 4)
+        out = graph.add_buffer("output", (1, 4), DType.INT8, BufferUsage.OUTPUT)
+        graph.layer_norm(inp, gamma, beta, out, rows=1, features=4)
+        model = upload_model(Device.mock(), graph.package(inp, out))
+        self.assertEqual(values(model.run([-3, -1, 1, 3])), [-2, -1, 1, 2])
+
+    def test_gelu_matches_piecewise_hardware_approximation(self):
+        graph = GraphBuilder("gelu")
+        inp = graph.add_buffer("input", (7,), DType.INT8)
+        out = graph.add_buffer("output", (7,), DType.INT8, BufferUsage.OUTPUT)
+        graph.gelu(inp, out)
+        model = upload_model(Device.mock(), graph.package(inp, out))
+        self.assertEqual(values(model.run([-32, -24, -8, 0, 8, 24, 32])), [0, 0, -3, 0, 5, 24, 32])
+
+    def test_softmax_q7_and_saturating_residual(self):
+        graph = GraphBuilder("softmax")
+        inp = graph.add_buffer("input", (1, 4), DType.INT8)
+        probs = graph.add_buffer("probs", (1, 4), DType.INT8, BufferUsage.OUTPUT)
+        graph.softmax(inp, probs, rows=1, length=4)
+        model = upload_model(Device.mock(), graph.package(inp, probs))
+        self.assertEqual(values(model.run([5, 5, 5, 5])), [32, 32, 32, 32])
+
+        graph = GraphBuilder("residual")
+        lhs = graph.add_buffer("lhs", (4,), DType.INT8)
+        rhs = graph.add_buffer("rhs", (4,), DType.INT8, data=[20, -20, 100, -100])
+        out = graph.add_buffer("output", (4,), DType.INT8, BufferUsage.OUTPUT)
+        graph.residual_add(lhs, rhs, out)
+        model = upload_model(Device.mock(), graph.package(lhs, out))
+        self.assertEqual(values(model.run([120, -120, 50, -50])), [127, -128, 127, -128])
+
+    def test_transformer_diagnostics_preserve_v2_record_abi(self):
+        graph = GraphBuilder("debug")
+        inp = graph.add_buffer("input", (4,), DType.INT8)
+        out = graph.add_buffer("output", (4,), DType.INT8, BufferUsage.OUTPUT)
+        graph.gelu(inp, out)
+        model = upload_model(Device.mock(), graph.package(inp, out))
+        result = model.run([-8, 0, 8, 24], diagnostics=True)
+        self.assertIsInstance(result, DiagnosticResult)
+        self.assertEqual(values(result.output), [-3, 0, 5, 24])
+        self.assertEqual(result.diagnostics.layers[0].op_name, "GELU")
+        self.assertEqual(result.diagnostics.layers[0].output_bytes, 4)
+        self.assertEqual(result.diagnostics.layers[0].transformer_cycles["memory_stall_cycles"], 0)
+
+    def test_deit_mlp_builder_runs_pre_norm_residual_graph(self):
+        self.assertEqual(DeiTConfig().tokens, 197)
+        package = build_deit_mlp_block_package(1, 4, 8, [0] * 32, [0] * 32)
+        self.assertEqual([layer.op_type for layer in package.layers], [
+            OpType.LAYERNORM, OpType.GEMM, OpType.REQUANTIZE, OpType.GELU,
+            OpType.GEMM, OpType.REQUANTIZE, OpType.RESIDUAL_ADD,
+        ])
+        model = upload_model(Device.mock(), package)
+        self.assertEqual(values(model.run([-3, -1, 1, 3])), [-3, -1, 1, 3])
+
+    def test_deit_mlp_accelerator_layout_runs_w8_and_w4(self):
+        for int4 in (False, True):
+            package = build_deit_mlp_block_package(
+                3, 4, 8, [0] * 32, [0] * 32,
+                accelerator_layout=True, weight_int4=int4,
+            )
+            expected_weight_layout = (Layout.TRANSFORMER_WEIGHT_TILED_INT4 if int4
+                                      else Layout.TRANSFORMER_WEIGHT_TILED_INT8)
+            self.assertEqual(package.buffers[package.name_to_index["deit_mlp.norm.output"]].layout,
+                             Layout.TRANSFORMER_ACTIVATION_TILED_INT8)
+            self.assertEqual(package.buffers[package.name_to_index["deit_mlp.fc1.weight"]].layout,
+                             expected_weight_layout)
+            self.assertEqual(package.buffers[package.name_to_index["deit_mlp.fc1.q"]].size_bytes, 64)
+            model = upload_model(Device.mock(), package)
+            sample = [-3, -1, 1, 3] * 3
+            self.assertEqual(values(model.run(sample)), sample)
+
+    def test_dynamic_transpose_pack_enables_qk_transpose_gemm(self):
+        graph = GraphBuilder("attention")
+        inp = graph.add_buffer("input", (3, 2), DType.INT8)
+        gamma = graph.add_buffer("gamma", (2,), DType.INT16, BufferUsage.WEIGHT, [256, 256])
+        beta = graph.add_buffer("beta", (2,), DType.INT16, BufferUsage.WEIGHT, [0, 0])
+        qk = graph.add_transformer_activation("qk", 3, 2)
+        dynamic_b = graph.add_transformer_dynamic_b("k_transposed", 2, 3)
+        scores = graph.add_buffer("scores", (3, 3), DType.INT32, BufferUsage.OUTPUT)
+        graph.layer_norm(inp, gamma, beta, qk, rows=3, features=2)
+        graph.activation_b_pack(qk, dynamic_b, reduction=2, outputs=3, transpose=True)
+        graph.transformer_gemm(qk, dynamic_b, scores, m=3, n=3, k=2)
+        package = graph.package(inp, scores)
+        self.assertEqual(package.buffers[dynamic_b].layout, Layout.TRANSFORMER_DYNAMIC_B_TILED_INT8)
+        self.assertEqual(package.buffers[dynamic_b].size_bytes, 16)
+        model = upload_model(Device.mock(), package)
+        self.assertEqual(values(model.run([-3, 3, -1, 1, 2, -2])), [5, 5, -4, 5, 5, -4, -4, -4, 5])
+
+    def test_complete_three_head_attention_schedule_preserves_zero_projection_residual(self):
+        weights = [0] * 36
+        package = build_deit_attention_block_package(
+            2, 6, 3, weights, weights, weights, weights, weight_int4=True,
+        )
+        op_types = [layer.op_type for layer in package.layers]
+        self.assertEqual(op_types.count(OpType.GEMM), 16)
+        self.assertEqual(op_types.count(OpType.SOFTMAX), 3)
+        self.assertEqual(op_types.count(OpType.ACTIVATION_B_PACK), 10)
+        self.assertEqual(op_types.count(OpType.TOKEN_CONCAT), 1)
+        model = upload_model(Device.mock(), package)
+        sample = [-3, -2, -1, 1, 2, 3] * 2
+        self.assertEqual(values(model.run(sample)), sample)
+
+
+if __name__ == "__main__":
+    unittest.main()

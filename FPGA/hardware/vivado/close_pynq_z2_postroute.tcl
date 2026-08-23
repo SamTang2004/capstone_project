@@ -28,9 +28,9 @@ if {$setup_slack < 0.0 || $hold_slack < 0.0} {
 }
 
 file copy -force $routed_bit [file join $hw_dir "bcuda_pynq_z2.bit"]
-write_cfgmem -force -format bin -interface smapx32 -size 16 \
-    -loadbit "up 0x0 [file join $hw_dir bcuda_pynq_z2.bit]" \
-    -file [file join $hw_dir "bcuda_pynq_z2.bin"]
+source [file join $script_dir "fpga_manager_bin.tcl"]
+export_fpga_manager_bin $script_dir \
+    [file join $hw_dir "bcuda_pynq_z2.bit"] [file join $hw_dir "bcuda_pynq_z2.bin"]
 write_hw_platform -fixed -include_bit -force [file join $hw_dir "bcuda_pynq_z2.xsa"]
 
 puts "Timing-closed PYNQ-Z2 release artifacts updated."

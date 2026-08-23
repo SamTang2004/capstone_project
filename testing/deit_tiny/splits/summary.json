@@ -1,0 +1,52 @@
+{
+  "dataset": "Fresh and Rotten Fruits Dataset for Machine-Based Evaluation of Fruit Quality",
+  "doi": "10.17632/bdd69gyhv8.1",
+  "license": "CC BY 4.0",
+  "source_archive_sha256": "f89d67d4c4b24810bcd8406db877db6b1ac9834cea0b0cb56d65acebe59e66ff",
+  "seed": 42,
+  "group_size": 5,
+  "classes": [
+    "apple_fresh",
+    "apple_rotten",
+    "banana_fresh",
+    "banana_rotten",
+    "orange_fresh",
+    "orange_rotten"
+  ],
+  "total_images": 1193,
+  "split_counts": {
+    "test": 178,
+    "train": 835,
+    "validation": 180
+  },
+  "class_split_counts": {
+    "apple_fresh:test": 30,
+    "apple_fresh:train": 140,
+    "apple_fresh:validation": 30,
+    "apple_rotten:test": 30,
+    "apple_rotten:train": 140,
+    "apple_rotten:validation": 30,
+    "banana_fresh:test": 30,
+    "banana_fresh:train": 140,
+    "banana_fresh:validation": 30,
+    "banana_rotten:test": 30,
+    "banana_rotten:train": 140,
+    "banana_rotten:validation": 30,
+    "orange_fresh:test": 28,
+    "orange_fresh:train": 135,
+    "orange_fresh:validation": 30,
+    "orange_rotten:test": 30,
+    "orange_rotten:train": 140,
+    "orange_rotten:validation": 30
+  },
+  "exact_duplicates_excluded": 7,
+  "excluded_duplicate_paths": [
+    "FreshOrange/FreshOrange (77).jpg",
+    "FreshOrange/FreshOrange (78).jpg",
+    "FreshOrange/FreshOrange (79).jpg",
+    "FreshOrange/FreshOrange (87).jpg",
+    "FreshOrange/FreshOrange (88).jpg",
+    "FreshOrange/FreshOrange (167).jpg",
+    "FreshOrange/FreshOrange (168).jpg"
+  ]
+}

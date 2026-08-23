@@ -1,5 +1,8 @@
 /FPGA/dataset/
 /FPGA/train_model/models/
+/testing/deit_tiny/data/
+/testing/deit_tiny/artifacts/
+/testing/deit_small/artifacts/
 /.venv*/
 __pycache__/
 *.py[cod]
@@ -11,6 +14,7 @@ __pycache__/
 *.pb
 xsim.dir/
 FPGA/hardware/xsim_*/
+FPGA/hardware/reports/
 FPGA/hardware/vivado_*_project/
 FPGA/hardware/vivado_board_project/
 FPGA/hardware/vivado_project/

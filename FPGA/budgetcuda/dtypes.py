@@ -18,6 +18,10 @@ class Layout(IntEnum):
     NCHW = 2
     NHWC = 3
     CONV_WEIGHT_TILED_INT8 = 4
+    TRANSFORMER_ACTIVATION_TILED_INT8 = 5
+    TRANSFORMER_WEIGHT_TILED_INT8 = 6
+    TRANSFORMER_WEIGHT_TILED_INT4 = 7
+    TRANSFORMER_DYNAMIC_B_TILED_INT8 = 8
 
 
 class BufferUsage(IntEnum):
@@ -59,6 +63,12 @@ class OpType(IntEnum):
     DETECT_DECODE = 9
     NMS = 10
     REQUANTIZE = 11
+    LAYERNORM = 12
+    GELU = 13
+    SOFTMAX = 14
+    RESIDUAL_ADD = 15
+    ACTIVATION_B_PACK = 16
+    TOKEN_CONCAT = 17
 
 
 DTYPE_ALIASES = {
@@ -72,6 +82,10 @@ LAYOUT_ALIASES = {
     "nchw": Layout.NCHW,
     "nhwc": Layout.NHWC,
     "conv_weight_tiled_int8": Layout.CONV_WEIGHT_TILED_INT8,
+    "transformer_activation_tiled_int8": Layout.TRANSFORMER_ACTIVATION_TILED_INT8,
+    "transformer_weight_tiled_int8": Layout.TRANSFORMER_WEIGHT_TILED_INT8,
+    "transformer_weight_tiled_int4": Layout.TRANSFORMER_WEIGHT_TILED_INT4,
+    "transformer_dynamic_b_tiled_int8": Layout.TRANSFORMER_DYNAMIC_B_TILED_INT8,
 }
 
 USAGE_ALIASES = {

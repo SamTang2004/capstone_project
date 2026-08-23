@@ -22,8 +22,13 @@ BC_STATUS_EXECUTION_FAILED = 7
 
 BC_CMD_ALLOC = 1
 BC_DTYPE_INT8 = 1
+BC_DTYPE_INT16 = 2
 BC_DTYPE_INT32 = 3
 BC_LAYOUT_ROW_MAJOR = 1
+BC_LAYOUT_TRANSFORMER_ACTIVATION_TILED_INT8 = 5
+BC_LAYOUT_TRANSFORMER_WEIGHT_TILED_INT8 = 6
+BC_LAYOUT_TRANSFORMER_WEIGHT_TILED_INT4 = 7
+BC_LAYOUT_TRANSFORMER_DYNAMIC_B_TILED_INT8 = 8
 BC_USAGE_ACTIVATION = 2
 BC_USAGE_OUTPUT = 4
 BC_USAGE_DESCRIPTOR = 5
@@ -41,6 +46,12 @@ BC_OP_RESHAPE = 8
 BC_OP_DETECT_DECODE = 9
 BC_OP_NMS = 10
 BC_OP_REQUANTIZE = 11
+BC_OP_LAYERNORM = 12
+BC_OP_GELU = 13
+BC_OP_SOFTMAX = 14
+BC_OP_RESIDUAL_ADD = 15
+BC_OP_ACTIVATION_B_PACK = 16
+BC_OP_TOKEN_CONCAT = 17
 BCUDA_DIAGNOSTICS_MAGIC = 0x47444342
 BCUDA_DIAGNOSTICS_VERSION = 2
 BCUDA_DIAG_TIMING = 1
@@ -125,6 +136,20 @@ class BcudaGemmDesc(ctypes.Structure):
         ("C_layout", ctypes.c_uint32),
         ("flags", ctypes.c_uint32),
         ("reserved", ctypes.c_uint32),
+    ]
+
+
+class BcudaRequantDesc(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [
+        ("input_buffer", ctypes.c_uint32),
+        ("output_buffer", ctypes.c_uint32),
+        ("element_count", ctypes.c_uint32),
+        ("multiplier", ctypes.c_int32),
+        ("right_shift", ctypes.c_uint32),
+        ("input_zero_point", ctypes.c_int32),
+        ("output_zero_point", ctypes.c_int32),
+        ("flags", ctypes.c_uint32),
     ]
 
 
@@ -462,8 +487,8 @@ def compile_firmware_library(name: str):
     return ctypes.CDLL(str(out))
 
 
-def tensor_desc(dtype=BC_DTYPE_INT8, rank=1, dim0=4, dim1=1, dim2=1, dim3=1):
-    return BcudaTensorDesc(dtype, rank, dim0, dim1, dim2, dim3, BC_LAYOUT_ROW_MAJOR, 0)
+def tensor_desc(dtype=BC_DTYPE_INT8, rank=1, dim0=4, dim1=1, dim2=1, dim3=1, layout=BC_LAYOUT_ROW_MAJOR):
+    return BcudaTensorDesc(dtype, rank, dim0, dim1, dim2, dim3, layout, 0)
 
 
 def init_buffer_manager(lib, arena_size=4096):

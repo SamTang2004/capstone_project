@@ -3,7 +3,7 @@ from __future__ import annotations
 from functools import reduce
 from operator import mul
 
-from .dtypes import OpType, dtype_size, normalize_dtype, normalize_layout, normalize_usage
+from .dtypes import Layout, OpType, dtype_size, normalize_dtype, normalize_layout, normalize_usage
 from .mock import MockBackend
 from .protocol import ProtocolClient
 from .serializer import pack_gemm_desc, pack_graph_exec_desc
@@ -23,7 +23,16 @@ class Device:
         layout_norm = normalize_layout(layout)
         usage_norm = normalize_usage(usage)
         shape = tuple(int(dim) for dim in shape)
-        size_bytes = reduce(mul, shape, 1) * dtype_size(dtype_norm)
+        if len(shape) == 2 and layout_norm == Layout.TRANSFORMER_ACTIVATION_TILED_INT8:
+            size_bytes = ((shape[0] + 7) // 8) * shape[1] * 8
+        elif len(shape) == 2 and layout_norm == Layout.TRANSFORMER_WEIGHT_TILED_INT8:
+            size_bytes = ((shape[1] + 7) // 8) * shape[0] * 8
+        elif len(shape) == 2 and layout_norm == Layout.TRANSFORMER_WEIGHT_TILED_INT4:
+            size_bytes = ((shape[1] + 7) // 8) * shape[0] * 4
+        elif len(shape) == 2 and layout_norm == Layout.TRANSFORMER_DYNAMIC_B_TILED_INT8:
+            size_bytes = ((shape[1] + 7) // 8) * shape[0] * 8
+        else:
+            size_bytes = reduce(mul, shape, 1) * dtype_size(dtype_norm)
         tensor_desc = self.protocol.tensor_desc(shape, dtype_norm, layout_norm)
         response = self.protocol.alloc(size_bytes, tensor_desc, usage_norm)
         fields = response.fields or {}

@@ -1,19 +1,8 @@
 from __future__ import annotations
 
 import struct
-import time
-
-from .diagnostics import (
-    DIAG_MEMORY,
-    DIAG_OPERATIONS,
-    DIAG_TIMING,
-    DIAG_UTILIZATION,
-    DIAGNOSTICS_HEADER_STRUCT,
-    DIAGNOSTICS_MAGIC,
-    DIAGNOSTICS_RECORD_STRUCT,
-    DIAGNOSTICS_VERSION,
-)
-from .dtypes import Command, DType, OpType, Status
+from time import perf_counter_ns
+from .dtypes import Command, DType, Layout, OpType, Status
 from .compiler import CONV_FLAG_PRESLICED_WEIGHTS
 from .protocol import build_ok_response
 from .serializer import (
@@ -37,6 +26,8 @@ BUFFER_DESC_STRUCT = struct.Struct("<IIIIIIII")
 LAYER_DESC_STRUCT = struct.Struct("<IIIIIIIIIIIIIIIIIIIIIIII")
 MODEL_MAGIC = 0x444D4342
 MODEL_VERSION = 1
+DIAGNOSTICS_HEADER_STRUCT = struct.Struct("<IIIIIIIIQQ")
+DIAGNOSTICS_RECORD_STRUCT = struct.Struct("<IIIIQQQQQQQII16I")
 
 
 class MockBackend:
@@ -118,14 +109,29 @@ class MockBackend:
         if desc["A_dtype"] != DType.INT8 or desc["B_dtype"] != DType.INT8 or desc["C_dtype"] != DType.INT32:
             raise ValueError("Mock GEMM only supports INT8 x INT8 -> INT32")
         M, N, K = desc["M"], desc["N"], desc["K"]
-        A = self._read_int8_matrix(desc["A_buffer"], M, K)
-        B = self._read_int8_matrix(desc["B_buffer"], K, N)
+        a_raw = self._get_buffer(desc["A_buffer"])
+        b_raw = self._get_buffer(desc["B_buffer"])
+        a_layout, b_layout = desc["A_layout"], desc["B_layout"]
+
+        def read_a(m, k):
+            if a_layout == Layout.TRANSFORMER_ACTIVATION_TILED_INT8:
+                return self._signed8(a_raw[((m // 8) * K + k) * 8 + (m & 7)])
+            return self._signed8(a_raw[m * K + k])
+
+        def read_b(k, n):
+            if b_layout in (Layout.TRANSFORMER_WEIGHT_TILED_INT8, Layout.TRANSFORMER_DYNAMIC_B_TILED_INT8):
+                return self._signed8(b_raw[((n // 8) * K + k) * 8 + (n & 7)])
+            if b_layout == Layout.TRANSFORMER_WEIGHT_TILED_INT4:
+                packed = b_raw[((n // 8) * K + k) * 4 + ((n & 7) // 2)]
+                nibble = (packed >> (4 if n & 1 else 0)) & 0xF
+                return nibble if nibble < 8 else nibble - 16
+            return self._signed8(b_raw[k * N + n])
         out = bytearray()
         for m in range(M):
             for n in range(N):
                 acc = 0
                 for k in range(K):
-                    acc += A[m][k] * B[k][n]
+                    acc += read_a(m, k) * read_b(k, n)
                 out += int(acc).to_bytes(4, "little", signed=True)
         self._get_buffer(desc["C_buffer"])[: len(out)] = out
 
@@ -142,12 +148,19 @@ class MockBackend:
         ]
         if table[model_input][0] != input_buffer or table[model_output][0] != output_buffer:
             raise ValueError("Graph execute buffers do not match model descriptor")
-        diagnostics = self._diagnostics_begin(diagnostics_buffer, diagnostics_flags, num_layers)
-        total_started = time.perf_counter_ns()
+        diag = None
+        graph_started = perf_counter_ns()
+        if diagnostics_flags or diagnostics_buffer:
+            if not diagnostics_flags or not diagnostics_buffer:
+                raise ValueError("Diagnostics flags and buffer must be provided together")
+            diag = self._get_buffer(diagnostics_buffer)
+            magic, version, flags, capacity, _, record_bytes, clock_hz, peak, _, _ = DIAGNOSTICS_HEADER_STRUCT.unpack_from(diag)
+            if magic != 0x47444342 or version != 2 or flags != diagnostics_flags or capacity < num_layers or record_bytes != DIAGNOSTICS_RECORD_STRUCT.size:
+                raise ValueError("Invalid diagnostics buffer")
         for idx in range(num_layers):
             layer = LAYER_DESC_STRUCT.unpack_from(raw_model, layer_offset + idx * LAYER_DESC_STRUCT.size)
             op_type = layer[0]
-            layer_started = time.perf_counter_ns()
+            layer_started = perf_counter_ns()
             if op_type == OpType.GEMM:
                 self._execute_graph_gemm(table, layer)
             elif op_type == OpType.CONV2D_GEMM:
@@ -164,116 +177,35 @@ class MockBackend:
                 self._execute_graph_concat(table, layer)
             elif op_type == OpType.RESHAPE:
                 self._execute_graph_reshape(table, layer)
+            elif op_type == OpType.LAYERNORM:
+                self._execute_graph_layernorm(table, layer)
+            elif op_type == OpType.GELU:
+                self._execute_graph_gelu(table, layer)
+            elif op_type == OpType.SOFTMAX:
+                self._execute_graph_softmax(table, layer)
+            elif op_type == OpType.RESIDUAL_ADD:
+                self._execute_graph_residual(table, layer)
+            elif op_type == OpType.ACTIVATION_B_PACK:
+                self._execute_graph_activation_b_pack(table, layer)
+            elif op_type == OpType.TOKEN_CONCAT:
+                self._execute_graph_token_concat(table, layer)
             else:
                 raise ValueError(f"Unsupported graph op: {op_type}")
-            if diagnostics is not None:
-                self._diagnostics_record(diagnostics, idx, layer, table, time.perf_counter_ns() - layer_started)
-        if diagnostics is not None:
-            self._diagnostics_finish(diagnostics, time.perf_counter_ns() - total_started, num_layers)
-
-    def _diagnostics_begin(self, buffer_id: int, flags: int, num_layers: int):
-        if flags == 0:
-            if buffer_id != 0:
-                raise ValueError("Diagnostics buffer supplied without diagnostics flags")
-            return None
-        raw = self._get_buffer(buffer_id)
-        if len(raw) < DIAGNOSTICS_HEADER_STRUCT.size:
-            raise ValueError("Diagnostics buffer is too small")
-        header = list(DIAGNOSTICS_HEADER_STRUCT.unpack_from(raw))
-        if (
-            header[0] != DIAGNOSTICS_MAGIC
-            or header[1] != DIAGNOSTICS_VERSION
-            or header[2] != flags
-            or header[3] < num_layers
-            or header[5] != DIAGNOSTICS_RECORD_STRUCT.size
-        ):
-            raise ValueError("Invalid diagnostics buffer header")
-        required = DIAGNOSTICS_HEADER_STRUCT.size + num_layers * DIAGNOSTICS_RECORD_STRUCT.size
-        if required > len(raw):
-            raise ValueError("Diagnostics records exceed their buffer")
-        header[4] = 0
-        header[8] = 0
-        header[9] = 0
-        DIAGNOSTICS_HEADER_STRUCT.pack_into(raw, 0, *header)
-        return raw, header
-
-    def _diagnostics_record(self, diagnostics, index, layer, table, measured_ns: int) -> None:
-        raw, header = diagnostics
-        flags, clock_hz, peak_ops = header[2], header[6], header[7]
-        op_type = int(layer[0])
-        input_bytes, output_bytes, weight_bytes = self._layer_buffer_bytes(layer, table)
-        operations = self._layer_operations(layer, table)
-        elapsed_ns = measured_ns if flags & DIAG_TIMING else 0
-        cycles = elapsed_ns * clock_hz // 1_000_000_000 if flags & DIAG_TIMING else 0
-        if not flags & DIAG_MEMORY:
-            input_bytes = output_bytes = weight_bytes = 0
-        if not flags & DIAG_OPERATIONS:
-            operations = 0
-        throughput = operations * 1_000_000_000 // elapsed_ns if elapsed_ns and operations else 0
-        utilization_ppm = min(1_000_000, operations * 1_000_000 // (cycles * peak_ops)) if cycles and operations and flags & DIAG_UTILIZATION else 0
-        offset = DIAGNOSTICS_HEADER_STRUCT.size + index * DIAGNOSTICS_RECORD_STRUCT.size
-        DIAGNOSTICS_RECORD_STRUCT.pack_into(
-            raw,
-            offset,
-            index,
-            op_type,
-            0,
-            0,
-            elapsed_ns,
-            cycles,
-            input_bytes,
-            output_bytes,
-            weight_bytes,
-            operations,
-            throughput,
-            utilization_ppm,
-            0,
-            *([0] * 16),
-        )
-        header[4] = index + 1
-        DIAGNOSTICS_HEADER_STRUCT.pack_into(raw, 0, *header)
-
-    def _diagnostics_finish(self, diagnostics, total_ns: int, layer_count: int) -> None:
-        raw, header = diagnostics
-        header[4] = layer_count
-        header[8] = total_ns if header[2] & DIAG_TIMING else 0
-        header[9] = sum(len(buffer) for buffer in self.buffers.values())
-        DIAGNOSTICS_HEADER_STRUCT.pack_into(raw, 0, *header)
-
-    @staticmethod
-    def _layer_buffer_bytes(layer, table):
-        op_type = layer[0]
-        input_bytes = table[layer[1]][4]
-        output_bytes = table[layer[4]][4]
-        weight_bytes = 0
-        if op_type == OpType.CONCAT:
-            input_bytes += table[layer[2]][4]
-            if layer[3] != 0:
-                input_bytes += table[layer[3]][4]
-        if op_type in (OpType.GEMM, OpType.CONV2D_GEMM):
-            weight_bytes += table[layer[5]][4]
-            if layer[6] != 0:
-                weight_bytes += table[layer[6]][4]
-        if op_type == OpType.REQUANTIZE:
-            weight_bytes += table[layer[7]][4]
-        return input_bytes, output_bytes, weight_bytes
-
-    @staticmethod
-    def _layer_operations(layer, table):
-        op_type = layer[0]
-        n, c, h, w, out_c, out_h, out_w, kernel_h, kernel_w = layer[8:17]
-        output_entry = table[layer[4]]
-        dtype_bytes = {int(DType.INT8): 1, int(DType.INT16): 2, int(DType.INT32): 4}.get(output_entry[1], 1)
-        output_elements = output_entry[4] // dtype_bytes
-        if op_type == OpType.GEMM:
-            return 2 * n * out_c * c
-        if op_type == OpType.CONV2D_GEMM:
-            return 2 * n * out_h * out_w * out_c * c * kernel_h * kernel_w
-        if op_type == OpType.POOL:
-            return output_elements * kernel_h * kernel_w
-        if op_type == OpType.REQUANTIZE:
-            return output_elements * 2
-        return output_elements
+            if diag is not None:
+                elapsed = max(1, perf_counter_ns() - layer_started)
+                input_bytes, output_bytes = table[layer[1]][4], table[layer[4]][4]
+                weight_bytes = table[layer[5]][4] if op_type == OpType.GEMM else 0
+                if op_type == OpType.LAYERNORM: weight_bytes = table[layer[6]][4] + table[layer[7]][4]
+                operations = 2 * layer[8] * layer[9] * layer[12] if op_type == OpType.GEMM else output_bytes
+                cycles = elapsed * clock_hz // 1_000_000_000
+                throughput = operations * 1_000_000_000 // elapsed
+                utilization = min(1_000_000, operations * 1_000_000 // max(1, cycles * peak))
+                record = (idx, int(op_type), 0, 0, elapsed, cycles, input_bytes, output_bytes, weight_bytes, operations, throughput, utilization, 0, *([0] * 16))
+                DIAGNOSTICS_RECORD_STRUCT.pack_into(diag, DIAGNOSTICS_HEADER_STRUCT.size + idx * DIAGNOSTICS_RECORD_STRUCT.size, *record)
+        if diag is not None:
+            header = list(DIAGNOSTICS_HEADER_STRUCT.unpack_from(diag))
+            header[4], header[8] = num_layers, perf_counter_ns() - graph_started
+            DIAGNOSTICS_HEADER_STRUCT.pack_into(diag, 0, *header)
 
     def _execute_graph_gemm(self, table, layer) -> None:
         _, input0, _, _, output, weight, _, _, n, c, _, _, out_c, *_ = layer
@@ -288,9 +220,9 @@ class MockBackend:
             int(DType.INT8),
             int(DType.INT8),
             int(DType.INT32),
-            1,
-            1,
-            1,
+            table[input0][2],
+            table[weight][2],
+            table[output][2],
             layer[22],
             0,
         )
@@ -315,7 +247,7 @@ class MockBackend:
             raise ValueError("Mock ReLU supports INT8 and INT32")
 
     def _execute_graph_requantize(self, table, layer) -> None:
-        _, input0, _, _, output, _, _, scale, *_ = layer
+        _, input0, _, _, output, _, _, scale, rows, columns, *_ = layer
         input_entry = table[input0]
         output_entry = table[output]
         scale_entry = table[scale]
@@ -330,13 +262,23 @@ class MockBackend:
         right_shift = int.from_bytes(params[4:8], "little", signed=False)
         input_zero_point = int.from_bytes(params[8:12], "little", signed=True)
         output_zero_point = int.from_bytes(params[12:16], "little", signed=True)
-        if right_shift > 31 or len(src) // 4 > len(dst):
+        logical_count = rows * columns if rows and columns else len(src) // 4
+        if right_shift > 31 or logical_count > len(src) // 4:
             raise ValueError("Invalid mock requantize shape")
-        for idx in range(len(src) // 4):
+        tiled_output = output_entry[2] == Layout.TRANSFORMER_ACTIVATION_TILED_INT8
+        if tiled_output:
+            required = ((rows + 7) // 8) * columns * 8
+            if not rows or not columns or required > len(dst):
+                raise ValueError("Invalid tiled mock requantize shape")
+            dst[:] = b"\0" * len(dst)
+        elif logical_count > len(dst):
+            raise ValueError("Invalid mock requantize output size")
+        for idx in range(logical_count):
             value = int.from_bytes(src[idx * 4 : idx * 4 + 4], "little", signed=True)
             value = ((value - input_zero_point) * multiplier) >> right_shift
             value = max(-128, min(127, value + output_zero_point))
-            dst[idx] = value & 0xFF
+            dst_idx = (((idx // columns) // 8) * columns + (idx % columns)) * 8 + ((idx // columns) & 7) if tiled_output else idx
+            dst[dst_idx] = value & 0xFF
 
     def _execute_graph_reshape(self, table, layer) -> None:
         _, input0, _, _, output, *_ = layer
@@ -345,6 +287,108 @@ class MockBackend:
         if len(src) != len(dst):
             raise ValueError("Mock reshape requires equal byte sizes")
         dst[:] = src
+
+    @staticmethod
+    def _signed8(value: int) -> int:
+        return value if value < 128 else value - 256
+
+    def _execute_graph_residual(self, table, layer) -> None:
+        _, lhs, rhs, _, output, *_, flags, _ = layer
+        a, b, dst = self._get_buffer(table[lhs][0]), self._get_buffer(table[rhs][0]), self._get_buffer(table[output][0])
+        if len(a) != len(b) or len(a) != len(dst):
+            raise ValueError("Residual add requires equal INT8 buffer sizes")
+        ls, rs = flags & 7, (flags >> 4) & 7
+        for i in range(len(dst)):
+            value = (self._signed8(a[i]) >> ls) + (self._signed8(b[i]) >> rs)
+            dst[i] = max(-128, min(127, value)) & 0xFF
+
+    def _execute_graph_gelu(self, table, layer) -> None:
+        _, input0, _, _, output, *_ = layer
+        src, dst = self._get_buffer(table[input0][0]), self._get_buffer(table[output][0])
+        if len(src) != len(dst):
+            raise ValueError("GELU requires equal INT8 buffer sizes")
+        for i, raw in enumerate(src):
+            x = self._signed8(raw)
+            if x <= -24: value = 0
+            elif x >= 24: value = x
+            else:
+                product = x * (x + 24)
+                value = int((product + 24 if product >= 0 else product - 24) / 48)
+            dst[i] = value & 0xFF
+
+    def _execute_graph_layernorm(self, table, layer) -> None:
+        _, input0, _, _, output, _, bias, scale, rows, features, *_, epsilon, _ = layer
+        src, dst = self._get_buffer(table[input0][0]), self._get_buffer(table[output][0])
+        gamma, beta = self._get_buffer(table[scale][0]), self._get_buffer(table[bias][0])
+        tiled_output = table[output][2] == Layout.TRANSFORMER_ACTIVATION_TILED_INT8
+        required_output = ((rows + 7) // 8) * features * 8 if tiled_output else rows * features
+        if len(src) < rows * features or len(dst) < required_output or len(gamma) < 2 * features or len(beta) < 2 * features:
+            raise ValueError("Invalid LayerNorm buffers")
+        if tiled_output:
+            dst[:] = b"\0" * len(dst)
+        for row in range(rows):
+            values = [self._signed8(src[row * features + i]) for i in range(features)]
+            total, squares = sum(values), sum(x * x for x in values)
+            denominator = max(1, __import__("math").isqrt(features * squares - total * total + epsilon))
+            for i, x in enumerate(values):
+                g = int.from_bytes(gamma[2*i:2*i+2], "little", signed=True)
+                b = int.from_bytes(beta[2*i:2*i+2], "little", signed=True)
+                numerator = (x * features - total) << 14
+                norm_q14 = (abs(numerator) // denominator) * (-1 if numerator < 0 else 1)
+                scaled_q8 = ((norm_q14 * g) >> 14) + b
+                rounded = scaled_q8 + 128 if scaled_q8 >= 0 else scaled_q8 - 128
+                dst_idx = ((row // 8) * features + i) * 8 + (row & 7) if tiled_output else row * features + i
+                dst[dst_idx] = max(-128, min(127, rounded >> 8)) & 0xFF
+
+    def _execute_graph_activation_b_pack(self, table, layer) -> None:
+        input0, output, reduction, outputs, flags = layer[1], layer[4], layer[8], layer[9], layer[22]
+        src, dst = self._get_buffer(table[input0][0]), self._get_buffer(table[output][0])
+        transpose = bool(flags & 1)
+        source_row_major = bool(flags & 2)
+        required = ((outputs + 7) // 8) * reduction * 8
+        expected_input_layout = Layout.ROW_MAJOR if source_row_major else Layout.TRANSFORMER_ACTIVATION_TILED_INT8
+        expected_output_layout = Layout.TRANSFORMER_ACTIVATION_TILED_INT8 if source_row_major else Layout.TRANSFORMER_DYNAMIC_B_TILED_INT8
+        if table[input0][2] != expected_input_layout or table[output][2] != expected_output_layout or len(dst) < required:
+            raise ValueError("Invalid dynamic B-pack buffers")
+        dst[:] = b"\0" * len(dst)
+        source_features = reduction if transpose else outputs
+        for k in range(reduction):
+            for n in range(outputs):
+                source_row, source_column = (n, k) if transpose else (k, n)
+                source_index = (source_row * source_features + source_column if source_row_major else
+                                ((source_row // 8) * source_features + source_column) * 8 + (source_row & 7))
+                output_index = ((n // 8) * reduction + k) * 8 + (n & 7)
+                dst[output_index] = src[source_index]
+
+    def _execute_graph_token_concat(self, table, layer) -> None:
+        inputs, output, rows = layer[1:4], layer[4], layer[8]
+        widths, total = layer[9:12], layer[12]
+        dst = self._get_buffer(table[output][0])
+        if len(dst) < rows * total or sum(widths) != total:
+            raise ValueError("Invalid token concat output")
+        for row in range(rows):
+            cursor = row * total
+            for index, width in zip(inputs, widths):
+                if not width:
+                    continue
+                src = self._get_buffer(table[index][0])
+                start = row * width
+                dst[cursor:cursor + width] = src[start:start + width]
+                cursor += width
+
+    def _execute_graph_softmax(self, table, layer) -> None:
+        _, input0, _, _, output, _, _, _, rows, length, *_ = layer
+        src, dst = self._get_buffer(table[input0][0]), self._get_buffer(table[output][0])
+        lut = (32767,25520,19874,15480,12055,9388,7312,5695,4435,3454,2690,2095,1631,1270,989,770,600)
+        if len(src) < rows * length or len(dst) < rows * length:
+            raise ValueError("Invalid Softmax buffers")
+        for row in range(rows):
+            values = [self._signed8(src[row * length + i]) for i in range(length)]
+            maximum = max(values)
+            exps = [lut[maximum-x] if maximum-x <= 16 else 0 for x in values]
+            total = sum(exps)
+            for i, value in enumerate(exps):
+                dst[row * length + i] = (value * 127 + total // 2) // total if total else 0
 
     def _execute_graph_pool(self, table, layer) -> None:
         _, input0, _, _, output, _, _, _, n, c, h, w, _, out_h, out_w, kernel_h, kernel_w, stride_h, stride_w, pad_h, pad_w, _, flags, _ = layer

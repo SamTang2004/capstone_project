@@ -19,6 +19,7 @@ module tb_memory_io_driver_burst;
     logic [63:0] mem_read_data;
     logic mem_read_valid=0,mem_read_ready,mem_read_last=0,busy,error;
     logic cache_invalidate=0, stats_reset=0; logic [31:0] stats_cache_hits,stats_cache_misses,stats_fill_cycles,stats_bytes_delivered;
+    logic [31:0] debug_state;
     integer beat,reads,errors=0,cycles=0,first_read_accept=-1,first_read_command=-1;
     logic [31:0] mem[0:63]; logic [31:0] active_base; logic [3:0] active_len;
     always #5 clk=~clk;

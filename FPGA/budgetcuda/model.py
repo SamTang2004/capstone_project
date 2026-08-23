@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import time
+from time import perf_counter_ns
 
+from .diagnostics import DiagnosticResult, DiagnosticsSettings, RunDiagnostics, parse_diagnostics
 
 class Model:
     def __init__(self, device, descriptor_tensor, input_tensor, output_tensor, weights=None, tensors=None, package=None):
@@ -17,54 +18,33 @@ class Model:
     def run(self, input_np, diagnostics=None):
         if self._closed:
             raise RuntimeError("Model has been closed")
-        if diagnostics is not None:
-            return self._run_with_diagnostics(input_np, diagnostics)
+        settings = DiagnosticsSettings() if diagnostics is True else diagnostics
+        if settings is not None and not isinstance(settings, DiagnosticsSettings):
+            raise TypeError("diagnostics must be True or DiagnosticsSettings")
+        started = perf_counter_ns()
+        write_started = perf_counter_ns()
         self.device.write(self.input_tensor, input_np)
-        self.device.execute_graph(self.descriptor_tensor, self.input_tensor, self.output_tensor)
-        return self.device.read(self.output_tensor)
-
-    def _run_with_diagnostics(self, input_np, settings):
-        from .diagnostics import DiagnosticResult, DiagnosticsSettings, parse_diagnostics
-
-        if not isinstance(settings, DiagnosticsSettings):
-            raise TypeError("diagnostics must be a DiagnosticsSettings instance")
+        write_ns = perf_counter_ns() - write_started
+        if settings is None:
+            self.device.execute_graph(self.descriptor_tensor, self.input_tensor, self.output_tensor)
+            return self.device.read(self.output_tensor)
         if self.package is None:
-            raise RuntimeError("Diagnostics require a model loaded from a ModelPackage")
-
-        report_bytes = settings.buffer_bytes(len(self.package.layers))
-        report_tensor = self.device.alloc((report_bytes,), "int8", usage="workspace")
+            raise ValueError("Diagnostics require the uploaded model package")
+        initial = settings.initial_buffer(len(self.package.layers))
+        diag = self.device.alloc((len(initial),), "int8", usage="workspace")
         try:
-            self.device.write(report_tensor, settings.initial_buffer(len(self.package.layers)))
-            host_started = time.perf_counter_ns()
-
-            started = time.perf_counter_ns()
-            self.device.write(self.input_tensor, input_np)
-            host_write_ns = time.perf_counter_ns() - started
-
-            started = time.perf_counter_ns()
-            self.device.execute_graph(
-                self.descriptor_tensor,
-                self.input_tensor,
-                self.output_tensor,
-                flags=settings.flags,
-                diagnostics_tensor=report_tensor,
-            )
-            host_execute_ns = time.perf_counter_ns() - started
-
-            started = time.perf_counter_ns()
+            self.device.write(diag, initial)
+            execute_started = perf_counter_ns()
+            self.device.execute_graph(self.descriptor_tensor, self.input_tensor, self.output_tensor, settings.flags, diag)
+            execute_ns = perf_counter_ns() - execute_started
+            read_started = perf_counter_ns()
             output = self.device.read(self.output_tensor)
-            host_read_ns = time.perf_counter_ns() - started
-            host_total_ns = time.perf_counter_ns() - host_started
-
-            raw_report = self.device.read(report_tensor)
-            report = parse_diagnostics(raw_report, settings)
-            report.host_write_ns = host_write_ns
-            report.host_execute_ns = host_execute_ns
-            report.host_read_ns = host_read_ns
-            report.host_total_ns = host_total_ns
-            return DiagnosticResult(output, report)
+            report = parse_diagnostics(self.device.read(diag), settings)
+            read_ns = perf_counter_ns() - read_started
         finally:
-            self.device.free(report_tensor)
+            self.device.free(diag)
+        report = RunDiagnostics(settings, report.layers, report.firmware_total_ns, report.arena_bytes_used, write_ns, execute_ns, read_ns, perf_counter_ns() - started)
+        return DiagnosticResult(output, report)
 
     def close(self):
         """Release the descriptor and all model buffers from board DRAM."""

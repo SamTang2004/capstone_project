@@ -34,7 +34,8 @@ module memory_io_driver #(
     input logic cache_invalidate,
     input logic stats_reset,
     output logic [31:0] stats_cache_hits, output logic [31:0] stats_cache_misses,
-    output logic [31:0] stats_fill_cycles, output logic [31:0] stats_bytes_delivered
+    output logic [31:0] stats_fill_cycles, output logic [31:0] stats_bytes_delivered,
+    output logic [31:0] debug_state
 );
     // A read request streams 1..64 consecutive bytes from one 64-byte line.
     // Line misses use eight 64-bit AXI beats; legacy consumers may still
@@ -150,6 +151,13 @@ module memory_io_driver #(
     assign busy = request_count != 0 || lookup_pending || lookup_result_pending || prepared_valid || prefetch_valid ||
                   read_pending || fill_active || deliver_active ||
                   write_count != 0 || write_flush_pending || write_send_active || write_inflight || mem_cmd_valid;
+    assign debug_state = {
+        read_qword_ready, read_qword_valid, write_req_ready, write_req_valid,
+        mem_cmd_ready, mem_cmd_valid, write_inflight, write_send_active,
+        write_flush_pending, write_count, read_data_valid_r, deliver_active,
+        read_pending, fill_active, prefetch_valid, prepared_valid,
+        lookup_result_pending, lookup_pending, request_count
+    };
 
     always_comb begin
         cache_hit = 1'b0;

@@ -6,6 +6,7 @@ from typing import Iterable
 
 from .dtypes import BufferUsage, DType, Layout, OpType, dtype_size, normalize_dtype, normalize_layout
 from .model import Model
+from .packing import pack_transformer_activations_int8, pack_transformer_weights
 
 
 MODEL_MAGIC = 0x444D4342
@@ -38,13 +39,36 @@ class HostBuffer:
     ) -> "HostBuffer":
         dtype = normalize_dtype(dtype)
         layout = normalize_layout(layout)
-        itemsize = dtype_size(dtype)
-        flat = _flatten(values)
-        raw = b"".join(int(value).to_bytes(itemsize, "little", signed=True) for value in flat)
-        return cls(name, tuple(shape), dtype, layout, usage, raw)
+        shape = tuple(shape)
+        if layout == Layout.TRANSFORMER_ACTIVATION_TILED_INT8:
+            if dtype != DType.INT8 or len(shape) != 2:
+                raise ValueError("Tiled Transformer activations require a rank-2 INT8 tensor")
+            raw = pack_transformer_activations_int8(values, shape[0], shape[1])
+        elif layout in (Layout.TRANSFORMER_WEIGHT_TILED_INT8, Layout.TRANSFORMER_WEIGHT_TILED_INT4):
+            if dtype != DType.INT8 or len(shape) != 2:
+                raise ValueError("Tiled Transformer weights require a rank-2 quantized tensor")
+            raw = pack_transformer_weights(
+                values, shape[0], shape[1],
+                int4=layout == Layout.TRANSFORMER_WEIGHT_TILED_INT4,
+            )
+        else:
+            itemsize = dtype_size(dtype)
+            flat = _flatten(values)
+            raw = b"".join(int(value).to_bytes(itemsize, "little", signed=True) for value in flat)
+        return cls(name, shape, dtype, layout, usage, raw)
 
     @property
     def size_bytes(self) -> int:
+        if len(self.shape) == 2:
+            rows, columns = self.shape
+            if self.layout == Layout.TRANSFORMER_ACTIVATION_TILED_INT8:
+                return _ceil_div(rows, 8) * columns * 8
+            if self.layout == Layout.TRANSFORMER_WEIGHT_TILED_INT8:
+                return _ceil_div(columns, 8) * rows * 8
+            if self.layout == Layout.TRANSFORMER_WEIGHT_TILED_INT4:
+                return _ceil_div(columns, 8) * rows * 4
+            if self.layout == Layout.TRANSFORMER_DYNAMIC_B_TILED_INT8:
+                return _ceil_div(columns, 8) * rows * 8
         return _num_elements(self.shape) * dtype_size(self.dtype)
 
 
@@ -178,6 +202,28 @@ class GraphBuilder:
         self.buffers.append(buffer)
         return len(self.buffers) - 1
 
+    def add_transformer_activation(self, name: str, rows: int, features: int, *, data=None, usage: BufferUsage = BufferUsage.ACTIVATION) -> int:
+        if rows <= 0 or features <= 0:
+            raise ValueError("Transformer activation dimensions must be positive")
+        return self.add_buffer(
+            name, (rows, features), DType.INT8, usage, data,
+            layout=Layout.TRANSFORMER_ACTIVATION_TILED_INT8,
+        )
+
+    def add_transformer_weight(self, name: str, reduction: int, outputs: int, values, *, int4: bool = False) -> int:
+        if reduction <= 0 or outputs <= 0:
+            raise ValueError("Transformer weight dimensions must be positive")
+        layout = Layout.TRANSFORMER_WEIGHT_TILED_INT4 if int4 else Layout.TRANSFORMER_WEIGHT_TILED_INT8
+        return self.add_buffer(name, (reduction, outputs), DType.INT8, BufferUsage.WEIGHT, values, layout=layout)
+
+    def add_transformer_dynamic_b(self, name: str, reduction: int, outputs: int) -> int:
+        if reduction <= 0 or outputs <= 0:
+            raise ValueError("Dynamic Transformer B dimensions must be positive")
+        return self.add_buffer(
+            name, (reduction, outputs), DType.INT8,
+            layout=Layout.TRANSFORMER_DYNAMIC_B_TILED_INT8,
+        )
+
     def conv2d(
         self,
         input_idx: int,
@@ -258,6 +304,40 @@ class GraphBuilder:
     def gemm(self, input_idx: int, weight_idx: int, output_idx: int, *, m: int, n: int, k: int) -> None:
         self.layers.append(Layer(OpType.GEMM, input0=input_idx, weight=weight_idx, output=output_idx, n=m, out_c=n, c=k))
 
+    def transformer_gemm(self, input_idx: int, weight_idx: int, output_idx: int, *, m: int, n: int, k: int) -> None:
+        activation = self.buffers[input_idx]
+        weight = self.buffers[weight_idx]
+        output = self.buffers[output_idx]
+        if activation.layout != Layout.TRANSFORMER_ACTIVATION_TILED_INT8 or activation.shape != (m, k):
+            raise ValueError("Transformer GEMM activation must use the matching tiled MxK layout")
+        if weight.layout not in (Layout.TRANSFORMER_WEIGHT_TILED_INT8, Layout.TRANSFORMER_WEIGHT_TILED_INT4,
+                                 Layout.TRANSFORMER_DYNAMIC_B_TILED_INT8) or weight.shape != (k, n):
+            raise ValueError("Transformer GEMM weight must use the matching tiled KxN layout")
+        if output.dtype != DType.INT32 or output.layout != Layout.ROW_MAJOR or output.shape != (m, n):
+            raise ValueError("Transformer GEMM output must be row-major INT32 MxN")
+        self.gemm(input_idx, weight_idx, output_idx, m=m, n=n, k=k)
+
+    def activation_b_pack(self, input_idx: int, output_idx: int, *, reduction: int, outputs: int, transpose: bool = False) -> None:
+        source = self.buffers[input_idx]
+        output = self.buffers[output_idx]
+        expected_source_shape = (outputs, reduction) if transpose else (reduction, outputs)
+        if source.dtype != DType.INT8 or source.layout != Layout.TRANSFORMER_ACTIVATION_TILED_INT8 or source.shape != expected_source_shape:
+            raise ValueError("Activation B-pack source must be the matching tiled INT8 activation")
+        if output.dtype != DType.INT8 or output.layout != Layout.TRANSFORMER_DYNAMIC_B_TILED_INT8 or output.shape != (reduction, outputs):
+            raise ValueError("Activation B-pack output must be the matching dynamic B tensor")
+        self.layers.append(Layer(OpType.ACTIVATION_B_PACK, input0=input_idx, output=output_idx,
+                                 n=reduction, c=outputs, flags=1 if transpose else 0))
+
+    def activation_a_pack(self, input_idx: int, output_idx: int, *, rows: int, features: int) -> None:
+        source = self.buffers[input_idx]
+        output = self.buffers[output_idx]
+        if source.dtype != DType.INT8 or source.layout != Layout.ROW_MAJOR or source.shape != (rows, features):
+            raise ValueError("Activation A-pack source must be matching row-major INT8")
+        if output.dtype != DType.INT8 or output.layout != Layout.TRANSFORMER_ACTIVATION_TILED_INT8 or output.shape != (rows, features):
+            raise ValueError("Activation A-pack output must be matching tiled INT8")
+        self.layers.append(Layer(OpType.ACTIVATION_B_PACK, input0=input_idx, output=output_idx,
+                                 n=features, c=rows, flags=3))
+
     def relu(self, input_idx: int, output_idx: int) -> None:
         self.layers.append(Layer(OpType.ACTIVATION, input0=input_idx, output=output_idx))
 
@@ -273,6 +353,15 @@ class GraphBuilder:
 
     def requantize(self, input_idx: int, output_idx: int, scale_idx: int) -> None:
         self.layers.append(Layer(OpType.REQUANTIZE, input0=input_idx, output=output_idx, scale=scale_idx))
+
+    def requantize_pack(self, input_idx: int, output_idx: int, scale_idx: int, *, rows: int, columns: int) -> None:
+        source = self.buffers[input_idx]
+        output = self.buffers[output_idx]
+        if source.dtype != DType.INT32 or source.layout != Layout.ROW_MAJOR or source.shape != (rows, columns):
+            raise ValueError("Requantize-pack input must be row-major INT32 with the requested shape")
+        if output.dtype != DType.INT8 or output.layout != Layout.TRANSFORMER_ACTIVATION_TILED_INT8 or output.shape != (rows, columns):
+            raise ValueError("Requantize-pack output must be a matching tiled INT8 activation")
+        self.layers.append(Layer(OpType.REQUANTIZE, input0=input_idx, output=output_idx, scale=scale_idx, n=rows, c=columns))
 
     def maxpool2d(
         self,
@@ -327,6 +416,40 @@ class GraphBuilder:
 
     def reshape(self, input_idx: int, output_idx: int) -> None:
         self.layers.append(Layer(OpType.RESHAPE, input0=input_idx, output=output_idx))
+
+    def layer_norm(self, input_idx: int, gamma_idx: int, beta_idx: int, output_idx: int, *, rows: int, features: int, epsilon_term: int = 0) -> None:
+        if rows <= 0 or features <= 0 or epsilon_term < 0 or epsilon_term > 0xFFFFFFFF:
+            raise ValueError("Invalid LayerNorm dimensions or epsilon term")
+        self.layers.append(Layer(OpType.LAYERNORM, input0=input_idx, output=output_idx, scale=gamma_idx, bias=beta_idx, n=rows, c=features, flags=epsilon_term))
+
+    def gelu(self, input_idx: int, output_idx: int) -> None:
+        self.layers.append(Layer(OpType.GELU, input0=input_idx, output=output_idx))
+
+    def softmax(self, input_idx: int, output_idx: int, *, rows: int, length: int) -> None:
+        if rows <= 0 or length <= 0:
+            raise ValueError("Invalid Softmax dimensions")
+        self.layers.append(Layer(OpType.SOFTMAX, input0=input_idx, output=output_idx, n=rows, c=length))
+
+    def residual_add(self, lhs_idx: int, rhs_idx: int, output_idx: int, *, lhs_shift: int = 0, rhs_shift: int = 0) -> None:
+        if lhs_shift not in range(8) or rhs_shift not in range(8):
+            raise ValueError("Residual shifts must be in 0..7")
+        self.layers.append(Layer(OpType.RESIDUAL_ADD, input0=lhs_idx, input1=rhs_idx, output=output_idx, flags=lhs_shift | (rhs_shift << 4)))
+
+    def token_concat(self, inputs: list[int], output_idx: int, *, rows: int, widths: list[int]) -> None:
+        if not 1 <= len(inputs) <= 3 or len(inputs) != len(widths) or rows <= 0 or any(width <= 0 for width in widths):
+            raise ValueError("Token concat requires one to three positive-width inputs")
+        for index, width in zip(inputs, widths):
+            buffer = self.buffers[index]
+            if buffer.dtype != DType.INT8 or buffer.layout != Layout.ROW_MAJOR or buffer.shape != (rows, width):
+                raise ValueError("Token concat inputs must be matching row-major INT8 tensors")
+        output = self.buffers[output_idx]
+        if output.dtype != DType.INT8 or output.layout != Layout.ROW_MAJOR or output.shape != (rows, sum(widths)):
+            raise ValueError("Token concat output must be matching row-major INT8")
+        padded_inputs = inputs + [0] * (3 - len(inputs))
+        padded_widths = widths + [0] * (3 - len(widths))
+        self.layers.append(Layer(OpType.TOKEN_CONCAT, input0=padded_inputs[0], input1=padded_inputs[1],
+                                 input2=padded_inputs[2], output=output_idx, n=rows,
+                                 c=padded_widths[0], h=padded_widths[1], w=padded_widths[2], out_c=sum(widths)))
 
     def package(self, input_idx: int, output_idx: int) -> ModelPackage:
         return ModelPackage(self.buffers, self.layers, input_idx, output_idx)

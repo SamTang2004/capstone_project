@@ -363,36 +363,36 @@ static int8_t bcuda_requantize_value(int32_t value, const BcudaRequantParams *pa
 }
 
 static int bcuda_execute_gemm_layer(BcudaGraphRuntime *runtime, const BcudaBuffer *model_buffer, const BcudaModelDesc *model, const BcudaLayerDesc *layer) {
-    uint32_t input_id = 0;
-    uint32_t weight_id = 0;
-    uint32_t output_id = 0;
-    int status = bcuda_graph_table_buffer_id(model_buffer, model, layer->input0, &input_id);
+    BcudaBuffer *input = 0;
+    BcudaBuffer *weight = 0;
+    BcudaBuffer *output = 0;
+    int status = bcuda_graph_table_buffer(model_buffer, model, layer->input0, &input);
     if (status != BC_STATUS_OK) {
         return status;
     }
-    status = bcuda_graph_table_buffer_id(model_buffer, model, layer->weight, &weight_id);
+    status = bcuda_graph_table_buffer(model_buffer, model, layer->weight, &weight);
     if (status != BC_STATUS_OK) {
         return status;
     }
-    status = bcuda_graph_table_buffer_id(model_buffer, model, layer->output, &output_id);
+    status = bcuda_graph_table_buffer(model_buffer, model, layer->output, &output);
     if (status != BC_STATUS_OK) {
         return status;
     }
 
     BcudaGemmDesc gemm;
     memset(&gemm, 0, sizeof(gemm));
-    gemm.A_buffer = input_id;
-    gemm.B_buffer = weight_id;
-    gemm.C_buffer = output_id;
+    gemm.A_buffer = input->buffer_id;
+    gemm.B_buffer = weight->buffer_id;
+    gemm.C_buffer = output->buffer_id;
     gemm.M = layer->n;
     gemm.N = layer->out_c;
     gemm.K = layer->c;
     gemm.A_dtype = BC_DTYPE_INT8;
     gemm.B_dtype = BC_DTYPE_INT8;
     gemm.C_dtype = BC_DTYPE_INT32;
-    gemm.A_layout = BC_LAYOUT_ROW_MAJOR;
-    gemm.B_layout = BC_LAYOUT_ROW_MAJOR;
-    gemm.C_layout = BC_LAYOUT_ROW_MAJOR;
+    gemm.A_layout = input->layout;
+    gemm.B_layout = weight->layout;
+    gemm.C_layout = output->layout;
     gemm.flags = layer->flags;
     return bcuda_execute_gemm(runtime, &gemm);
 }
@@ -456,7 +456,7 @@ static int bcuda_execute_requantize_layer(BcudaGraphRuntime *runtime, const Bcud
         return status;
     }
     if (input->dtype != BC_DTYPE_INT32 || output->dtype != BC_DTYPE_INT8 || scale->dtype != BC_DTYPE_INT32 ||
-        scale->size_bytes < sizeof(BcudaRequantParams) || input->size_bytes / sizeof(int32_t) > output->size_bytes) {
+        scale->size_bytes < sizeof(BcudaRequantParams)) {
         return BC_STATUS_SHAPE_MISMATCH;
     }
 
@@ -464,6 +464,19 @@ static int bcuda_execute_requantize_layer(BcudaGraphRuntime *runtime, const Bcud
     memcpy(&params, scale->virtual_address, sizeof(params));
     uint32_t elements = (uint32_t)(input->size_bytes / sizeof(int32_t));
     if (elements == 0 || params.right_shift > 31u) {
+        return BC_STATUS_SHAPE_MISMATCH;
+    }
+
+    uint32_t packed_output = output->layout == BC_LAYOUT_TRANSFORMER_ACTIVATION_TILED_INT8;
+    if (packed_output && (input->layout != BC_LAYOUT_ROW_MAJOR || layer->n == 0 || layer->c == 0 ||
+        (uint64_t)layer->n * layer->c != elements)) {
+        return BC_STATUS_SHAPE_MISMATCH;
+    }
+    uint64_t required_output_bytes = packed_output
+        ? (((uint64_t)layer->n + 7u) / 8u) * layer->c * 8u
+        : elements;
+    if (required_output_bytes > output->size_bytes ||
+        (!packed_output && output->layout != BC_LAYOUT_ROW_MAJOR)) {
         return BC_STATUS_SHAPE_MISMATCH;
     }
 
@@ -477,14 +490,28 @@ static int bcuda_execute_requantize_layer(BcudaGraphRuntime *runtime, const Bcud
         desc.right_shift = params.right_shift;
         desc.input_zero_point = params.input_zero_point;
         desc.output_zero_point = params.output_zero_point;
-        status = bcuda_axi_dma_submit_requantize(runtime->dma, &desc, input, output);
+        status = packed_output
+            ? bcuda_axi_dma_submit_transformer_requantize_pack(runtime->dma, &desc, input, output, layer->n, layer->c)
+            : bcuda_axi_dma_submit_requantize(runtime->dma, &desc, input, output);
         return status == BC_STATUS_OK ? bcuda_axi_dma_poll_done(runtime->dma) : status;
     }
 
     const uint8_t *src = (const uint8_t *)input->virtual_address;
     int8_t *dst = (int8_t *)output->virtual_address;
-    for (uint32_t i = 0; i < elements; i++) {
-        dst[i] = bcuda_requantize_value(bcuda_read_i32(src + i * sizeof(int32_t)), &params);
+    if (packed_output) {
+        memset(dst, 0, (size_t)output->size_bytes);
+        for (uint32_t row = 0; row < layer->n; ++row) {
+            for (uint32_t column = 0; column < layer->c; ++column) {
+                uint32_t input_index = row * layer->c + column;
+                uint64_t output_index = ((uint64_t)(row / 8u) * layer->c + column) * 8u + (row & 7u);
+                dst[output_index] = bcuda_requantize_value(
+                    bcuda_read_i32(src + input_index * sizeof(int32_t)), &params);
+            }
+        }
+    } else {
+        for (uint32_t i = 0; i < elements; i++) {
+            dst[i] = bcuda_requantize_value(bcuda_read_i32(src + i * sizeof(int32_t)), &params);
+        }
     }
     return BC_STATUS_OK;
 }
@@ -505,6 +532,183 @@ static int bcuda_execute_reshape_layer(const BcudaBuffer *model_buffer, const Bc
     }
     if (input->buffer_id != output->buffer_id) {
         memmove(output->virtual_address, input->virtual_address, (size_t)input->size_bytes);
+    }
+    return BC_STATUS_OK;
+}
+
+static int bcuda_execute_activation_b_pack_layer(BcudaGraphRuntime *runtime, const BcudaBuffer *model_buffer, const BcudaModelDesc *model, const BcudaLayerDesc *layer) {
+    BcudaBuffer *input = 0, *output = 0;
+    int status = bcuda_graph_table_buffer(model_buffer, model, layer->input0, &input);
+    if (status == BC_STATUS_OK) status = bcuda_graph_table_buffer(model_buffer, model, layer->output, &output);
+    if (status != BC_STATUS_OK) return status;
+    uint32_t reduction = layer->n, outputs = layer->c, transpose = layer->flags & 1u;
+    uint32_t source_row_major = (layer->flags >> 1) & 1u;
+    uint32_t source_rows = transpose ? outputs : reduction;
+    uint32_t source_features = transpose ? reduction : outputs;
+    uint64_t input_required = source_row_major ? (uint64_t)source_rows * source_features :
+        ((uint64_t)(source_rows + 7u) / 8u) * source_features * 8u;
+    uint64_t output_required = ((uint64_t)(outputs + 7u) / 8u) * reduction * 8u;
+    uint32_t expected_output_layout = source_row_major ? BC_LAYOUT_TRANSFORMER_ACTIVATION_TILED_INT8 : BC_LAYOUT_TRANSFORMER_DYNAMIC_B_TILED_INT8;
+    if (reduction == 0 || outputs == 0 || (layer->flags & ~3u) != 0 ||
+        input->dtype != BC_DTYPE_INT8 || output->dtype != BC_DTYPE_INT8 ||
+        input->layout != (source_row_major ? BC_LAYOUT_ROW_MAJOR : BC_LAYOUT_TRANSFORMER_ACTIVATION_TILED_INT8) ||
+        output->layout != expected_output_layout ||
+        input_required > input->size_bytes || output_required > output->size_bytes) return BC_STATUS_SHAPE_MISMATCH;
+    if (runtime != 0 && runtime->dma != 0 && runtime->dma->register_base != 0) {
+        status = bcuda_axi_dma_submit_transformer_b_pack(runtime->dma, input, output, reduction, outputs, transpose, source_row_major);
+        return status == BC_STATUS_OK ? bcuda_axi_dma_poll_done(runtime->dma) : status;
+    }
+    const uint8_t *src = (const uint8_t *)input->virtual_address;
+    uint8_t *dst = (uint8_t *)output->virtual_address;
+    memset(dst, 0, (size_t)output_required);
+    for (uint32_t k = 0; k < reduction; ++k) {
+        for (uint32_t n = 0; n < outputs; ++n) {
+            uint32_t source_row = transpose ? n : k;
+            uint32_t source_column = transpose ? k : n;
+            uint64_t source_index = source_row_major
+                ? (uint64_t)source_row * source_features + source_column
+                : ((uint64_t)(source_row / 8u) * source_features + source_column) * 8u + (source_row & 7u);
+            uint64_t output_index = ((uint64_t)(n / 8u) * reduction + k) * 8u + (n & 7u);
+            dst[output_index] = src[source_index];
+        }
+    }
+    return BC_STATUS_OK;
+}
+
+static int bcuda_execute_token_concat_layer(const BcudaBuffer *model_buffer, const BcudaModelDesc *model, const BcudaLayerDesc *layer) {
+    BcudaBuffer *inputs[3] = {0, 0, 0}, *output = 0;
+    uint32_t indices[3] = {layer->input0, layer->input1, layer->input2};
+    uint32_t widths[3] = {layer->c, layer->h, layer->w};
+    uint64_t total = (uint64_t)widths[0] + widths[1] + widths[2];
+    if (layer->n == 0 || total == 0 || total != layer->out_c) return BC_STATUS_SHAPE_MISMATCH;
+    int status = bcuda_graph_table_buffer(model_buffer, model, layer->output, &output);
+    if (status != BC_STATUS_OK) return status;
+    if (output->dtype != BC_DTYPE_INT8 || output->layout != BC_LAYOUT_ROW_MAJOR ||
+        (uint64_t)layer->n * total > output->size_bytes) return BC_STATUS_SHAPE_MISMATCH;
+    for (uint32_t part = 0; part < 3; ++part) {
+        if (widths[part] == 0) continue;
+        status = bcuda_graph_table_buffer(model_buffer, model, indices[part], &inputs[part]);
+        if (status != BC_STATUS_OK) return status;
+        if (inputs[part]->dtype != BC_DTYPE_INT8 || inputs[part]->layout != BC_LAYOUT_ROW_MAJOR ||
+            (uint64_t)layer->n * widths[part] > inputs[part]->size_bytes) return BC_STATUS_SHAPE_MISMATCH;
+    }
+    uint8_t *dst = (uint8_t *)output->virtual_address;
+    for (uint32_t row = 0; row < layer->n; ++row) {
+        uint32_t cursor = 0;
+        for (uint32_t part = 0; part < 3; ++part) {
+            if (widths[part] == 0) continue;
+            memcpy(dst + (uint64_t)row * total + cursor,
+                   (const uint8_t *)inputs[part]->virtual_address + (uint64_t)row * widths[part], widths[part]);
+            cursor += widths[part];
+        }
+    }
+    return BC_STATUS_OK;
+}
+
+static int8_t bcuda_saturate_int8(int32_t value) {
+    if (value > 127) return 127;
+    if (value < -128) return -128;
+    return (int8_t)value;
+}
+
+static uint32_t bcuda_integer_sqrt(uint64_t value) {
+    uint64_t op = value, result = 0, one = 1ull << 62;
+    for (uint32_t i = 0; i < 32; ++i) {
+        if (op >= result + one) { op -= result + one; result = (result >> 1) + one; }
+        else result >>= 1;
+        one >>= 2;
+    }
+    return (uint32_t)result;
+}
+
+static int bcuda_execute_residual_layer(BcudaGraphRuntime *runtime, const BcudaBuffer *model_buffer, const BcudaModelDesc *model, const BcudaLayerDesc *layer) {
+    BcudaBuffer *lhs = 0, *rhs = 0, *output = 0;
+    int status = bcuda_graph_table_buffer(model_buffer, model, layer->input0, &lhs);
+    if (status == BC_STATUS_OK) status = bcuda_graph_table_buffer(model_buffer, model, layer->input1, &rhs);
+    if (status == BC_STATUS_OK) status = bcuda_graph_table_buffer(model_buffer, model, layer->output, &output);
+    if (status != BC_STATUS_OK) return status;
+    if (lhs->dtype != BC_DTYPE_INT8 || rhs->dtype != BC_DTYPE_INT8 || output->dtype != BC_DTYPE_INT8 || lhs->size_bytes != rhs->size_bytes || lhs->size_bytes != output->size_bytes) return BC_STATUS_SHAPE_MISMATCH;
+    uint32_t ls = layer->flags & BCUDA_RESIDUAL_LHS_SHIFT_MASK;
+    uint32_t rs = (layer->flags & BCUDA_RESIDUAL_RHS_SHIFT_MASK) >> BCUDA_RESIDUAL_RHS_SHIFT_SHIFT;
+    if (runtime != 0 && runtime->dma != 0 && runtime->dma->register_base != 0) {
+        status = bcuda_axi_dma_submit_transformer_elementwise(runtime->dma, lhs, rhs, output, 1u, (uint32_t)output->size_bytes, 1u, ls, rs);
+        return status == BC_STATUS_OK ? bcuda_axi_dma_poll_done(runtime->dma) : status;
+    }
+    int8_t *a = (int8_t *)lhs->virtual_address, *b = (int8_t *)rhs->virtual_address, *dst = (int8_t *)output->virtual_address;
+    for (uint64_t i = 0; i < output->size_bytes; ++i) dst[i] = bcuda_saturate_int8((a[i] >> ls) + (b[i] >> rs));
+    return BC_STATUS_OK;
+}
+
+static int bcuda_execute_gelu_layer(BcudaGraphRuntime *runtime, const BcudaBuffer *model_buffer, const BcudaModelDesc *model, const BcudaLayerDesc *layer) {
+    BcudaBuffer *input = 0, *output = 0;
+    int status = bcuda_graph_table_buffer(model_buffer, model, layer->input0, &input);
+    if (status == BC_STATUS_OK) status = bcuda_graph_table_buffer(model_buffer, model, layer->output, &output);
+    if (status != BC_STATUS_OK) return status;
+    if (input->dtype != BC_DTYPE_INT8 || output->dtype != BC_DTYPE_INT8 || input->size_bytes != output->size_bytes) return BC_STATUS_SHAPE_MISMATCH;
+    if (runtime != 0 && runtime->dma != 0 && runtime->dma->register_base != 0) {
+        uint32_t columns = input->rank >= 2 && input->shape[1] ? input->shape[1] : (uint32_t)input->size_bytes;
+        uint32_t rows = (uint32_t)(input->size_bytes / columns);
+        status = bcuda_axi_dma_submit_transformer_elementwise(runtime->dma, input, 0, output, rows, columns, 0u, 0u, 0u);
+        return status == BC_STATUS_OK ? bcuda_axi_dma_poll_done(runtime->dma) : status;
+    }
+    int8_t *src = (int8_t *)input->virtual_address, *dst = (int8_t *)output->virtual_address;
+    for (uint64_t i = 0; i < input->size_bytes; ++i) {
+        int32_t x = src[i], value;
+        if (x <= -24) value = 0;
+        else if (x >= 24) value = x;
+        else { int32_t product = x * (x + 24); value = (product + (product >= 0 ? 24 : -24)) / 48; }
+        dst[i] = (int8_t)value;
+    }
+    return BC_STATUS_OK;
+}
+
+static int bcuda_execute_layernorm_layer(BcudaGraphRuntime *runtime, const BcudaBuffer *model_buffer, const BcudaModelDesc *model, const BcudaLayerDesc *layer) {
+    BcudaBuffer *input = 0, *output = 0, *gamma = 0, *beta = 0;
+    int status = bcuda_graph_table_buffer(model_buffer, model, layer->input0, &input);
+    if (status == BC_STATUS_OK) status = bcuda_graph_table_buffer(model_buffer, model, layer->output, &output);
+    if (status == BC_STATUS_OK) status = bcuda_graph_table_buffer(model_buffer, model, layer->scale, &gamma);
+    if (status == BC_STATUS_OK) status = bcuda_graph_table_buffer(model_buffer, model, layer->bias, &beta);
+    if (status != BC_STATUS_OK) return status;
+    uint64_t count = (uint64_t)layer->n * layer->c;
+    int tiled_output = output->layout == BC_LAYOUT_TRANSFORMER_ACTIVATION_TILED_INT8;
+    uint64_t output_bytes = tiled_output ? (((uint64_t)layer->n + 7u) / 8u) * layer->c * 8u : count;
+    if (layer->n == 0 || layer->c == 0 || input->dtype != BC_DTYPE_INT8 || input->layout != BC_LAYOUT_ROW_MAJOR || output->dtype != BC_DTYPE_INT8 || (output->layout != BC_LAYOUT_ROW_MAJOR && !tiled_output) || gamma->dtype != BC_DTYPE_INT16 || beta->dtype != BC_DTYPE_INT16 || input->size_bytes < count || output->size_bytes < output_bytes || gamma->size_bytes < 2ull * layer->c || beta->size_bytes < 2ull * layer->c) return BC_STATUS_SHAPE_MISMATCH;
+    int8_t *src = (int8_t *)input->virtual_address, *dst = (int8_t *)output->virtual_address;
+    int16_t *g = (int16_t *)gamma->virtual_address, *b = (int16_t *)beta->virtual_address;
+    if(runtime!=0&&runtime->dma!=0&&runtime->dma->register_base!=0){status=bcuda_axi_dma_submit_transformer_rowwise(runtime->dma,input,gamma,beta,output,layer->n,layer->c,0u,layer->flags);return status==BC_STATUS_OK?bcuda_axi_dma_poll_done(runtime->dma):status;}
+    if (tiled_output) memset(dst, 0, (size_t)output_bytes);
+    for (uint32_t row = 0; row < layer->n; ++row) {
+        int64_t sum = 0; uint64_t squares = 0;
+        for (uint32_t i = 0; i < layer->c; ++i) { int32_t x = src[(uint64_t)row * layer->c + i]; sum += x; squares += (uint64_t)(x * x); }
+        uint64_t variance = (uint64_t)layer->c * squares - (uint64_t)(sum * sum) + layer->flags;
+        uint32_t denominator = bcuda_integer_sqrt(variance); if (denominator == 0) denominator = 1;
+        for (uint32_t i = 0; i < layer->c; ++i) {
+            int64_t centered = (int64_t)src[(uint64_t)row * layer->c + i] * layer->c - sum;
+            int64_t norm_q14 = (centered << 14) / denominator;
+            int64_t scaled_q8 = ((norm_q14 * g[i]) >> 14) + b[i];
+            int64_t rounded = scaled_q8 + (scaled_q8 >= 0 ? 128 : -128);
+            uint64_t dst_idx = tiled_output ? (((uint64_t)(row / 8u) * layer->c + i) * 8u + (row & 7u)) : (uint64_t)row * layer->c + i;
+            dst[dst_idx] = bcuda_saturate_int8((int32_t)(rounded >> 8));
+        }
+    }
+    return BC_STATUS_OK;
+}
+
+static int bcuda_execute_softmax_layer(BcudaGraphRuntime *runtime, const BcudaBuffer *model_buffer, const BcudaModelDesc *model, const BcudaLayerDesc *layer) {
+    static const uint16_t lut[17] = {32767,25520,19874,15480,12055,9388,7312,5695,4435,3454,2690,2095,1631,1270,989,770,600};
+    BcudaBuffer *input = 0, *output = 0;
+    int status = bcuda_graph_table_buffer(model_buffer, model, layer->input0, &input);
+    if (status == BC_STATUS_OK) status = bcuda_graph_table_buffer(model_buffer, model, layer->output, &output);
+    if (status != BC_STATUS_OK) return status;
+    uint64_t count = (uint64_t)layer->n * layer->c;
+    if (layer->n == 0 || layer->c == 0 || layer->c > 256 || input->dtype != BC_DTYPE_INT8 || output->dtype != BC_DTYPE_INT8 || input->size_bytes < count || output->size_bytes < count) return BC_STATUS_SHAPE_MISMATCH;
+    if(runtime!=0&&runtime->dma!=0&&runtime->dma->register_base!=0){status=bcuda_axi_dma_submit_transformer_rowwise(runtime->dma,input,0,0,output,layer->n,layer->c,1u,0u);return status==BC_STATUS_OK?bcuda_axi_dma_poll_done(runtime->dma):status;}
+    int8_t *src = (int8_t *)input->virtual_address; uint8_t *dst = (uint8_t *)output->virtual_address; uint16_t exps[256];
+    for (uint32_t row = 0; row < layer->n; ++row) {
+        int32_t maximum = -128; uint32_t total = 0;
+        for (uint32_t i = 0; i < layer->c; ++i) if (src[(uint64_t)row * layer->c + i] > maximum) maximum = src[(uint64_t)row * layer->c + i];
+        for (uint32_t i = 0; i < layer->c; ++i) { uint32_t d = maximum - src[(uint64_t)row * layer->c + i]; exps[i] = d <= 16 ? lut[d] : 0; total += exps[i]; }
+        for (uint32_t i = 0; i < layer->c; ++i) dst[(uint64_t)row * layer->c + i] = total == 0 ? 0 : (uint8_t)((exps[i] * 127u + (total >> 1)) / total);
     }
     return BC_STATUS_OK;
 }
@@ -813,6 +1017,20 @@ int bcuda_execute_gemm(BcudaGraphRuntime *runtime, const BcudaGemmDesc *desc) {
         return status;
     }
 
+    if (desc->A_layout == BC_LAYOUT_TRANSFORMER_ACTIVATION_TILED_INT8 &&
+        (desc->B_layout == BC_LAYOUT_TRANSFORMER_WEIGHT_TILED_INT8 ||
+         desc->B_layout == BC_LAYOUT_TRANSFORMER_WEIGHT_TILED_INT4 ||
+         desc->B_layout == BC_LAYOUT_TRANSFORMER_DYNAMIC_B_TILED_INT8) &&
+        desc->C_layout == BC_LAYOUT_ROW_MAJOR) {
+        if (A->layout != desc->A_layout || B->layout != desc->B_layout || C->layout != desc->C_layout) {
+            return BC_STATUS_SHAPE_MISMATCH;
+        }
+        status = bcuda_axi_dma_submit_transformer_gemm(
+            runtime->dma, desc, A, B, C,
+            desc->B_layout == BC_LAYOUT_TRANSFORMER_WEIGHT_TILED_INT4);
+        return status == BC_STATUS_OK ? bcuda_axi_dma_poll_done(runtime->dma) : status;
+    }
+
     if ((desc->M & 15u) != 0u || (desc->N & 15u) != 0u || (desc->K & 15u) != 0u) {
         return bcuda_execute_padded_gemm(runtime, desc, A, B, C);
     }
@@ -902,6 +1120,10 @@ int bcuda_execute_graph(BcudaGraphRuntime *runtime, const BcudaGraphExecDesc *de
             }
         }
         uint64_t layer_started_ns = record == 0 ? 0 : bcuda_now_ns();
+        BcudaTransformerDebugSnapshot debug_before;
+        int debug_snapshot_valid = record != 0 && runtime->dma != 0 && runtime->dma->register_base != 0 &&
+            (layer.op_type == BC_OP_GEMM || layer.op_type >= BC_OP_LAYERNORM) &&
+            bcuda_axi_dma_read_transformer_debug(runtime->dma, &debug_before) == BC_STATUS_OK;
         switch (layer.op_type) {
             case BC_OP_GEMM:
                 status = bcuda_execute_gemm_layer(runtime, model, &model_desc, &layer);
@@ -926,6 +1148,24 @@ int bcuda_execute_graph(BcudaGraphRuntime *runtime, const BcudaGraphExecDesc *de
                 break;
             case BC_OP_RESHAPE:
                 status = bcuda_execute_reshape_layer(model, &model_desc, &layer);
+                break;
+            case BC_OP_LAYERNORM:
+                status = bcuda_execute_layernorm_layer(runtime, model, &model_desc, &layer);
+                break;
+            case BC_OP_GELU:
+                status = bcuda_execute_gelu_layer(runtime, model, &model_desc, &layer);
+                break;
+            case BC_OP_SOFTMAX:
+                status = bcuda_execute_softmax_layer(runtime, model, &model_desc, &layer);
+                break;
+            case BC_OP_RESIDUAL_ADD:
+                status = bcuda_execute_residual_layer(runtime, model, &model_desc, &layer);
+                break;
+            case BC_OP_ACTIVATION_B_PACK:
+                status = bcuda_execute_activation_b_pack_layer(runtime, model, &model_desc, &layer);
+                break;
+            case BC_OP_TOKEN_CONCAT:
+                status = bcuda_execute_token_concat_layer(model, &model_desc, &layer);
                 break;
             default:
                 status = BC_STATUS_INVALID_COMMAND;
@@ -965,6 +1205,23 @@ int bcuda_execute_graph(BcudaGraphRuntime *runtime, const BcudaGraphExecDesc *de
                 record->conv_cache_misses = runtime->dma->conv_cache_misses;
                 record->conv_fill_cycles = runtime->dma->conv_fill_cycles;
                 record->conv_bytes_delivered = runtime->dma->conv_bytes_delivered;
+            } else if (debug_snapshot_valid) {
+                BcudaTransformerDebugSnapshot after;
+                if (bcuda_axi_dma_read_transformer_debug(runtime->dma, &after) == BC_STATUS_OK) {
+                    record->conv_cycles_total = (uint32_t)(after.total_cycles - debug_before.total_cycles);
+                    record->conv_cycles_zero_a = (uint32_t)(after.busy_cycles - debug_before.busy_cycles);
+                    record->conv_cycles_load_a = (uint32_t)(after.memory_stall_cycles - debug_before.memory_stall_cycles);
+                    record->conv_cycles_zero_b = (uint32_t)(after.input_stall_cycles - debug_before.input_stall_cycles);
+                    record->conv_cycles_load_b = (uint32_t)(after.output_stall_cycles - debug_before.output_stall_cycles);
+                    record->conv_cycles_bias = (uint32_t)after.last_op_cycles;
+                    record->conv_cycles_compute = (uint32_t)after.max_op_cycles;
+                    record->conv_cycles_accumulate = after.completed_ops - debug_before.completed_ops;
+                    record->conv_cycles_write = after.active_op;
+                    record->conv_loader_address_cycles = after.error_latched;
+                    record->conv_loader_request_cycles = after.trace_valid;
+                    record->conv_loader_receive_cycles = after.trace_event;
+                    record->conv_cache_hits = after.trace_data;
+                }
             }
             diagnostics_header->layer_count = i + 1;
         }
