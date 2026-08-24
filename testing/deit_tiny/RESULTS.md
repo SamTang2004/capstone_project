@@ -95,8 +95,11 @@ rather than prerequisites for recovering accuracy.
   initial logit shift came from the DDR wrapper reading gamma/beta one column
   late after each first LayerNorm output. A next-column BRAM prefetch fixes the
   alignment, and a distinct-per-column integration test prevents regression.
-  The corrected 3.197-second PL window is 29.22% below the dual-core baseline
-  and restores exact logits `[2, -2, 1, 2, -1, -7]`.
+  Corrected PL windows of 3.197 and 3.143 seconds are 29.22% to 30.42% below
+  the dual-core baseline and restore exact logits `[2, -2, 1, 2, -1, -7]`.
+  The latest module report attributes 40.43% of the window to GEMM and 39.66%
+  to requantization plus activation packing, making a fused GEMM-to-tiled-INT8
+  output path the next architectural target.
 - The FP4 experiment is scaled E2M1 with matched INT4 scale granularity. It is
   not NVIDIA NVFP4 or OCP MXFP4 and does not include their block-scale metadata.
 

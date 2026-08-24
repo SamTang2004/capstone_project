@@ -8,7 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from budgetcuda import Device, build_deit_attention_block_package, build_deit_mlp_block_package
-from budgetcuda.diagnostics import DiagnosticsSettings, parse_diagnostics
+from budgetcuda.diagnostics import DiagnosticsSettings, parse_diagnostics, summarize_cycle_report
 
 
 def _values(result) -> list[int]:
@@ -40,6 +40,13 @@ def _run_with_diagnostics(model, input_values):
                 print(f"expected[{first}:{min(first + 32, len(expected))}]={expected[first:first + 32].hex()}")
                 print(f"actual[{first}:{min(first + 32, len(actual))}]={actual[first:first + 32].hex()}")
             raise
+        report = parse_diagnostics(model.device.read(diagnostics), settings)
+        breakdown = summarize_cycle_report(report)["module_cycle_breakdown"]
+        print("module cycles: " + ", ".join(
+            f"{item['module']}={item['window_cycles']} "
+            f"({item['total_window_percent']:.2f}%)"
+            for item in breakdown
+        ))
         return model.device.read(model.output_tensor)
     finally:
         model.device.free(diagnostics)

@@ -24,7 +24,7 @@ def main() -> None:
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument(
         "--cycle-report", type=Path,
-        help="Write exact per-layer 64-bit device cycle counters as JSON",
+        help="Also save the standard exact device cycle report as JSON",
     )
     args = parser.parse_args()
     if args.repeat <= 0:
@@ -33,19 +33,17 @@ def main() -> None:
         load_started = perf_counter()
         runner.load()
         load_seconds = perf_counter() - load_started
-        results = [
-            runner.run_image(args.image, diagnostics=args.cycle_report is not None)
-            for _ in range(args.repeat)
-        ]
+        # Performance diagnostics are mandatory for FPGA model runs.  This
+        # keeps module-level cycle consumption visible even when the caller
+        # does not request a raw report file.
+        results = [runner.run_image(args.image, diagnostics=True) for _ in range(args.repeat)]
         resident_weight_bytes = runner.resident_weight_bytes
         resident_buffer_count = runner.resident_buffer_count
         resident_total_bytes = runner.resident_total_bytes
         resident_total_buffer_count = runner.resident_total_buffer_count
         resident_descriptor_bytes = runner.resident_descriptor_bytes
-        cycle_report = (
-            runner.cycle_report(results[-1].diagnostics)
-            if results[-1].diagnostics is not None else None
-        )
+        cycle_reports = [runner.cycle_report(result.diagnostics) for result in results]
+        cycle_report = cycle_reports[-1]
     result = results[-1]
     summary = {
         "model_load_seconds": load_seconds,
@@ -60,12 +58,15 @@ def main() -> None:
         "elapsed_seconds": result.elapsed_seconds,
         "stages": dict(result.stage_seconds),
         "repeat_seconds": [item.elapsed_seconds for item in results],
+        "cycle_totals": cycle_report["totals"],
+        "module_cycle_breakdown": cycle_report["module_cycle_breakdown"],
+        "stage_cycle_breakdown": cycle_report["stage_cycle_breakdown"],
+        "repeat_cycle_totals": [report["totals"] for report in cycle_reports],
     }
-    if cycle_report is not None:
+    if args.cycle_report is not None:
         args.cycle_report.parent.mkdir(parents=True, exist_ok=True)
         args.cycle_report.write_text(json.dumps(cycle_report, indent=2), encoding="utf-8")
         summary["cycle_report"] = str(args.cycle_report)
-        summary["cycle_totals"] = cycle_report["totals"]
     print(json.dumps(summary, indent=2))
 
 

@@ -12,6 +12,7 @@ from budgetcuda.diagnostics import (
     DIAGNOSTICS_RECORD_STRUCT,
     DiagnosticsSettings,
     parse_diagnostics,
+    summarize_cycle_report,
 )
 from budgetcuda.packing import (
     pack_transformer_activations_int8,
@@ -150,6 +151,18 @@ class TransformerOpsTest(unittest.TestCase):
         self.assertEqual(parsed["window_cycles"], large)
         self.assertEqual(parsed["max_op_cycles"], large - 6)
         self.assertEqual(parsed["completed_ops"], 7)
+
+    def test_cycle_summary_always_ranks_module_consumption(self):
+        graph = GraphBuilder("debug")
+        inp = graph.add_buffer("input", (4,), DType.INT8)
+        out = graph.add_buffer("output", (4,), DType.INT8, BufferUsage.OUTPUT)
+        graph.gelu(inp, out)
+        model = upload_model(Device.mock(), graph.package(inp, out))
+        result = model.run([-8, 0, 8, 24], diagnostics=True)
+        summary = summarize_cycle_report(result.diagnostics)
+        self.assertEqual(summary["module_cycle_breakdown"][0]["module"], "GELU")
+        self.assertEqual(summary["module_cycle_breakdown"][0]["total_window_percent"], 0.0)
+        self.assertEqual(summary["stage_cycle_breakdown"][0]["stage"], "full_model")
 
     def test_deit_mlp_builder_runs_pre_norm_residual_graph(self):
         self.assertEqual(DeiTConfig().tokens, 197)

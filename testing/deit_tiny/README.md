@@ -82,8 +82,11 @@ python testing/deit_tiny/run_budgetcuda_deit.py path/to/image.jpg `
   --address 192.168.2.99 --repeat 2
 ```
 
-Add `--cycle-report testing/deit_tiny/results/fpga_cycle_report.json` to run
-with precise 64-bit PL counters and save operation, stage, and per-layer timing.
+Every run collects and prints precise 64-bit PL counters, including ranked
+module and stage cycle consumption. Add
+`--cycle-report testing/deit_tiny/results/fpga_cycle_report.json` to also save
+the complete operation, stage, and per-layer report. Repeated runs report cycle
+totals separately rather than reporting only host elapsed time.
 
 The runner validates the manifest and uploads one fused full-model graph into a
 64 MiB DDR3 arena. Weights, class/position embeddings, activation workspaces,
@@ -96,12 +99,11 @@ seconds, 46.15% below the optimized one-core 8.388-second result and 10.03x
 faster than the 45.31-second streamed baseline. It remains above the
 less-than-500-ms deployment target.
 
-An experimental shared LayerNorm/Softmax reciprocal engine reduced the exact
-PL window to 3.157 seconds, including LayerNorm at 192.55 ms and Softmax at
-301.47 ms. Its standalone arithmetic is bit-exact to the legacy units at the
-model's 192/197-element dimensions. The rebuilt full fabric nevertheless
-shifted final logits while preserving the predicted class, so the board was
-rolled back to the known-good dual-core image pending full-fabric isolation.
-See `results/FPGA_CYCLE_REPORT.md` for the measured comparison.
+The corrected shared LayerNorm/Softmax reciprocal engine reduces the exact PL
+window to 3.143--3.197 seconds, including LayerNorm at 192.76 ms and Softmax at
+301.53 ms. A one-column gamma/beta BRAM prefetch error in the first build was isolated
+with prefix-graph captures and fixed; the optimized overlay now reproduces the
+known-good logits exactly. See `results/FPGA_CYCLE_REPORT.md` for the measured
+comparison.
 
 See `RESULTS.md` for the measured comparison and limitations.

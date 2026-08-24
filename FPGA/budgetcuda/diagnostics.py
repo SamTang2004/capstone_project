@@ -174,6 +174,21 @@ def summarize_cycle_report(report: RunDiagnostics, layer_names=None, layer_stage
         group["memory_stall_percent"] = 100.0 * group.get("memory_stall_cycles", 0) / window if window else 0.0
         group["effective_gops"] = group["operations"] / group["firmware_elapsed_ns"] if group["firmware_elapsed_ns"] else 0.0
 
+    def ranked_breakdown(groups, label):
+        total_cycles = totals["window_cycles"]
+        return [
+            {
+                label: name,
+                **group,
+                "total_window_percent": (
+                    100.0 * group["window_cycles"] / total_cycles
+                    if total_cycles else 0.0
+                ),
+            }
+            for name, group in sorted(
+                groups.items(), key=lambda item: item[1]["window_cycles"], reverse=True)
+        ]
+
     top_layers = sorted(per_layer, key=lambda item: item["window_cycles"], reverse=True)[:25]
     return {
         "clock_hz": clock_hz,
@@ -187,6 +202,10 @@ def summarize_cycle_report(report: RunDiagnostics, layer_names=None, layer_stage
         "totals": totals,
         "by_operation": by_operation,
         "by_stage": by_stage,
+        # Ranked tables are included in every diagnostic report so performance
+        # tests always expose where the complete device window was consumed.
+        "module_cycle_breakdown": ranked_breakdown(by_operation, "module"),
+        "stage_cycle_breakdown": ranked_breakdown(by_stage, "stage"),
         "top_layers_by_window_cycles": top_layers,
         "layers": per_layer,
     }
