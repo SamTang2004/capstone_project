@@ -109,6 +109,64 @@ module tb_memory_io_driver_burst;
                 errors++;
             end
         end
+        // GEMM may begin loading the next tile while a short write run is
+        // still being coalesced.  The read must force that partial run out,
+        // then enter the FIFO; neither side may wait on the other forever.
+        @(negedge clk);write_req_valid=1;write_req_addr=32'hC0;
+        write_req_data=32'hfeed1234;write_req_last=0;
+        while(!write_req_ready)@(negedge clk);
+        @(posedge clk);@(negedge clk);write_req_valid=0;
+        read_req_addr=0;read_req_len=1;read_req_valid=1;
+        while(!read_req_ready)@(negedge clk);
+        @(posedge clk);@(negedge clk);read_req_valid=0;
+        wait(read_data_valid);#1;
+        if(read_data!==8'h00||mem[48]!==32'hfeed1234)begin
+            $display("overlap flush/read mismatch read=%h write=%h",read_data,mem[48]);errors++;
+        end
+        @(posedge clk);wait(!busy);
+        // If read and write arrive on the same idle edge, admit only the
+        // writer.  Accepting both creates request_count=1/write_count=1 and
+        // leaves each path waiting for the other to drain.
+        @(negedge clk);
+        write_req_addr=32'hD0;write_req_data=32'hcafe5678;
+        write_req_strb=4'hf;write_req_last=0;write_req_valid=1;
+        read_req_addr=32'h08;read_req_len=1;read_req_valid=1;
+        #1;
+        if(!write_req_ready||read_req_ready)begin
+            $display("simultaneous admission priority mismatch write_ready=%0b read_ready=%0b",
+                     write_req_ready,read_req_ready);errors++;
+        end
+        @(posedge clk);@(negedge clk);write_req_valid=0;
+        while(!read_req_ready)@(negedge clk);
+        @(posedge clk);@(negedge clk);read_req_valid=0;
+        wait(read_data_valid);#1;
+        if(read_data!==8'h08||mem[52]!==32'hcafe5678)begin
+            $display("simultaneous write/read mismatch read=%h write=%h",read_data,mem[52]);errors++;
+        end
+        @(posedge clk);wait(!busy);
+        // A read can become valid while a contiguous final writer word is
+        // accepted.  The read-forced partial flush must not overwrite the
+        // two-word burst length and silently discard that final word.
+        @(negedge clk);
+        write_req_addr=32'hE0;write_req_data=32'h11223344;
+        write_req_strb=4'hf;write_req_last=0;write_req_valid=1;
+        while(!write_req_ready)@(negedge clk);
+        @(posedge clk);@(negedge clk);
+        write_req_addr=32'hE4;write_req_data=32'h55667788;write_req_last=1;
+        read_req_addr=32'h10;read_req_len=1;read_req_valid=1;
+        while(!write_req_ready)@(negedge clk);
+        if(read_req_ready)begin
+            $display("final-word/read arbitration admitted both requests");errors++;
+        end
+        @(posedge clk);@(negedge clk);write_req_valid=0;write_req_last=0;
+        while(!read_req_ready)@(negedge clk);
+        @(posedge clk);@(negedge clk);read_req_valid=0;
+        wait(read_data_valid);#1;
+        if(read_data!==8'h10||mem[56]!==32'h11223344||mem[57]!==32'h55667788)begin
+            $display("final-word/read data loss read=%h word0=%h word1=%h",
+                     read_data,mem[56],mem[57]);errors++;
+        end
+        @(posedge clk);wait(!busy);
         if(error||errors)$fatal(1,"memory IO burst test failed errors=%0d",errors);
         $display("Memory IO burst golden trace passed: cached read and 4-beat coalesced write");$finish;
     end

@@ -1,0 +1,218 @@
+{
+  "image": "C:\\python_projects\\capstone_project\\testing\\deit_tiny\\data\\cache_256\\FreshApple\\FreshApple (1).jpg",
+  "manifest": "C:\\python_projects\\capstone_project\\testing\\deit_tiny\\artifacts\\budgetcuda_w4a8\\manifest.json",
+  "layer_count": 328,
+  "captured_layer_count": 21,
+  "layers": [
+    {
+      "layer_index": 0,
+      "layer_name": "patch_embedding.layer_0.GEMM",
+      "stage": "patch_embedding",
+      "op_type": "GEMM",
+      "output_buffer": "deit_patch_embedding.output",
+      "output_bytes": 37632,
+      "sha256": "51e04cbb62a4699a0b60178fa5422dd0e4c1cb57060fc5c72a49772cf33e6871",
+      "first_32_bytes_hex": "04ffedeb0edcfd09fdea0df30206fbf1faf20afa0df20a1420f8f6020bf6f7e7"
+    },
+    {
+      "layer_index": 1,
+      "layer_name": "token_embedding.layer_0.TOKEN_EMBEDDING",
+      "stage": "token_embedding",
+      "op_type": "TOKEN_EMBEDDING",
+      "output_buffer": "deit_token_embedding.output",
+      "output_bytes": 37824,
+      "sha256": "652ce594ad16b7f0be553c94b951377a1349ccc45243fe4ec98f3543b680c133",
+      "first_32_bytes_hex": "00fff30206ee0008faec06fffc07fcfbf5fafdfd137f02f40df8ff0302f7fb04"
+    },
+    {
+      "layer_index": 2,
+      "layer_name": "block_0.attention.layer_0.LAYERNORM",
+      "stage": "block_0.attention",
+      "op_type": "LAYERNORM",
+      "output_buffer": "deit_block_0_attention.norm.output",
+      "output_bytes": 38400,
+      "sha256": "19302964dd06aa0103a6a35137a3f39a4996b9087664ddc20ce87bf4a1a79e00",
+      "first_32_bytes_hex": "ff020102fe00ff00ff000000fe00ffff000000000000000000fdfdfdfdfdfdfd"
+    },
+    {
+      "layer_index": 3,
+      "layer_name": "block_0.attention.layer_1.GEMM",
+      "stage": "block_0.attention",
+      "op_type": "GEMM",
+      "output_buffer": "deit_block_0_attention.head0.q",
+      "output_bytes": 12800,
+      "sha256": "9117edc24c106fe328ababf20afb00af24ba7ad20fcd07a299f23a60e0cc8c99",
+      "first_32_bytes_hex": "00ffffffffffffff01000000000000001615151516171616000000ff00000000"
+    },
+    {
+      "layer_index": 4,
+      "layer_name": "block_0.attention.layer_2.GEMM",
+      "stage": "block_0.attention",
+      "op_type": "GEMM",
+      "output_buffer": "deit_block_0_attention.head0.key_b",
+      "output_bytes": 12800,
+      "sha256": "39e0dca93d114c34efbce80d378ba05db7a9e0249aa4efeee76841c0a3b5f273",
+      "first_32_bytes_hex": "0101010102010101f9fafafaf9f9fafa02fefefefefdfefef9f8f8f8f9f9f9f9"
+    },
+    {
+      "layer_index": 5,
+      "layer_name": "block_0.attention.layer_3.GEMM",
+      "stage": "block_0.attention",
+      "op_type": "GEMM",
+      "output_buffer": "deit_block_0_attention.head0.value_b",
+      "output_bytes": 12608,
+      "sha256": "2aeeb468e39bd2ef99977ef341e7aa0846b7400e61378a1688934b948ceb2b07",
+      "first_32_bytes_hex": "04fffffd0a00fff30300f9fd0200fff70301fafd01fffef70300f9fe02fffff9"
+    },
+    {
+      "layer_index": 6,
+      "layer_name": "block_0.attention.layer_4.GEMM",
+      "stage": "block_0.attention",
+      "op_type": "GEMM",
+      "output_buffer": "deit_block_0_attention.head0.score",
+      "output_bytes": 38809,
+      "sha256": "637849365f61ee7d86fe99c1ec935d7acf2c3bfcfe78a0ce4266494895cc59d3",
+      "first_32_bytes_hex": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "layer_index": 7,
+      "layer_name": "block_0.attention.layer_5.SOFTMAX",
+      "stage": "block_0.attention",
+      "op_type": "SOFTMAX",
+      "output_buffer": "deit_block_0_attention.head0.probabilities_tiled",
+      "output_bytes": 39400,
+      "sha256": "8b281af6fe7843128930eea3c222651ea49e7c26ec1940bd85147f600ccad5af",
+      "first_32_bytes_hex": "0101010101010101010101010101010101010101010101010101010101010101"
+    },
+    {
+      "layer_index": 8,
+      "layer_name": "block_0.attention.layer_6.GEMM",
+      "stage": "block_0.attention",
+      "op_type": "GEMM",
+      "output_buffer": "deit_block_0_attention.head0.context",
+      "output_bytes": 12608,
+      "sha256": "8f7ad19c3e851a56d323d9dbdb4cb3b31c434522f9325897bdaa9be66a89afd3",
+      "first_32_bytes_hex": "0400fdfd02fffef1fffcff0001fb00fefffbfffe00ff0100fefefdffff0601ff"
+    },
+    {
+      "layer_index": 9,
+      "layer_name": "block_0.attention.layer_7.GEMM",
+      "stage": "block_0.attention",
+      "op_type": "GEMM",
+      "output_buffer": "deit_block_0_attention.head1.q",
+      "output_bytes": 12800,
+      "sha256": "8c455ebef32d6114bb36a8f88952d459a2813818d338c239bf9b880887c6d762",
+      "first_32_bytes_hex": "ff00ff0000fffe00ff0000ff00feff00f6f4f4f4f2f2f4f32423242425242324"
+    },
+    {
+      "layer_index": 10,
+      "layer_name": "block_0.attention.layer_8.GEMM",
+      "stage": "block_0.attention",
+      "op_type": "GEMM",
+      "output_buffer": "deit_block_0_attention.head1.key_b",
+      "output_bytes": 12800,
+      "sha256": "1bb909e0004e83e74deaf10bdfe26d45c75cdc8545c6aeff68eca2645dad3381",
+      "first_32_bytes_hex": "fdfffefffffefcff030303020201020303fdfefefdfdfffe0505060607060607"
+    },
+    {
+      "layer_index": 11,
+      "layer_name": "block_0.attention.layer_9.GEMM",
+      "stage": "block_0.attention",
+      "op_type": "GEMM",
+      "output_buffer": "deit_block_0_attention.head1.value_b",
+      "output_bytes": 12608,
+      "sha256": "9252fa5825ecf4f73bdb5d9a9f7404e77cb93d32362b5dca262cbd3f95e46879",
+      "first_32_bytes_hex": "ff03fdfefc020301fe040001fd030001fe040100fd03ff01ff040200fd030001"
+    },
+    {
+      "layer_index": 12,
+      "layer_name": "block_0.attention.layer_10.GEMM",
+      "stage": "block_0.attention",
+      "op_type": "GEMM",
+      "output_buffer": "deit_block_0_attention.head1.score",
+      "output_bytes": 38809,
+      "sha256": "a9c8202356c4ce9060fd81255c5ffe66cb67fc6d199672ca26aa8b69bf7a3fa4",
+      "first_32_bytes_hex": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "layer_index": 13,
+      "layer_name": "block_0.attention.layer_11.SOFTMAX",
+      "stage": "block_0.attention",
+      "op_type": "SOFTMAX",
+      "output_buffer": "deit_block_0_attention.head1.probabilities_tiled",
+      "output_bytes": 39400,
+      "sha256": "8b281af6fe7843128930eea3c222651ea49e7c26ec1940bd85147f600ccad5af",
+      "first_32_bytes_hex": "0101010101010101010101010101010101010101010101010101010101010101"
+    },
+    {
+      "layer_index": 14,
+      "layer_name": "block_0.attention.layer_12.GEMM",
+      "stage": "block_0.attention",
+      "op_type": "GEMM",
+      "output_buffer": "deit_block_0_attention.head1.context",
+      "output_bytes": 12608,
+      "sha256": "8be05932e30caa63042f0a2720ce555ea67c52d3c93232b0bab02549377ec5f1",
+      "first_32_bytes_hex": "fe0500fefa0302000104fafbfafa0002fa00fefbfbfbef01fcfafa02fe01f303"
+    },
+    {
+      "layer_index": 15,
+      "layer_name": "block_0.attention.layer_13.GEMM",
+      "stage": "block_0.attention",
+      "op_type": "GEMM",
+      "output_buffer": "deit_block_0_attention.head2.q",
+      "output_bytes": 12800,
+      "sha256": "765cb0d3fbf4528f785bc741ac6515884e78352dbdc86340d67500ca7e5be340",
+      "first_32_bytes_hex": "0000ffff0000ff000706060505080606f3f4f4f4f6f3f4f3ffffffffff0000ff"
+    },
+    {
+      "layer_index": 16,
+      "layer_name": "block_0.attention.layer_14.GEMM",
+      "stage": "block_0.attention",
+      "op_type": "GEMM",
+      "output_buffer": "deit_block_0_attention.head2.key_b",
+      "output_bytes": 12800,
+      "sha256": "32618117fef0d77055d6fdd1d9c1d927e35774cf47ade68ccb607640dac5312e",
+      "first_32_bytes_hex": "f9f8f8f7f8f9f7f8050404030306040403050505070405040404040303040403"
+    },
+    {
+      "layer_index": 17,
+      "layer_name": "block_0.attention.layer_15.GEMM",
+      "stage": "block_0.attention",
+      "op_type": "GEMM",
+      "output_buffer": "deit_block_0_attention.head2.value_b",
+      "output_bytes": 12608,
+      "sha256": "014726aa7ebf324ed9afe5bbdda7d469f316458229b4a1f4bb13059f6890f4c7",
+      "first_32_bytes_hex": "fffffffe00ff00fefe01fdfd00fdfefcfe01fdfd00fdfefcfe00fdfd00fcfffb"
+    },
+    {
+      "layer_index": 18,
+      "layer_name": "block_0.attention.layer_16.GEMM",
+      "stage": "block_0.attention",
+      "op_type": "GEMM",
+      "output_buffer": "deit_block_0_attention.head2.score",
+      "output_bytes": 38809,
+      "sha256": "fea3ab5c1a5d91c60494235ba0635a55746c7c037cdb7f5f8b9ece855a12d776",
+      "first_32_bytes_hex": "00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    },
+    {
+      "layer_index": 19,
+      "layer_name": "block_0.attention.layer_17.SOFTMAX",
+      "stage": "block_0.attention",
+      "op_type": "SOFTMAX",
+      "output_buffer": "deit_block_0_attention.head2.probabilities_tiled",
+      "output_bytes": 39400,
+      "sha256": "8b281af6fe7843128930eea3c222651ea49e7c26ec1940bd85147f600ccad5af",
+      "first_32_bytes_hex": "0101010101010101010101010101010101010101010101010101010101010101"
+    },
+    {
+      "layer_index": 20,
+      "layer_name": "block_0.attention.layer_18.GEMM",
+      "stage": "block_0.attention",
+      "op_type": "GEMM",
+      "output_buffer": "deit_block_0_attention.head2.context",
+      "output_bytes": 12608,
+      "sha256": "79dab4a7d3dedc4382f0edcc67814f40d7c4cd23eb4bdd8b6b975fa11d47114e",
+      "first_32_bytes_hex": "fd00fafafffcfefa0000f7fff8fcfe08eff7fdfb00fafdfc030000fa0101fd01"
+    }
+  ]
+}

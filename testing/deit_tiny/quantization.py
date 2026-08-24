@@ -183,7 +183,8 @@ class FP4E2M1FakeQuantizer(nn.Module):
 
 class QuantizedLinear(nn.Module):
     def __init__(
-        self, source: nn.Linear, bits: int, activation_bits: int | None = None
+        self, source: nn.Linear, bits: int, activation_bits: int | None = None,
+        *, weight_per_channel: bool = True,
     ) -> None:
         super().__init__()
         activation_bits = bits if activation_bits is None else activation_bits
@@ -195,7 +196,7 @@ class QuantizedLinear(nn.Module):
         )
         self.input_quant = FakeQuantizer(activation_bits, signed=True)
         self.weight_quant = FakeQuantizer(
-            bits, signed=True, per_channel=True, channel_axis=0
+            bits, signed=True, per_channel=weight_per_channel, channel_axis=0
         )
         self.output_quant = FakeQuantizer(activation_bits, signed=True)
 
@@ -208,7 +209,8 @@ class QuantizedLinear(nn.Module):
 
 class QuantizedConv2d(nn.Module):
     def __init__(
-        self, source: nn.Conv2d, bits: int, activation_bits: int | None = None
+        self, source: nn.Conv2d, bits: int, activation_bits: int | None = None,
+        *, weight_per_channel: bool = True,
     ) -> None:
         super().__init__()
         activation_bits = bits if activation_bits is None else activation_bits
@@ -222,7 +224,7 @@ class QuantizedConv2d(nn.Module):
         )
         self.input_quant = FakeQuantizer(activation_bits, signed=True)
         self.weight_quant = FakeQuantizer(
-            bits, signed=True, per_channel=True, channel_axis=0
+            bits, signed=True, per_channel=weight_per_channel, channel_axis=0
         )
         self.output_quant = FakeQuantizer(activation_bits, signed=True)
 
@@ -288,15 +290,21 @@ class FP4QuantizedConv2d(nn.Module):
 
 
 def _replace_matrix_modules(
-    module: nn.Module, weight_bits: int, activation_bits: int
+    module: nn.Module, weight_bits: int, activation_bits: int,
+    weight_per_channel: bool,
 ) -> None:
     for name, child in list(module.named_children()):
         if isinstance(child, nn.Linear):
-            setattr(module, name, QuantizedLinear(child, weight_bits, activation_bits))
+            setattr(module, name, QuantizedLinear(
+                child, weight_bits, activation_bits,
+                weight_per_channel=weight_per_channel))
         elif isinstance(child, nn.Conv2d):
-            setattr(module, name, QuantizedConv2d(child, weight_bits, activation_bits))
+            setattr(module, name, QuantizedConv2d(
+                child, weight_bits, activation_bits,
+                weight_per_channel=weight_per_channel))
         else:
-            _replace_matrix_modules(child, weight_bits, activation_bits)
+            _replace_matrix_modules(
+                child, weight_bits, activation_bits, weight_per_channel)
 
 
 def _replace_fp4_matrix_modules(module: nn.Module) -> None:
@@ -310,19 +318,22 @@ def _replace_fp4_matrix_modules(module: nn.Module) -> None:
 
 
 def prepare_qat_model(
-    float_model: nn.Module, bits: int, activation_bits: int | None = None
+    float_model: nn.Module, bits: int, activation_bits: int | None = None,
+    *, weight_per_channel: bool = True,
 ) -> nn.Module:
     """Clone a DeiT model and fake-quantize all matrix-operation operands.
 
     LayerNorm, GELU, softmax, residual additions, and accumulators remain in
     floating point. Q/K/V, attention probabilities, linear/conv weights, and
     linear/conv inputs and outputs are quantized to the requested precision.
-    Weights use symmetric per-output-channel scales; activations use per-tensor
-    scales. Attention probabilities use unsigned quantization.
+    Weights use symmetric per-output-channel scales by default, or a hardware-
+    compatible per-tensor scale when ``weight_per_channel`` is false.
+    Activations use per-tensor scales. Attention probabilities use unsigned
+    quantization.
     """
     activation_bits = bits if activation_bits is None else activation_bits
     model = copy.deepcopy(float_model)
-    _replace_matrix_modules(model, bits, activation_bits)
+    _replace_matrix_modules(model, bits, activation_bits, weight_per_channel)
     for block in getattr(model, "blocks", []):
         attention = block.attn
         attention.fused_attn = False

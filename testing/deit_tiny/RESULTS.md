@@ -20,6 +20,11 @@ catastrophic W4A4 loss primarily to activation and attention-probability
 precision, not to four-bit weights alone. The 2.86 MiB estimate covers packed
 parameters; eight-bit activation buffers and traffic remain a hardware cost.
 
+The FPGA-compatible W4A8 variant uses one per-tensor weight scale rather than
+per-output-channel scales. It scores **97.75% (174/178)** test accuracy with
+97.76% macro F1, so the deployable scale contract costs 1.69 percentage points
+relative to the research W4A8 result while retaining useful accuracy.
+
 FP4 recovered **7.87 percentage points** over INT4 at the same four-bit element
 width, but remained **26.97 points below INT8**. Its nonuniform E2M1 spacing is
 therefore helpful but insufficient under uniform four-bit activation and
@@ -76,6 +81,12 @@ rather than prerequisites for recovering accuracy.
   run, but the complete 178-image board accuracy study has not been performed.
 - Per-output-channel weight scales improve accuracy but are not supported by
   the repository's current per-tensor BudgetCUDA deployment contract.
+- The physical per-tensor W4A8 run occupies 41,433,510 resident bytes, including
+  2,870,904 bytes of packed/model weight allocations. A 72 KiB BRAM tile cache
+  reduces GEMM B-load from 951.5 to 148.5 ms and the exact PL window from 3.576
+  to 2.729 seconds with bit-exact logits. GEMM is now 857.1 ms, requantization
+  809.0 ms, and activation packing 436.8 ms; see
+  `results/FPGA_W4A8_CACHE_REPORT.md`.
 - The streamed-weight baseline took 45.31 seconds. Keeping all 5,599,352 bytes
   of model constants, including class/position embeddings, resident in DDR3
   produced a final 28.48-second physical run with unchanged logits. The
@@ -102,6 +113,24 @@ rather than prerequisites for recovering accuracy.
   output path the next architectural target.
 - The FP4 experiment is scaled E2M1 with matched INT4 scale granularity. It is
   not NVIDIA NVFP4 or OCP MXFP4 and does not include their block-scale metadata.
+- Fusing GEMM bias and requantization into packed INT8 writeback contracts the
+  W4A8 graph from 666 to 546 layers and reduces the exact PL window from 2.729
+  to 2.176 seconds (20.26%) with unchanged logits `[2, -2, 2, 0, 0, -5]`.
+  The registered DSP implementation passes 100 MHz timing at WNS +0.001 ns and
+  WHS +0.051 ns. See `results/FPGA_OPERATOR_FUSION_REPORT.md`.
+- Pipelining fused requantization and buffering each 8x8 INT8 output tile cuts
+  GEMM writeback from 294.17 to 166.08 ms (43.55%). The exact PL window falls
+  from 2.176 to 2.050 seconds (5.81%) with unchanged logits. The physical image
+  uses 162 DSPs and passes 100 MHz timing at WNS +0.001 ns and WHS +0.016 ns.
+  See `results/FPGA_WRITEBACK_PIPELINE_REPORT.md`.
+- Wide 64-bit W4 cache fills, cache reuse across M passes, fused-writeback
+  overlap, and the streamlined shared rowwise engine reduce the timing-clean
+  exact PL window from 1.1618 to 1.0957 seconds (5.69%). Layer 0 is byte-exact
+  and full logits remain `[2, -2, 2, 0, 0, -5]`. A read/write arbitration race
+  that had silently dropped the final word of two-word output rows is fixed and
+  covered by regression. GEMM is now 450.83 ms, Softmax 287.49 ms, and
+  LayerNorm 192.16 ms. See
+  `results/FPGA_BANDWIDTH_ROWWISE_OPT_REPORT.md`.
 
 ## Reproducibility
 
@@ -118,3 +147,9 @@ rather than prerequisites for recovering accuracy.
 - QAT learning rate: 1e-5
 - Weight decay: 0.05
 - Hardware used for training: NVIDIA GeForce RTX 3090 Ti
+# Full operator fusion
+
+The timing-qualified fused production build runs in 116,181,263 PL cycles
+(1.16181263 s at 100 MHz), a 43.32% reduction from the pipelined-writeback
+baseline, while preserving exact logits. The complete per-module breakdown is
+documented in [results/FPGA_FULL_OPERATOR_FUSION_REPORT.md](results/FPGA_FULL_OPERATOR_FUSION_REPORT.md).

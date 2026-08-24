@@ -40,6 +40,10 @@ enum {
     BCUDA_PL_REG_CONV_CACHE_MISSES = 0x74u,
     BCUDA_PL_REG_CONV_FILL_CYCLES = 0x78u,
     BCUDA_PL_REG_CONV_BYTES_DELIVERED = 0x7cu,
+    BCUDA_PL_REG_GEMM_LOAD_A_LO = 0x48u, BCUDA_PL_REG_GEMM_LOAD_A_HI = 0x4cu,
+    BCUDA_PL_REG_GEMM_LOAD_B_LO = 0x50u, BCUDA_PL_REG_GEMM_LOAD_B_HI = 0x54u,
+    BCUDA_PL_REG_GEMM_COMPUTE_LO = 0x58u, BCUDA_PL_REG_GEMM_COMPUTE_HI = 0x5cu,
+    BCUDA_PL_REG_GEMM_WRITE_LO = 0x60u, BCUDA_PL_REG_GEMM_WRITE_HI = 0x64u,
     BCUDA_PL_REG_DEBUG_CONTROL = 0x80u,
     BCUDA_PL_REG_TOTAL_CYCLES_LO = 0x84u, BCUDA_PL_REG_TOTAL_CYCLES_HI = 0x88u,
     BCUDA_PL_REG_BUSY_CYCLES_LO = 0x8cu, BCUDA_PL_REG_BUSY_CYCLES_HI = 0x90u,
@@ -57,6 +61,7 @@ enum { BCUDA_DEBUG_ENABLE = 1u, BCUDA_DEBUG_STEP = 2u, BCUDA_DEBUG_FREEZE = 4u, 
 typedef struct {
     uint64_t total_cycles, busy_cycles, memory_stall_cycles, input_stall_cycles, output_stall_cycles;
     uint64_t last_op_cycles, max_op_cycles;
+    uint64_t gemm_load_a_cycles, gemm_load_b_cycles, gemm_compute_cycles, gemm_write_cycles;
     uint32_t completed_ops;
     uint8_t active_op, error_latched, trace_valid, trace_event;
     uint32_t trace_data;
@@ -82,6 +87,9 @@ enum {
     BCUDA_PL_CONTROL_TRANSFORMER_RESIDUAL = 0x00020000u,
     BCUDA_PL_CONTROL_TRANSFORMER_LAYERNORM = 0x00040000u,
     BCUDA_PL_CONTROL_TRANSFORMER_SOFTMAX = 0x00080000u,
+    BCUDA_PL_CONTROL_TRANSFORMER_FUSED_REQUANT = 0x00100000u,
+    BCUDA_PL_CONTROL_TRANSFORMER_OUTPUT_LAYOUT_ALT = 0x00200000u,
+    BCUDA_PL_CONTROL_TRANSFORMER_OUTPUT_DYNAMIC_B = 0x00400000u,
     BCUDA_PL_STATUS_BUSY = 0x00000001u,
     BCUDA_PL_STATUS_DONE = 0x00000002u,
     BCUDA_PL_STATUS_ERROR = 0x00000004u,
@@ -134,6 +142,7 @@ typedef struct {
 void bcuda_axi_dma_init(BcudaAxiDma *dma, uintptr_t register_base, uint32_t timeout_cycles);
 int bcuda_axi_dma_submit_gemm(BcudaAxiDma *dma, const BcudaGemmDesc *desc, BcudaBuffer *A, BcudaBuffer *B, BcudaBuffer *C);
 int bcuda_axi_dma_submit_transformer_gemm(BcudaAxiDma *dma, const BcudaGemmDesc *desc, BcudaBuffer *packed_A, BcudaBuffer *packed_B, BcudaBuffer *C, uint32_t weight_int4);
+int bcuda_axi_dma_submit_transformer_gemm_requant(BcudaAxiDma *dma, const BcudaGemmDesc *desc, const BcudaRequantParams *params, BcudaBuffer *packed_A, BcudaBuffer *packed_B, BcudaBuffer *bias, BcudaBuffer *packed_C, uint32_t weight_int4);
 int bcuda_axi_dma_submit_transformer_requantize_pack(BcudaAxiDma *dma, const BcudaRequantDesc *desc, BcudaBuffer *input, BcudaBuffer *packed_output, uint32_t rows, uint32_t columns);
 int bcuda_axi_dma_submit_transformer_b_pack(BcudaAxiDma *dma, BcudaBuffer *input, BcudaBuffer *packed_output, uint32_t reduction, uint32_t outputs, uint32_t transpose, uint32_t source_row_major);
 int bcuda_axi_dma_submit_transformer_elementwise(BcudaAxiDma *dma, BcudaBuffer *input0, BcudaBuffer *input1, BcudaBuffer *output, uint32_t rows, uint32_t columns, uint32_t residual, uint32_t lhs_shift, uint32_t rhs_shift);

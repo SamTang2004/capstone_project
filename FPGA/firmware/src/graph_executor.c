@@ -167,6 +167,9 @@ static void bcuda_diag_resources(
         if (layer->bias != 0) {
             record->weight_bytes += bcuda_diag_buffer_size(model_buffer, model, layer->bias);
         }
+        if (layer->scale != 0) {
+            record->weight_bytes += bcuda_diag_buffer_size(model_buffer, model, layer->scale);
+        }
     } else if (layer->op_type == BC_OP_REQUANTIZE) {
         record->weight_bytes = bcuda_diag_buffer_size(model_buffer, model, layer->scale);
     }
@@ -362,13 +365,21 @@ static int8_t bcuda_requantize_value(int32_t value, const BcudaRequantParams *pa
     return (int8_t)scaled;
 }
 
-static int bcuda_execute_gemm_layer(BcudaGraphRuntime *runtime, const BcudaBuffer *model_buffer, const BcudaModelDesc *model, const BcudaLayerDesc *layer) {
+static int bcuda_execute_gemm_layer(BcudaGraphRuntime *runtime, const BcudaBuffer *model_buffer, const BcudaModelDesc *model, const BcudaLayerDesc *layer, uint64_t *bias_elapsed_ns) {
     BcudaBuffer *input = 0;
     BcudaBuffer *weight = 0;
     BcudaBuffer *output = 0;
+    BcudaBuffer *bias = 0;
+    BcudaBuffer *scale = 0;
+    BcudaRequantParams params;
+    uint32_t fused_requant = layer->scale != 0u;
     int status = bcuda_graph_table_buffer(model_buffer, model, layer->input0, &input);
     if (status != BC_STATUS_OK) {
         return status;
+    }
+    if (layer->bias != 0u) {
+        status = bcuda_graph_table_buffer(model_buffer, model, layer->bias, &bias);
+        if (status != BC_STATUS_OK) return status;
     }
     status = bcuda_graph_table_buffer(model_buffer, model, layer->weight, &weight);
     if (status != BC_STATUS_OK) {
@@ -377,6 +388,18 @@ static int bcuda_execute_gemm_layer(BcudaGraphRuntime *runtime, const BcudaBuffe
     status = bcuda_graph_table_buffer(model_buffer, model, layer->output, &output);
     if (status != BC_STATUS_OK) {
         return status;
+    }
+    if (fused_requant) {
+        status = bcuda_graph_table_buffer(model_buffer, model, layer->scale, &scale);
+        if (status != BC_STATUS_OK) return status;
+        if (scale->dtype != BC_DTYPE_INT32 || scale->size_bytes < sizeof(params) ||
+            output->dtype != BC_DTYPE_INT8 ||
+            (output->layout != BC_LAYOUT_TRANSFORMER_ACTIVATION_TILED_INT8 &&
+             output->layout != BC_LAYOUT_TRANSFORMER_DYNAMIC_B_TILED_INT8 &&
+             output->layout != BC_LAYOUT_ROW_MAJOR)) {
+            return BC_STATUS_SHAPE_MISMATCH;
+        }
+        memcpy(&params, scale->virtual_address, sizeof(params));
     }
 
     BcudaGemmDesc gemm;
@@ -389,16 +412,27 @@ static int bcuda_execute_gemm_layer(BcudaGraphRuntime *runtime, const BcudaBuffe
     gemm.K = layer->c;
     gemm.A_dtype = BC_DTYPE_INT8;
     gemm.B_dtype = BC_DTYPE_INT8;
-    gemm.C_dtype = BC_DTYPE_INT32;
+    gemm.C_dtype = fused_requant ? BC_DTYPE_INT8 : BC_DTYPE_INT32;
     gemm.A_layout = input->layout;
     gemm.B_layout = weight->layout;
     gemm.C_layout = output->layout;
     gemm.flags = layer->flags;
+    if (fused_requant) {
+        if (input->layout != BC_LAYOUT_TRANSFORMER_ACTIVATION_TILED_INT8 ||
+            (weight->layout != BC_LAYOUT_TRANSFORMER_WEIGHT_TILED_INT8 &&
+             weight->layout != BC_LAYOUT_TRANSFORMER_WEIGHT_TILED_INT4 &&
+             weight->layout != BC_LAYOUT_TRANSFORMER_DYNAMIC_B_TILED_INT8)) {
+            return BC_STATUS_SHAPE_MISMATCH;
+        }
+        status = bcuda_axi_dma_submit_transformer_gemm_requant(
+            runtime->dma, &gemm, &params, input, weight, bias, output,
+            weight->layout == BC_LAYOUT_TRANSFORMER_WEIGHT_TILED_INT4);
+        return status == BC_STATUS_OK ? bcuda_axi_dma_poll_done(runtime->dma) : status;
+    }
+
     status = bcuda_execute_gemm(runtime, &gemm);
-    if (status == BC_STATUS_OK && layer->bias != 0u) {
-        BcudaBuffer *bias = 0;
-        status = bcuda_graph_table_buffer(model_buffer, model, layer->bias, &bias);
-        if (status != BC_STATUS_OK) return status;
+    if (status == BC_STATUS_OK && bias != 0) {
+        uint64_t bias_started_ns = bcuda_now_ns();
         if (bias->dtype != BC_DTYPE_INT32 || bias->size_bytes < (uint64_t)layer->out_c * sizeof(int32_t) ||
             output->dtype != BC_DTYPE_INT32 || output->size_bytes < (uint64_t)layer->n * layer->out_c * sizeof(int32_t)) {
             return BC_STATUS_SHAPE_MISMATCH;
@@ -416,6 +450,11 @@ static int bcuda_execute_gemm_layer(BcudaGraphRuntime *runtime, const BcudaBuffe
             for (uint32_t column = 0; column < columns; column++) {
                 row_values[column] += bias_values[column];
             }
+        }
+        if (bias_elapsed_ns != 0) {
+            uint64_t bias_finished_ns = bcuda_now_ns();
+            *bias_elapsed_ns = bias_finished_ns >= bias_started_ns
+                ? bias_finished_ns - bias_started_ns : 0;
         }
     }
     return status;
@@ -607,8 +646,13 @@ static int bcuda_execute_token_concat_layer(const BcudaBuffer *model_buffer, con
     if (layer->n == 0 || total == 0 || total != layer->out_c) return BC_STATUS_SHAPE_MISMATCH;
     int status = bcuda_graph_table_buffer(model_buffer, model, layer->output, &output);
     if (status != BC_STATUS_OK) return status;
-    if (output->dtype != BC_DTYPE_INT8 || output->layout != BC_LAYOUT_ROW_MAJOR ||
-        (uint64_t)layer->n * total > output->size_bytes) return BC_STATUS_SHAPE_MISMATCH;
+    int tiled_output = output->layout == BC_LAYOUT_TRANSFORMER_ACTIVATION_TILED_INT8;
+    uint64_t required_output = tiled_output
+        ? ((uint64_t)(layer->n + 7u) / 8u) * total * 8u
+        : (uint64_t)layer->n * total;
+    if (output->dtype != BC_DTYPE_INT8 ||
+        (output->layout != BC_LAYOUT_ROW_MAJOR && !tiled_output) ||
+        required_output > output->size_bytes) return BC_STATUS_SHAPE_MISMATCH;
     for (uint32_t part = 0; part < 3; ++part) {
         if (widths[part] == 0) continue;
         status = bcuda_graph_table_buffer(model_buffer, model, indices[part], &inputs[part]);
@@ -621,8 +665,19 @@ static int bcuda_execute_token_concat_layer(const BcudaBuffer *model_buffer, con
         uint32_t cursor = 0;
         for (uint32_t part = 0; part < 3; ++part) {
             if (widths[part] == 0) continue;
-            memcpy(dst + (uint64_t)row * total + cursor,
-                   (const uint8_t *)inputs[part]->virtual_address + (uint64_t)row * widths[part], widths[part]);
+            if (!tiled_output) {
+                memcpy(dst + (uint64_t)row * total + cursor,
+                       (const uint8_t *)inputs[part]->virtual_address + (uint64_t)row * widths[part], widths[part]);
+            } else {
+                const uint8_t *src = (const uint8_t *)inputs[part]->virtual_address +
+                    (uint64_t)row * widths[part];
+                for (uint32_t column = 0; column < widths[part]; ++column) {
+                    uint64_t output_column = cursor + column;
+                    uint64_t destination = ((uint64_t)(row / 8u) * total + output_column) * 8u +
+                        (row & 7u);
+                    dst[destination] = src[column];
+                }
+            }
             cursor += widths[part];
         }
     }
@@ -754,14 +809,24 @@ static int bcuda_execute_softmax_layer(BcudaGraphRuntime *runtime, const BcudaBu
     if (status == BC_STATUS_OK) status = bcuda_graph_table_buffer(model_buffer, model, layer->output, &output);
     if (status != BC_STATUS_OK) return status;
     uint64_t count = (uint64_t)layer->n * layer->c;
-    if (layer->n == 0 || layer->c == 0 || layer->c > 256 || input->dtype != BC_DTYPE_INT8 || output->dtype != BC_DTYPE_INT8 || input->size_bytes < count || output->size_bytes < count) return BC_STATUS_SHAPE_MISMATCH;
+    int tiled_output = output->layout == BC_LAYOUT_TRANSFORMER_ACTIVATION_TILED_INT8;
+    uint64_t output_bytes = tiled_output ? ((uint64_t)(layer->n + 7u) / 8u) * layer->c * 8u : count;
+    if (layer->n == 0 || layer->c == 0 || layer->c > 256 || input->dtype != BC_DTYPE_INT8 ||
+        input->layout != BC_LAYOUT_ROW_MAJOR || output->dtype != BC_DTYPE_INT8 ||
+        (output->layout != BC_LAYOUT_ROW_MAJOR && !tiled_output) ||
+        input->size_bytes < count || output->size_bytes < output_bytes) return BC_STATUS_SHAPE_MISMATCH;
     if(runtime!=0&&runtime->dma!=0&&runtime->dma->register_base!=0){status=bcuda_axi_dma_submit_transformer_rowwise(runtime->dma,input,0,0,output,layer->n,layer->c,1u,0u);return status==BC_STATUS_OK?bcuda_axi_dma_poll_done(runtime->dma):status;}
     int8_t *src = (int8_t *)input->virtual_address; uint8_t *dst = (uint8_t *)output->virtual_address; uint16_t exps[256];
     for (uint32_t row = 0; row < layer->n; ++row) {
         int32_t maximum = -128; uint32_t total = 0;
         for (uint32_t i = 0; i < layer->c; ++i) if (src[(uint64_t)row * layer->c + i] > maximum) maximum = src[(uint64_t)row * layer->c + i];
         for (uint32_t i = 0; i < layer->c; ++i) { uint32_t d = maximum - src[(uint64_t)row * layer->c + i]; exps[i] = d <= 16 ? lut[d] : 0; total += exps[i]; }
-        for (uint32_t i = 0; i < layer->c; ++i) dst[(uint64_t)row * layer->c + i] = total == 0 ? 0 : (uint8_t)((exps[i] * 127u + (total >> 1)) / total);
+        for (uint32_t i = 0; i < layer->c; ++i) {
+            uint64_t destination = tiled_output
+                ? ((uint64_t)(row / 8u) * layer->c + i) * 8u + (row & 7u)
+                : (uint64_t)row * layer->c + i;
+            dst[destination] = total == 0 ? 0 : (uint8_t)((exps[i] * 127u + (total >> 1)) / total);
+        }
     }
     return BC_STATUS_OK;
 }
@@ -1180,13 +1245,15 @@ int bcuda_execute_graph(BcudaGraphRuntime *runtime, const BcudaGraphExecDesc *de
         }
         uint64_t layer_started_ns = record == 0 ? 0 : bcuda_now_ns();
         BcudaTransformerDebugSnapshot debug_before;
+        uint64_t gemm_bias_elapsed_ns = 0;
         int debug_snapshot_valid = record != 0 && runtime->dma != 0 && runtime->dma->register_base != 0 &&
             (layer.op_type == BC_OP_GEMM || layer.op_type == BC_OP_REQUANTIZE ||
              layer.op_type >= BC_OP_LAYERNORM) &&
             bcuda_axi_dma_read_transformer_debug(runtime->dma, &debug_before) == BC_STATUS_OK;
         switch (layer.op_type) {
             case BC_OP_GEMM:
-                status = bcuda_execute_gemm_layer(runtime, model, &model_desc, &layer);
+                status = bcuda_execute_gemm_layer(
+                    runtime, model, &model_desc, &layer, &gemm_bias_elapsed_ns);
                 break;
             case BC_OP_CONV2D_GEMM:
                 status = bcuda_execute_conv2d_layer(runtime, model, &model_desc, &layer);
@@ -1237,6 +1304,8 @@ int bcuda_execute_graph(BcudaGraphRuntime *runtime, const BcudaGraphExecDesc *de
         if (record != 0) {
             uint64_t finished_ns = bcuda_now_ns();
             record->status = (uint32_t)status;
+            record->gemm_bias_elapsed_ns = gemm_bias_elapsed_ns > UINT32_MAX
+                ? UINT32_MAX : (uint32_t)gemm_bias_elapsed_ns;
             if ((desc->flags & BCUDA_DIAG_TIMING) != 0 && finished_ns >= layer_started_ns) {
                 record->elapsed_ns = finished_ns - layer_started_ns;
                 record->cycles = record->elapsed_ns * diagnostics_header->clock_hz / 1000000000ull;
@@ -1261,6 +1330,10 @@ int bcuda_execute_graph(BcudaGraphRuntime *runtime, const BcudaGraphExecDesc *de
                     record->hardware_output_stall_cycles = after.output_stall_cycles - debug_before.output_stall_cycles;
                     record->hardware_last_op_cycles = after.last_op_cycles;
                     record->hardware_max_op_cycles = after.max_op_cycles;
+                    record->hardware_gemm_load_a_cycles = after.gemm_load_a_cycles - debug_before.gemm_load_a_cycles;
+                    record->hardware_gemm_load_b_cycles = after.gemm_load_b_cycles - debug_before.gemm_load_b_cycles;
+                    record->hardware_gemm_compute_cycles = after.gemm_compute_cycles - debug_before.gemm_compute_cycles;
+                    record->hardware_gemm_write_cycles = after.gemm_write_cycles - debug_before.gemm_write_cycles;
                     record->hardware_completed_ops = after.completed_ops - debug_before.completed_ops;
                     record->hardware_status = (uint32_t)after.active_op |
                         ((uint32_t)after.error_latched << 8) |

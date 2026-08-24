@@ -1,4 +1,6 @@
-module bcuda_transformer_ddr_top (
+module bcuda_transformer_ddr_top #(
+    parameter bit ENABLE_LEGACY_STANDALONE = 1'b1
+) (
     input logic aclk, aresetn,
     input logic [7:0] s_axi_awaddr, input logic s_axi_awvalid, output logic s_axi_awready,
     input logic [31:0] s_axi_wdata, input logic [3:0] s_axi_wstrb, input logic s_axi_wvalid, output logic s_axi_wready,
@@ -54,6 +56,9 @@ module bcuda_transformer_ddr_top (
 
     logic read_req_valid, read_req_ready, read_req_wide, read_req_qword, read_req_allow_ahead;
     logic [31:0] read_req_addr; logic [6:0] read_req_len;
+    logic arb_read_req_valid, arb_read_req_wide, arb_read_req_qword, arb_read_req_allow_ahead;
+    logic [31:0] arb_read_req_addr; logic [6:0] arb_read_req_len;
+    logic read_req_pipe_ready;
     logic read_data_valid, read_data_ready, read_data_last; logic [7:0] read_data;
     logic read_word_valid, read_word_ready, read_word_last; logic [31:0] read_word_data; logic [3:0] read_word_keep;
     logic read_qword_valid, read_qword_ready, read_qword_last; logic [63:0] read_qword_data; logic [7:0] read_qword_keep;
@@ -61,6 +66,8 @@ module bcuda_transformer_ddr_top (
     logic memory_busy, memory_error; logic [2:0] memory_error_code; logic [7:0] debug_first_byte; logic [4:0] debug_fill_beats;
     logic [31:0] stats_cache_hits, stats_cache_misses, stats_fill_cycles, stats_bytes_delivered;
     logic [31:0] scheduler_debug_state, memory_debug_state;
+    logic [63:0] gemm_load_a_cycles, gemm_load_b_cycles;
+    logic [63:0] gemm_compute_cycles, gemm_write_cycles;
 
     wire [31:0] a_base = regs_flat[2*32 +: 32];
     wire [31:0] b_base = regs_flat[3*32 +: 32];
@@ -92,6 +99,10 @@ module bcuda_transformer_ddr_top (
         perf_regs_flat = '0;
         perf_regs_flat[0*32 +: 32] = scheduler_debug_state;
         perf_regs_flat[1*32 +: 32] = memory_debug_state;
+        perf_regs_flat[2*32 +: 64] = gemm_load_a_cycles;
+        perf_regs_flat[4*32 +: 64] = gemm_load_b_cycles;
+        perf_regs_flat[6*32 +: 64] = gemm_compute_cycles;
+        perf_regs_flat[8*32 +: 64] = gemm_write_cycles;
         perf_regs_flat[10*32 +: 32] = {23'd0, mem_debug_arsize, mem_debug_arlen};
         perf_regs_flat[11*32 +: 32] = {25'd0, mem_debug_rresp, mem_debug_rbeats};
         perf_regs_flat[12*32 +: 32] = stats_cache_hits;
@@ -132,10 +143,14 @@ module bcuda_transformer_ddr_top (
 
     transformer_gemm_scheduler scheduler (
         .clk(aclk), .rst_n(aresetn), .pipeline_enable, .start(start_pulse && !ctrl_word[1] && !(|ctrl_word[19:12])),
-        .weight_int4(ctrl_word[11]), .a_base, .b_base, .c_base, .c_stride,
+        .weight_int4(ctrl_word[11]), .fused_requant(ctrl_word[20]), .fused_output_mode(ctrl_word[22:21]),
+        .a_base, .b_base, .c_base, .c_stride, .bias_base(b_stride),
+        .rq_multiplier, .rq_right_shift, .rq_output_zero_point,
         .dim_m, .dim_n, .dim_k, .busy(scheduler_busy), .done(scheduler_done), .error(scheduler_error),
         .op_start(g_op_start), .op_done(g_op_done), .memory_stall(g_memory_stall), .input_stall(g_input_stall), .output_stall(g_output_stall),
         .debug_state(scheduler_debug_state),
+        .phase_load_a_cycles(gemm_load_a_cycles), .phase_load_b_cycles(gemm_load_b_cycles),
+        .phase_compute_cycles(gemm_compute_cycles), .phase_write_cycles(gemm_write_cycles),
         .read_req_valid(g_read_req_valid), .read_req_ready(g_read_req_ready), .read_req_addr(g_read_req_addr), .read_req_len(g_read_req_len),
         .read_req_wide(g_read_req_wide), .read_req_qword(g_read_req_qword), .read_req_allow_ahead(g_read_req_allow_ahead),
         .read_qword_valid, .read_qword_ready(g_read_qword_ready), .read_qword_data, .read_qword_keep, .read_qword_last,
@@ -144,6 +159,7 @@ module bcuda_transformer_ddr_top (
         .memory_busy, .memory_error(memory_error&&!active_pack&&!active_b_pack&&!active_elementwise&&!active_rowwise)
     );
 
+    generate if (ENABLE_LEGACY_STANDALONE) begin : gen_legacy_standalone
     requantize_ddr requantizer (
         .clk(aclk), .rst_n(aresetn), .start(start_pulse && ctrl_word[1]),
         .input_base_addr(a_base), .output_base_addr(c_base), .element_count({16'd0, dim_m}),
@@ -188,6 +204,34 @@ module bcuda_transformer_ddr_top (
         .write_req_data(t_write_req_data), .write_req_strb(t_write_req_strb), .write_req_last(t_write_req_last),
         .memory_busy, .memory_error(memory_error && active_b_pack)
     );
+    end else begin : gen_no_legacy_standalone
+        // The resident DeiT graph fuses requantization and all activation
+        // layout transforms into producer operators.  Keep the legacy engines
+        // available to simulation/source users, but omit them from the
+        // production image to recover routing and timing margin.
+        assign q_busy = 1'b0; assign q_done = 1'b0; assign q_error = 1'b0;
+        assign q_read_req_valid = 1'b0; assign q_read_req_addr = '0; assign q_read_req_len = '0;
+        assign q_read_word_ready = 1'b0; assign q_write_req_valid = 1'b0;
+        assign q_write_req_addr = '0; assign q_write_req_data = '0; assign q_write_req_strb = '0;
+
+        assign pack_busy = 1'b0; assign pack_done = 1'b0; assign pack_error = 1'b0;
+        assign p_op_start = 1'b0; assign p_op_done = 1'b0; assign p_memory_stall = 1'b0;
+        assign p_input_stall = 1'b0; assign p_output_stall = 1'b0;
+        assign p_read_req_valid = 1'b0; assign p_read_req_addr = '0; assign p_read_req_len = '0;
+        assign p_read_req_wide = 1'b0; assign p_read_req_qword = 1'b0;
+        assign p_read_req_allow_ahead = 1'b0; assign p_read_word_ready = 1'b0;
+        assign p_write_req_valid = 1'b0; assign p_write_req_addr = '0;
+        assign p_write_req_data = '0; assign p_write_req_strb = '0; assign p_write_req_last = 1'b0;
+
+        assign b_pack_busy = 1'b0; assign b_pack_done = 1'b0; assign b_pack_error = 1'b0;
+        assign t_op_start = 1'b0; assign t_op_done = 1'b0; assign t_memory_stall = 1'b0;
+        assign t_input_stall = 1'b0; assign t_output_stall = 1'b0;
+        assign t_read_req_valid = 1'b0; assign t_read_req_addr = '0; assign t_read_req_len = '0;
+        assign t_read_req_wide = 1'b0; assign t_read_req_qword = 1'b0;
+        assign t_read_req_allow_ahead = 1'b0; assign t_read_data_ready = 1'b0;
+        assign t_write_req_valid = 1'b0; assign t_write_req_addr = '0;
+        assign t_write_req_data = '0; assign t_write_req_strb = '0; assign t_write_req_last = 1'b0;
+    end endgenerate
 
     transformer_elementwise_ddr elementwise (
         .clk(aclk),.rst_n(aresetn),.pipeline_enable,.start(start_pulse&&(ctrl_word[16]||ctrl_word[17])),.residual_mode(ctrl_word[17]),
@@ -201,20 +245,36 @@ module bcuda_transformer_ddr_top (
         .write_req_valid(e_write_req_valid),.write_req_ready(e_write_req_ready),.write_req_addr(e_write_req_addr),.write_req_data(e_write_req_data),
         .write_req_strb(e_write_req_strb),.write_req_last(e_write_req_last),.memory_busy,.memory_error(memory_error&&active_elementwise));
 
-    transformer_rowwise_ddr rowwise(.clk(aclk),.rst_n(aresetn),.pipeline_enable,.start(start_pulse&&(ctrl_word[18]||ctrl_word[19])),.softmax_mode(ctrl_word[19]),.output_tiled(ctrl_word[18]),
+    transformer_rowwise_ddr rowwise(.clk(aclk),.rst_n(aresetn),.pipeline_enable,.start(start_pulse&&(ctrl_word[18]||ctrl_word[19])),.softmax_mode(ctrl_word[19]),.output_tiled(ctrl_word[18]||ctrl_word[21]),
         .input_base_addr(a_base),.gamma_base_addr(b_base),.beta_base_addr(b_stride),.output_base_addr(c_base),.epsilon_term(rq_multiplier),.rows(dim_m),.columns(dim_n),
         .busy(rowwise_busy),.done(rowwise_done),.error(rowwise_error),.op_start(r_op_start),.op_done(r_op_done),.memory_stall(r_memory_stall),.input_stall(r_input_stall),.output_stall(r_output_stall),
         .read_req_valid(r_read_req_valid),.read_req_ready(r_read_req_ready),.read_req_addr(r_read_req_addr),.read_req_len(r_read_req_len),.read_req_wide(r_read_req_wide),.read_req_qword(r_read_req_qword),.read_req_allow_ahead(r_read_req_allow_ahead),
         .read_data_valid,.read_data_ready(r_read_data_ready),.read_data,.read_data_last,.write_req_valid(r_write_req_valid),.write_req_ready(r_write_req_ready),.write_req_addr(r_write_req_addr),.write_req_data(r_write_req_data),.write_req_strb(r_write_req_strb),.write_req_last(r_write_req_last),.memory_busy,.memory_error(memory_error&&active_rowwise));
 
+    assign read_req_pipe_ready = !read_req_valid || read_req_ready;
+    always_ff @(posedge aclk) begin
+        if (!aresetn) begin
+            read_req_valid <= 1'b0;
+            read_req_addr <= '0; read_req_len <= '0;
+            read_req_wide <= 1'b0; read_req_qword <= 1'b0;
+            read_req_allow_ahead <= 1'b0;
+        end else if (read_req_pipe_ready) begin
+            read_req_valid <= arb_read_req_valid;
+            if (arb_read_req_valid) begin
+                read_req_addr <= arb_read_req_addr; read_req_len <= arb_read_req_len;
+                read_req_wide <= arb_read_req_wide; read_req_qword <= arb_read_req_qword;
+                read_req_allow_ahead <= arb_read_req_allow_ahead;
+            end
+        end
+    end
     always_comb begin
-        read_req_valid=active_rowwise?r_read_req_valid:(active_elementwise?e_read_req_valid:(active_b_pack?t_read_req_valid:(active_pack?p_read_req_valid:(active_requant?q_read_req_valid:g_read_req_valid))));
-        read_req_addr=active_rowwise?r_read_req_addr:(active_elementwise?e_read_req_addr:(active_b_pack?t_read_req_addr:(active_pack?p_read_req_addr:(active_requant?q_read_req_addr:g_read_req_addr))));
-        read_req_len=active_rowwise?r_read_req_len:(active_elementwise?e_read_req_len:(active_b_pack?t_read_req_len:(active_pack?p_read_req_len:(active_requant?{2'd0,q_read_req_len}:g_read_req_len))));
-        read_req_wide=active_rowwise?r_read_req_wide:(active_elementwise?e_read_req_wide:(active_b_pack?t_read_req_wide:(active_pack?p_read_req_wide:(active_requant?1'b1:g_read_req_wide))));
-        read_req_qword=active_rowwise?r_read_req_qword:(active_elementwise?e_read_req_qword:(active_b_pack?t_read_req_qword:(active_pack?p_read_req_qword:(active_requant?1'b0:g_read_req_qword))));
-        read_req_allow_ahead=active_rowwise?r_read_req_allow_ahead:(active_elementwise?e_read_req_allow_ahead:(active_b_pack?t_read_req_allow_ahead:(active_pack?p_read_req_allow_ahead:(active_requant?1'b0:g_read_req_allow_ahead))));
-        g_read_req_ready=!active_requant&&!active_pack&&!active_b_pack&&!active_elementwise&&!active_rowwise&&read_req_ready;q_read_req_ready=active_requant&&!active_pack&&!active_b_pack&&!active_elementwise&&!active_rowwise&&read_req_ready;p_read_req_ready=active_pack&&!active_b_pack&&!active_elementwise&&!active_rowwise&&read_req_ready;t_read_req_ready=active_b_pack&&!active_elementwise&&!active_rowwise&&read_req_ready;e_read_req_ready=active_elementwise&&!active_rowwise&&read_req_ready;r_read_req_ready=active_rowwise&&read_req_ready;
+        arb_read_req_valid=active_rowwise?r_read_req_valid:(active_elementwise?e_read_req_valid:(active_b_pack?t_read_req_valid:(active_pack?p_read_req_valid:(active_requant?q_read_req_valid:g_read_req_valid))));
+        arb_read_req_addr=active_rowwise?r_read_req_addr:(active_elementwise?e_read_req_addr:(active_b_pack?t_read_req_addr:(active_pack?p_read_req_addr:(active_requant?q_read_req_addr:g_read_req_addr))));
+        arb_read_req_len=active_rowwise?r_read_req_len:(active_elementwise?e_read_req_len:(active_b_pack?t_read_req_len:(active_pack?p_read_req_len:(active_requant?{2'd0,q_read_req_len}:g_read_req_len))));
+        arb_read_req_wide=active_rowwise?r_read_req_wide:(active_elementwise?e_read_req_wide:(active_b_pack?t_read_req_wide:(active_pack?p_read_req_wide:(active_requant?1'b1:g_read_req_wide))));
+        arb_read_req_qword=active_rowwise?r_read_req_qword:(active_elementwise?e_read_req_qword:(active_b_pack?t_read_req_qword:(active_pack?p_read_req_qword:(active_requant?1'b0:g_read_req_qword))));
+        arb_read_req_allow_ahead=active_rowwise?r_read_req_allow_ahead:(active_elementwise?e_read_req_allow_ahead:(active_b_pack?t_read_req_allow_ahead:(active_pack?p_read_req_allow_ahead:(active_requant?1'b0:g_read_req_allow_ahead))));
+        g_read_req_ready=!active_requant&&!active_pack&&!active_b_pack&&!active_elementwise&&!active_rowwise&&read_req_pipe_ready;q_read_req_ready=active_requant&&!active_pack&&!active_b_pack&&!active_elementwise&&!active_rowwise&&read_req_pipe_ready;p_read_req_ready=active_pack&&!active_b_pack&&!active_elementwise&&!active_rowwise&&read_req_pipe_ready;t_read_req_ready=active_b_pack&&!active_elementwise&&!active_rowwise&&read_req_pipe_ready;e_read_req_ready=active_elementwise&&!active_rowwise&&read_req_pipe_ready;r_read_req_ready=active_rowwise&&read_req_pipe_ready;
         read_qword_ready=active_elementwise?e_read_qword_ready:(!active_pack&&!active_b_pack&&!active_rowwise&&g_read_qword_ready);
         read_word_ready = active_requant ? q_read_word_ready : (active_pack && !active_b_pack && p_read_word_ready);
         read_data_ready=active_rowwise?r_read_data_ready:(active_b_pack?t_read_data_ready:1'b1);

@@ -27,7 +27,7 @@ LAYER_DESC_STRUCT = struct.Struct("<IIIIIIIIIIIIIIIIIIIIIIII")
 MODEL_MAGIC = 0x444D4342
 MODEL_VERSION = 1
 DIAGNOSTICS_HEADER_STRUCT = struct.Struct("<IIIIIIIIQQ")
-DIAGNOSTICS_RECORD_STRUCT = struct.Struct("<IIIIQQQQQQQII7QII")
+DIAGNOSTICS_RECORD_STRUCT = struct.Struct("<IIIIQQQQQQQII11QII")
 
 
 class MockBackend:
@@ -109,9 +109,18 @@ class MockBackend:
         if desc["A_dtype"] != DType.INT8 or desc["B_dtype"] != DType.INT8 or desc["C_dtype"] != DType.INT32:
             raise ValueError("Mock GEMM only supports INT8 x INT8 -> INT32")
         M, N, K = desc["M"], desc["N"], desc["K"]
-        a_raw = self._get_buffer(desc["A_buffer"])
-        b_raw = self._get_buffer(desc["B_buffer"])
-        a_layout, b_layout = desc["A_layout"], desc["B_layout"]
+        values = self._gemm_values(
+            desc["A_buffer"], desc["B_buffer"], M, N, K,
+            desc["A_layout"], desc["B_layout"],
+        )
+        out = bytearray()
+        for acc in values:
+            out += int(acc).to_bytes(4, "little", signed=True)
+        self._get_buffer(desc["C_buffer"])[: len(out)] = out
+
+    def _gemm_values(self, a_buffer, b_buffer, M, N, K, a_layout, b_layout):
+        a_raw = self._get_buffer(a_buffer)
+        b_raw = self._get_buffer(b_buffer)
 
         def read_a(m, k):
             if a_layout == Layout.TRANSFORMER_ACTIVATION_TILED_INT8:
@@ -126,14 +135,14 @@ class MockBackend:
                 nibble = (packed >> (4 if n & 1 else 0)) & 0xF
                 return nibble if nibble < 8 else nibble - 16
             return self._signed8(b_raw[k * N + n])
-        out = bytearray()
+        out = []
         for m in range(M):
             for n in range(N):
                 acc = 0
                 for k in range(K):
                     acc += read_a(m, k) * read_b(k, n)
-                out += int(acc).to_bytes(4, "little", signed=True)
-        self._get_buffer(desc["C_buffer"])[: len(out)] = out
+                out.append(acc)
+        return out
 
     def _execute_graph(self, descriptor: bytes) -> None:
         model_buffer, input_buffer, output_buffer, diagnostics_flags, diagnostics_buffer = GRAPH_EXEC_DESC_STRUCT.unpack_from(descriptor)
@@ -155,7 +164,7 @@ class MockBackend:
                 raise ValueError("Diagnostics flags and buffer must be provided together")
             diag = self._get_buffer(diagnostics_buffer)
             magic, version, flags, capacity, _, record_bytes, clock_hz, peak, _, _ = DIAGNOSTICS_HEADER_STRUCT.unpack_from(diag)
-            if magic != 0x47444342 or version != 3 or flags != diagnostics_flags or capacity < num_layers or record_bytes != DIAGNOSTICS_RECORD_STRUCT.size:
+            if magic != 0x47444342 or version != 4 or flags != diagnostics_flags or capacity < num_layers or record_bytes != DIAGNOSTICS_RECORD_STRUCT.size:
                 raise ValueError("Invalid diagnostics buffer")
         for idx in range(num_layers):
             layer = LAYER_DESC_STRUCT.unpack_from(raw_model, layer_offset + idx * LAYER_DESC_STRUCT.size)
@@ -202,7 +211,7 @@ class MockBackend:
                 cycles = elapsed * clock_hz // 1_000_000_000
                 throughput = operations * 1_000_000_000 // elapsed
                 utilization = min(1_000_000, operations * 1_000_000 // max(1, cycles * peak))
-                record = (idx, int(op_type), 0, 0, elapsed, cycles, input_bytes, output_bytes, weight_bytes, operations, throughput, utilization, 0, *([0] * 9))
+                record = (idx, int(op_type), 0, 0, elapsed, cycles, input_bytes, output_bytes, weight_bytes, operations, throughput, utilization, 0, *([0] * 13))
                 DIAGNOSTICS_RECORD_STRUCT.pack_into(diag, DIAGNOSTICS_HEADER_STRUCT.size + idx * DIAGNOSTICS_RECORD_STRUCT.size, *record)
         if diag is not None:
             header = list(DIAGNOSTICS_HEADER_STRUCT.unpack_from(diag))
@@ -210,7 +219,46 @@ class MockBackend:
             DIAGNOSTICS_HEADER_STRUCT.pack_into(diag, 0, *header)
 
     def _execute_graph_gemm(self, table, layer) -> None:
-        _, input0, _, _, output, weight, bias, _, n, c, _, _, out_c, *_ = layer
+        _, input0, _, _, output, weight, bias, scale, n, c, _, _, out_c, *_ = layer
+        if scale:
+            output_entry = table[output]
+            if output_entry[1] != DType.INT8 or output_entry[2] not in (
+                Layout.ROW_MAJOR,
+                Layout.TRANSFORMER_ACTIVATION_TILED_INT8,
+                Layout.TRANSFORMER_DYNAMIC_B_TILED_INT8,
+            ):
+                raise ValueError("Mock fused GEMM requires a supported INT8 output layout")
+            values = self._gemm_values(
+                table[input0][0], table[weight][0], n, out_c, c,
+                table[input0][2], table[weight][2],
+            )
+            bias_raw = self._get_buffer(table[bias][0]) if bias else None
+            params = self._get_buffer(table[scale][0])
+            multiplier = int.from_bytes(params[0:4], "little", signed=True)
+            right_shift = int.from_bytes(params[4:8], "little", signed=False)
+            input_zero_point = int.from_bytes(params[8:12], "little", signed=True)
+            output_zero_point = int.from_bytes(params[12:16], "little", signed=True)
+            if right_shift > 31 or input_zero_point != 0:
+                raise ValueError("Invalid mock fused GEMM requant parameters")
+            dst = self._get_buffer(output_entry[0])
+            dst[:] = b"\0" * len(dst)
+            for row in range(n):
+                for column in range(out_c):
+                    value = values[row * out_c + column]
+                    if bias_raw is not None:
+                        value += int.from_bytes(
+                            bias_raw[column * 4:column * 4 + 4], "little", signed=True
+                        )
+                    value = ((value - input_zero_point) * multiplier) >> right_shift
+                    value = max(-128, min(127, value + output_zero_point))
+                    if output_entry[2] == Layout.ROW_MAJOR:
+                        dst_index = row * out_c + column
+                    elif output_entry[2] == Layout.TRANSFORMER_DYNAMIC_B_TILED_INT8 and not (layer[22] & 1):
+                        dst_index = ((column // 8) * n + row) * 8 + (column & 7)
+                    else:
+                        dst_index = ((row // 8) * out_c + column) * 8 + (row & 7)
+                    dst[dst_index] = value & 0xFF
+            return
         desc = struct.pack(
             "<IIIIIIIIIIIIII",
             table[input0][0],
@@ -377,16 +425,26 @@ class MockBackend:
         inputs, output, rows = layer[1:4], layer[4], layer[8]
         widths, total = layer[9:12], layer[12]
         dst = self._get_buffer(table[output][0])
-        if len(dst) < rows * total or sum(widths) != total:
+        tiled_output = table[output][2] == Layout.TRANSFORMER_ACTIVATION_TILED_INT8
+        required = ((rows + 7) // 8) * total * 8 if tiled_output else rows * total
+        if len(dst) < required or sum(widths) != total:
             raise ValueError("Invalid token concat output")
+        if tiled_output:
+            dst[:] = b"\0" * len(dst)
         for row in range(rows):
-            cursor = row * total
+            cursor = 0
             for index, width in zip(inputs, widths):
                 if not width:
                     continue
                 src = self._get_buffer(table[index][0])
                 start = row * width
-                dst[cursor:cursor + width] = src[start:start + width]
+                if tiled_output:
+                    for column in range(width):
+                        destination = ((row // 8) * total + cursor + column) * 8 + (row & 7)
+                        dst[destination] = src[start + column]
+                else:
+                    destination = row * total + cursor
+                    dst[destination:destination + width] = src[start:start + width]
                 cursor += width
 
     def _execute_graph_token_embedding(self, table, layer) -> None:
@@ -412,15 +470,20 @@ class MockBackend:
         _, input0, _, _, output, _, _, _, rows, length, *_ = layer
         src, dst = self._get_buffer(table[input0][0]), self._get_buffer(table[output][0])
         lut = (32767,25520,19874,15480,12055,9388,7312,5695,4435,3454,2690,2095,1631,1270,989,770,600)
-        if len(src) < rows * length or len(dst) < rows * length:
+        tiled_output = table[output][2] == Layout.TRANSFORMER_ACTIVATION_TILED_INT8
+        required = ((rows + 7) // 8) * length * 8 if tiled_output else rows * length
+        if len(src) < rows * length or len(dst) < required:
             raise ValueError("Invalid Softmax buffers")
+        if tiled_output:
+            dst[:] = b"\0" * len(dst)
         for row in range(rows):
             values = [self._signed8(src[row * length + i]) for i in range(length)]
             maximum = max(values)
             exps = [lut[maximum-x] if maximum-x <= 16 else 0 for x in values]
             total = sum(exps)
             for i, value in enumerate(exps):
-                dst[row * length + i] = (value * 127 + total // 2) // total if total else 0
+                destination = ((row // 8) * length + i) * 8 + (row & 7) if tiled_output else row * length + i
+                dst[destination] = (value * 127 + total // 2) // total if total else 0
 
     def _execute_graph_pool(self, table, layer) -> None:
         _, input0, _, _, output, _, _, _, n, c, h, w, _, out_h, out_w, kernel_h, kernel_w, stride_h, stride_w, pad_h, pad_w, _, flags, _ = layer

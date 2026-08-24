@@ -16,6 +16,7 @@ from common import (
     BcudaGemmDesc,
     BcudaMemoryIoConfig,
     BcudaRequantDesc,
+    BcudaRequantParams,
     BcudaLayerDesc,
     BcudaTileLoadDesc,
     BcudaTiledGemmConfig,
@@ -30,6 +31,7 @@ class FirmwareAxiDmaTest(unittest.TestCase):
         cls.lib.bcuda_axi_dma_init.argtypes = [ctypes.POINTER(BcudaAxiDma), ctypes.c_size_t, ctypes.c_uint32]
         cls.lib.bcuda_axi_dma_submit_gemm.restype = ctypes.c_int
         cls.lib.bcuda_axi_dma_submit_transformer_gemm.restype = ctypes.c_int
+        cls.lib.bcuda_axi_dma_submit_transformer_gemm_requant.restype = ctypes.c_int
         cls.lib.bcuda_axi_dma_submit_transformer_requantize_pack.restype = ctypes.c_int
         cls.lib.bcuda_axi_dma_submit_transformer_b_pack.restype = ctypes.c_int
         cls.lib.bcuda_axi_dma_submit_conv2d.restype = ctypes.c_int
@@ -82,6 +84,25 @@ class FirmwareAxiDmaTest(unittest.TestCase):
         self.assertEqual(regs[0], 0x1001)
         self.assertEqual([regs[2], regs[4], regs[5]], [0x1000, 0x2000, 12])
         self.assertEqual([regs[8], regs[9], regs[13], regs[14], regs[15]], [3, 3, 7, 2, 0xffffffff])
+
+    def test_submit_transformer_gemm_requant_programs_direct_w4a8_output(self):
+        regs = (ctypes.c_uint32 * 64)()
+        dma = BcudaAxiDma(ctypes.addressof(regs), 8, 0)
+        desc = BcudaGemmDesc(1, 2, 3, 3, 2, 2, BC_DTYPE_INT8, BC_DTYPE_INT8, BC_DTYPE_INT8, 1, 1, BC_LAYOUT_TRANSFORMER_ACTIVATION_TILED_INT8, 0, 0)
+        params = BcudaRequantParams(7, 2, 0, -3)
+        A = BcudaBuffer(1, 0x1000, None, 16, BC_DTYPE_INT8, BC_LAYOUT_TRANSFORMER_ACTIVATION_TILED_INT8, 1, 1, (ctypes.c_uint32 * 4)(16, 1, 1, 1), 1)
+        B = BcudaBuffer(2, 0x2000, None, 8, BC_DTYPE_INT8, 1, 1, 1, (ctypes.c_uint32 * 4)(8, 1, 1, 1), 1)
+        bias = BcudaBuffer(3, 0x2800, None, 8, BC_DTYPE_INT32, 1, 4, 1, (ctypes.c_uint32 * 4)(2, 1, 1, 1), 1)
+        C = BcudaBuffer(4, 0x3000, None, 16, BC_DTYPE_INT8, BC_LAYOUT_TRANSFORMER_ACTIVATION_TILED_INT8, 1, 1, (ctypes.c_uint32 * 4)(16, 1, 1, 1), 1)
+        result = self.lib.bcuda_axi_dma_submit_transformer_gemm_requant(
+            ctypes.byref(dma), ctypes.byref(desc), ctypes.byref(params),
+            ctypes.byref(A), ctypes.byref(B), ctypes.byref(bias), ctypes.byref(C), 1,
+        )
+        self.assertEqual(result, BC_STATUS_OK)
+        self.assertEqual(regs[0], 0x100801)
+        self.assertEqual([regs[2], regs[3], regs[4], regs[6]], [0x1000, 0x2000, 0x3000, 0x2800])
+        self.assertEqual([regs[8], regs[9], regs[10]], [3, 2, 2])
+        self.assertEqual([regs[13], regs[14], regs[15]], [7, 2, 0xfffffffd])
 
     def test_submit_transformer_b_pack_programs_transpose_operation(self):
         regs = (ctypes.c_uint32 * 64)()

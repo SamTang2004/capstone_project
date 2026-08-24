@@ -118,7 +118,11 @@ module memory_io_driver #(
 
     // Legacy consumers permit only one logical request in flight. Request-ahead
     // is opt-in until a consumer can distinguish every queued response.
-    assign read_req_ready = !error && !read_data_valid_r && request_count < READ_REQUEST_DEPTH &&
+    // A fused writer and the next tile loader may assert valid together on an
+    // idle cycle.  Give the writer admission priority so a read cannot enter
+    // the FIFO in the same edge that creates a new partial write burst.
+    assign read_req_ready = !error && !read_data_valid_r && !write_req_valid && !write_path_busy &&
+                            request_count < READ_REQUEST_DEPTH &&
                             (request_ahead_allowed ||
                              (request_count == 0 && !lookup_pending && !lookup_result_pending && !prepared_valid &&
                               !fill_active && !read_pending && !deliver_active));
@@ -388,6 +392,20 @@ module memory_io_driver #(
                 request_count == 0 && !lookup_pending && !lookup_result_pending && !prepared_valid &&
                 !fill_active && !read_pending && !deliver_active &&
                 write_req_addr != write_next_addr) begin
+                write_burst_len <= write_count;
+                write_flush_pending <= 1'b1;
+            end
+            // A read arriving behind a short, still-coalescing write run must
+            // force that partial run to DDR before it can enter the request
+            // FIFO.  Otherwise the queued read prevents further writer beats
+            // while write_count prevents read lookup: a circular admission
+            // dependency exposed by GEMM writeback/load overlap.
+            if (read_req_valid && !read_req_ready && !write_req_valid &&
+                write_count != 0 &&
+                !write_flush_pending && !write_send_active && !write_inflight &&
+                request_count == 0 && !lookup_pending && !lookup_result_pending &&
+                !prepared_valid && !prefetch_valid && !fill_active &&
+                !read_pending && !deliver_active) begin
                 write_burst_len <= write_count;
                 write_flush_pending <= 1'b1;
             end

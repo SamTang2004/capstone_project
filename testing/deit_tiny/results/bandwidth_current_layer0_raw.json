@@ -1,0 +1,18 @@
+{
+  "image": "C:\\python_projects\\capstone_project\\testing\\deit_tiny\\data\\cache_256\\FreshApple\\FreshApple (1).jpg",
+  "manifest": "C:\\python_projects\\capstone_project\\testing\\deit_tiny\\artifacts\\budgetcuda_w4a8\\manifest.json",
+  "layer_count": 328,
+  "captured_layer_count": 1,
+  "layers": [
+    {
+      "layer_index": 0,
+      "layer_name": "patch_embedding.layer_0.GEMM",
+      "stage": "patch_embedding",
+      "op_type": "GEMM",
+      "output_buffer": "deit_patch_embedding.output",
+      "output_bytes": 37632,
+      "sha256": "53492c438d44c6e150ecfc59ab711a699036743cb929e41f54b84c162a319219",
+      "first_32_bytes_hex": "04ffedeb0edcfd09fdea0df30206fbf1faf20afa0df20a1420f8f6020bf6f7e7"
+    }
+  ]
+}

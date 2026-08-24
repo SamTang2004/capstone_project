@@ -424,5 +424,86 @@ class DeiTManifestRunner:
 
     def cycle_report(self, diagnostics: RunDiagnostics) -> dict:
         """Aggregate a diagnostic run using the fused model's stage metadata."""
-        return summarize_cycle_report(
+        report = summarize_cycle_report(
             diagnostics, self._full_layer_names, self._full_layer_stages)
+        if self._full_package is None:
+            return report
+
+        def gemm_role(buffer_name: str, stage: str) -> str:
+            if stage == "patch_embedding": return "patch_embedding"
+            if stage == "six_class_head": return "classifier_head"
+            for marker, role in (
+                (".fc1.", "mlp_fc1"), (".fc2.", "mlp_fc2"),
+                (".score.", "attention_score"), (".context.", "attention_context"),
+                (".q.", "attention_q"), (".k.", "attention_k"),
+                (".v.", "attention_v"), (".output.", "attention_projection"),
+            ):
+                if marker in buffer_name:
+                    return role
+            return "other_gemm"
+
+        phase_keys = (
+            "gemm_load_a_cycles", "gemm_load_b_cycles",
+            "gemm_compute_cycles", "gemm_write_cycles",
+        )
+        role_groups = {}
+        gemm_layers = []
+        for item, layer in zip(report["layers"], self._full_package.layers):
+            if layer.op_type.name != "GEMM":
+                continue
+            output_name = self._full_package.buffers[layer.output].name
+            role = gemm_role(output_name, item["stage"])
+            m, n, k = int(layer.n), int(layer.out_c), int(layer.c)
+            tile_pairs = ((m + 15) // 16) * ((n + 7) // 8)
+            scheduled_mac_cycles = tile_pairs * k
+            detail = {
+                **item,
+                "role": role,
+                "m": m, "n": n, "k": k,
+                "m_tile_pairs": (m + 15) // 16,
+                "n_tiles": (n + 7) // 8,
+                "scheduled_mac_cycles": scheduled_mac_cycles,
+                "gemm_bias_cycles": (
+                    item.get("gemm_bias_elapsed_ns", 0) *
+                    diagnostics.settings.clock_hz // 1_000_000_000),
+                "compute_phase_overhead_cycles": max(
+                    0, item.get("gemm_compute_cycles", 0) - scheduled_mac_cycles),
+                "scheduled_lane_utilization_percent": (
+                    100.0 * item["operations"] / (scheduled_mac_cycles * 256)
+                    if scheduled_mac_cycles else 0.0
+                ),
+            }
+            gemm_layers.append(detail)
+            group = role_groups.setdefault(role, {
+                "role": role, "layer_count": 0, "operations": 0,
+                "window_cycles": 0, "busy_cycles": 0,
+                "memory_stall_cycles": 0, "scheduled_mac_cycles": 0,
+                "gemm_bias_elapsed_ns": 0, "gemm_bias_cycles": 0,
+                **{key: 0 for key in phase_keys},
+            })
+            group["layer_count"] += 1
+            for key in (
+                "operations", "window_cycles", "busy_cycles",
+                "memory_stall_cycles", "scheduled_mac_cycles", *phase_keys,
+                "gemm_bias_elapsed_ns", "gemm_bias_cycles",
+            ):
+                group[key] += detail.get(key, 0)
+
+        total_gemm_cycles = sum(item["window_cycles"] for item in gemm_layers)
+        roles = sorted(role_groups.values(), key=lambda item: item["window_cycles"], reverse=True)
+        for group in roles:
+            group["gemm_window_percent"] = (
+                100.0 * group["window_cycles"] / total_gemm_cycles
+                if total_gemm_cycles else 0.0)
+            phase_sum = sum(group[key] for key in phase_keys)
+            group["scheduler_overhead_cycles"] = max(0, group["busy_cycles"] - phase_sum)
+            # GEMM layer time outside accelerator busy includes MMIO launch /
+            # polling and the firmware's ARM-side INT32 bias-add loop.
+            group["nonbusy_control_and_bias_cycles"] = max(
+                0, group["window_cycles"] - group["busy_cycles"])
+        report["gemm_detail"] = {
+            "window_cycles": total_gemm_cycles,
+            "by_role": roles,
+            "layers": sorted(gemm_layers, key=lambda item: item["window_cycles"], reverse=True),
+        }
+        return report

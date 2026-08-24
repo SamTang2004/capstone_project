@@ -17,7 +17,7 @@ def main() -> None:
     here = Path(__file__).resolve().parent
     parser = argparse.ArgumentParser()
     parser.add_argument("image", type=Path)
-    parser.add_argument("--manifest", type=Path, default=here / "artifacts" / "budgetcuda_w8a8" / "manifest.json")
+    parser.add_argument("--manifest", type=Path, default=here / "artifacts" / "budgetcuda_w4a8" / "manifest.json")
     parser.add_argument("--address", default="192.168.2.99")
     parser.add_argument("--port", type=int, default=9000)
     parser.add_argument("--timeout", type=float, default=120.0)
@@ -61,6 +61,7 @@ def main() -> None:
         "cycle_totals": cycle_report["totals"],
         "module_cycle_breakdown": cycle_report["module_cycle_breakdown"],
         "stage_cycle_breakdown": cycle_report["stage_cycle_breakdown"],
+        "gemm_detail": cycle_report.get("gemm_detail", {}),
         "repeat_cycle_totals": [report["totals"] for report in cycle_reports],
     }
     if args.cycle_report is not None:

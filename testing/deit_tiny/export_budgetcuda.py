@@ -136,9 +136,9 @@ def export_checkpoint(checkpoint_path: Path, output_dir: Path, weight_bits: int 
 def main() -> None:
     parser = argparse.ArgumentParser()
     here = Path(__file__).resolve().parent
-    parser.add_argument("--checkpoint", type=Path, default=here / "artifacts" / "w4a8" / "best_fake_quant.pt")
-    parser.add_argument("--output-dir", type=Path, default=here / "artifacts" / "budgetcuda_w8a8")
-    parser.add_argument("--weight-bits", type=int, choices=(4, 8), default=8)
+    parser.add_argument("--checkpoint", type=Path, default=here / "artifacts" / "w4a8_per_tensor" / "best_fake_quant.pt")
+    parser.add_argument("--output-dir", type=Path, default=here / "artifacts" / "budgetcuda_w4a8")
+    parser.add_argument("--weight-bits", type=int, choices=(4, 8), default=4)
     args = parser.parse_args()
     print(export_checkpoint(args.checkpoint, args.output_dir, args.weight_bits))
 

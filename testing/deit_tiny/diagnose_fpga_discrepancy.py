@@ -51,7 +51,12 @@ def _image_payload(image_path: Path, runner: DeiTManifestRunner) -> bytes:
         quantized.tolist(), quantized.shape[0], quantized.shape[1])
 
 
-def capture(runner: DeiTManifestRunner, payload: bytes, layer_indices: list[int]) -> list[dict]:
+def capture(
+    runner: DeiTManifestRunner,
+    payload: bytes,
+    layer_indices: list[int],
+    raw_dir: Path | None = None,
+) -> list[dict]:
     runner.load()
     package = runner._full_package
     model = runner._full_model
@@ -84,6 +89,9 @@ def capture(runner: DeiTManifestRunner, payload: bytes, layer_indices: list[int]
                 output_tensor.buffer_id, 0, output_tensor.size_bytes)
         finally:
             runner.device.free(descriptor_tensor)
+        if raw_dir is not None:
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            (raw_dir / f"layer_{layer_index:03d}.bin").write_bytes(raw)
         captures.append({
             "layer_index": layer_index,
             "layer_name": runner._full_layer_names[layer_index],
@@ -118,6 +126,8 @@ def main() -> None:
     parser.add_argument("--layers", default="all",
                         help="Comma-separated zero-based layer indices, or 'all'")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--raw-dir", type=Path,
+                        help="Optionally save each captured layer as raw bytes")
     args = parser.parse_args()
 
     with DeiTManifestRunner(
@@ -126,7 +136,7 @@ def main() -> None:
         layer_count = len(runner._full_package.layers)
         layers = _parse_layers(args.layers, layer_count)
         payload = _image_payload(args.image, runner)
-        records = capture(runner, payload, layers)
+        records = capture(runner, payload, layers, args.raw_dir)
     report = {
         "image": str(args.image.resolve()),
         "manifest": str(args.manifest.resolve()),

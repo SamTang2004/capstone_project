@@ -14,7 +14,7 @@
 #define BCUDA_POOL_AVERAGE 0x00000001u
 #define BCUDA_CONV_PRESLICED_WEIGHTS 0x00000001u
 #define BCUDA_DIAGNOSTICS_MAGIC 0x47444342u
-#define BCUDA_DIAGNOSTICS_VERSION 3u
+#define BCUDA_DIAGNOSTICS_VERSION 4u
 #define BCUDA_DIAG_TIMING 0x00000001u
 #define BCUDA_DIAG_MEMORY 0x00000002u
 #define BCUDA_DIAG_OPERATIONS 0x00000004u
@@ -79,6 +79,7 @@ enum {
 #define BCUDA_RESIDUAL_LHS_SHIFT_MASK 0x00000007u
 #define BCUDA_RESIDUAL_RHS_SHIFT_SHIFT 4u
 #define BCUDA_RESIDUAL_RHS_SHIFT_MASK 0x00000070u
+#define BCUDA_GEMM_DYNAMIC_B_TRANSPOSE 0x00000001u
 
 #pragma pack(push, 1)
 typedef struct {
@@ -279,7 +280,7 @@ typedef struct {
     uint64_t operations;
     uint64_t throughput_ops_per_second;
     uint32_t utilization_ppm;
-    uint32_t reserved1;
+    uint32_t gemm_bias_elapsed_ns;
     uint64_t hardware_total_cycles;
     uint64_t hardware_busy_cycles;
     uint64_t hardware_memory_stall_cycles;
@@ -287,6 +288,10 @@ typedef struct {
     uint64_t hardware_output_stall_cycles;
     uint64_t hardware_last_op_cycles;
     uint64_t hardware_max_op_cycles;
+    uint64_t hardware_gemm_load_a_cycles;
+    uint64_t hardware_gemm_load_b_cycles;
+    uint64_t hardware_gemm_compute_cycles;
+    uint64_t hardware_gemm_write_cycles;
     uint32_t hardware_completed_ops;
     uint32_t hardware_status;
 } BcudaDiagnosticsRecord;

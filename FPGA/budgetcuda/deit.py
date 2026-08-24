@@ -76,7 +76,6 @@ def build_deit_mlp_block_package(
                                        _matrix(fc1_weights, hidden_dim, mlp_dim), int4=weight_int4)
           if accelerator_layout else
           graph.add_buffer("fc1.weight", (hidden_dim, mlp_dim), DType.INT8, BufferUsage.WEIGHT, fc1_weights))
-    acc1 = graph.add_buffer("fc1.acc", (tokens, mlp_dim), DType.INT32)
     b1 = (0 if fc1_bias_int32 is None else
           graph.add_buffer("fc1.bias", (mlp_dim,), DType.INT32, BufferUsage.WEIGHT, fc1_bias_int32))
     q1_params = graph.requantize_params("fc1.requant", *fc1_requant)
@@ -88,23 +87,29 @@ def build_deit_mlp_block_package(
                                        _matrix(fc2_weights, mlp_dim, hidden_dim), int4=weight_int4)
           if accelerator_layout else
           graph.add_buffer("fc2.weight", (mlp_dim, hidden_dim), DType.INT8, BufferUsage.WEIGHT, fc2_weights))
-    acc2 = graph.add_buffer("fc2.acc", (tokens, hidden_dim), DType.INT32)
     b2 = (0 if fc2_bias_int32 is None else
           graph.add_buffer("fc2.bias", (hidden_dim,), DType.INT32, BufferUsage.WEIGHT, fc2_bias_int32))
     q2_params = graph.requantize_params("fc2.requant", *fc2_requant)
     q2 = graph.add_buffer("fc2.q", (tokens, hidden_dim), DType.INT8)
     out = graph.add_buffer("output", (tokens, hidden_dim), DType.INT8, BufferUsage.OUTPUT)
     graph.layer_norm(inp, gamma, beta, norm, rows=tokens, features=hidden_dim)
-    (graph.transformer_gemm if accelerator_layout else graph.gemm)(
-        norm, w1, acc1, m=tokens, n=mlp_dim, k=hidden_dim, bias_idx=b1)
     if accelerator_layout:
-        graph.requantize_pack(acc1, q1, q1_params, rows=tokens, columns=mlp_dim)
+        graph.transformer_gemm_requant(
+            norm, w1, q1, q1_params, m=tokens, n=mlp_dim, k=hidden_dim,
+            bias_idx=b1,
+        )
     else:
+        acc1 = graph.add_buffer("fc1.acc", (tokens, mlp_dim), DType.INT32)
+        graph.gemm(norm, w1, acc1, m=tokens, n=mlp_dim, k=hidden_dim, bias_idx=b1)
         graph.requantize(acc1, q1, q1_params)
     graph.gelu(q1, gelu)
-    (graph.transformer_gemm if accelerator_layout else graph.gemm)(
-        gelu, w2, acc2, m=tokens, n=hidden_dim, k=mlp_dim, bias_idx=b2)
-    graph.requantize(acc2, q2, q2_params)
+    if accelerator_layout:
+        graph.transformer_gemm_requant(
+            gelu, w2, q2, q2_params, m=tokens, n=hidden_dim, k=mlp_dim, bias_idx=b2)
+    else:
+        acc2 = graph.add_buffer("fc2.acc", (tokens, hidden_dim), DType.INT32)
+        graph.gemm(gelu, w2, acc2, m=tokens, n=hidden_dim, k=mlp_dim, bias_idx=b2)
+        graph.requantize(acc2, q2, q2_params)
     graph.residual_add(inp, q2, out)
     return graph.package(inp, out)
 
@@ -157,51 +162,49 @@ def build_deit_attention_block_package(
                 f"{prefix}.{label}.weight", hidden_dim, head_dim,
                 _head_columns(weights, hidden_dim, head_dim, head), int4=weight_int4,
             )
-            acc = graph.add_buffer(f"{prefix}.{label}.acc", (tokens, head_dim), DType.INT32)
             bias = (0 if biases is None else graph.add_buffer(
                 f"{prefix}.{label}.bias", (head_dim,), DType.INT32, BufferUsage.WEIGHT,
                 list(biases)[head * head_dim:(head + 1) * head_dim]))
-            quantized = graph.add_transformer_activation(f"{prefix}.{label}", tokens, head_dim)
-            graph.transformer_gemm(norm, weight, acc, m=tokens, n=head_dim, k=hidden_dim, bias_idx=bias)
-            graph.requantize_pack(acc, quantized, qkv_params, rows=tokens, columns=head_dim)
+            if label == "k":
+                quantized = graph.add_transformer_dynamic_b(f"{prefix}.key_b", head_dim, tokens)
+            elif label == "v":
+                quantized = graph.add_transformer_dynamic_b(f"{prefix}.value_b", tokens, head_dim)
+            else:
+                quantized = graph.add_transformer_activation(f"{prefix}.{label}", tokens, head_dim)
+            graph.transformer_gemm_requant(
+                norm, weight, quantized, qkv_params,
+                m=tokens, n=head_dim, k=hidden_dim, bias_idx=bias,
+                dynamic_b_transpose=label == "k",
+            )
             projected.append(quantized)
-        query, key, value = projected
+        query, key_b, value_b = projected
 
-        key_b = graph.add_transformer_dynamic_b(f"{prefix}.key_b", head_dim, tokens)
-        graph.activation_b_pack(key, key_b, reduction=head_dim, outputs=tokens, transpose=True)
-        score_acc = graph.add_buffer(f"{prefix}.score.acc", (tokens, tokens), DType.INT32)
-        graph.transformer_gemm(query, key_b, score_acc, m=tokens, n=tokens, k=head_dim)
         scores = graph.add_buffer(f"{prefix}.score", (tokens, tokens), DType.INT8)
-        graph.requantize(score_acc, scores, score_params)
-        probabilities = graph.add_buffer(f"{prefix}.probabilities", (tokens, tokens), DType.INT8)
+        graph.transformer_gemm_requant(
+            query, key_b, scores, score_params, m=tokens, n=tokens, k=head_dim)
+        probabilities = graph.add_transformer_activation(
+            f"{prefix}.probabilities_tiled", tokens, tokens)
         graph.softmax(scores, probabilities, rows=tokens, length=tokens)
-        probabilities_tiled = graph.add_transformer_activation(f"{prefix}.probabilities_tiled", tokens, tokens)
-        graph.activation_a_pack(probabilities, probabilities_tiled, rows=tokens, features=tokens)
 
-        value_b = graph.add_transformer_dynamic_b(f"{prefix}.value_b", tokens, head_dim)
-        graph.activation_b_pack(value, value_b, reduction=tokens, outputs=head_dim)
-        context_acc = graph.add_buffer(f"{prefix}.context.acc", (tokens, head_dim), DType.INT32)
-        graph.transformer_gemm(probabilities_tiled, value_b, context_acc, m=tokens, n=head_dim, k=tokens)
         context = graph.add_buffer(f"{prefix}.context", (tokens, head_dim), DType.INT8)
-        graph.requantize(context_acc, context, context_params)
+        graph.transformer_gemm_requant(
+            probabilities, value_b, context, context_params,
+            m=tokens, n=head_dim, k=tokens)
         head_outputs.append(context)
 
-    merged = graph.add_buffer("heads.merged", (tokens, hidden_dim), DType.INT8)
+    merged = graph.add_transformer_activation("heads.merged_tiled", tokens, hidden_dim)
     graph.token_concat(head_outputs, merged, rows=tokens, widths=[head_dim] * heads)
-    merged_tiled = graph.add_transformer_activation("heads.merged_tiled", tokens, hidden_dim)
-    graph.activation_a_pack(merged, merged_tiled, rows=tokens, features=hidden_dim)
     out_weight = graph.add_transformer_weight(
         "output.weight", hidden_dim, hidden_dim,
         _matrix(output_weights, hidden_dim, hidden_dim), int4=weight_int4,
     )
-    out_acc = graph.add_buffer("output.acc", (tokens, hidden_dim), DType.INT32)
     out_bias = (0 if output_bias_int32 is None else graph.add_buffer(
         "output.bias", (hidden_dim,), DType.INT32, BufferUsage.WEIGHT, output_bias_int32))
-    graph.transformer_gemm(merged_tiled, out_weight, out_acc, m=tokens, n=hidden_dim, k=hidden_dim,
-                           bias_idx=out_bias)
     out_params = graph.requantize_params("output.requant", *output_requant)
     projected_out = graph.add_buffer("output.q", (tokens, hidden_dim), DType.INT8)
-    graph.requantize(out_acc, projected_out, out_params)
+    graph.transformer_gemm_requant(
+        merged, out_weight, projected_out, out_params,
+        m=tokens, n=hidden_dim, k=hidden_dim, bias_idx=out_bias)
     out = graph.add_buffer("output", (tokens, hidden_dim), DType.INT8, BufferUsage.OUTPUT)
     graph.residual_add(inp, projected_out, out)
     return graph.package(inp, out)
@@ -227,12 +230,11 @@ def build_deit_linear_package(
     )
     bias = (0 if bias_int32 is None else graph.add_buffer(
         "bias", (output_features,), DType.INT32, BufferUsage.WEIGHT, bias_int32))
-    accumulator = graph.add_buffer("acc", (rows, output_features), DType.INT32)
     params = graph.requantize_params("requant", *requant)
     output = graph.add_buffer("output", (rows, output_features), DType.INT8, BufferUsage.OUTPUT)
-    graph.transformer_gemm(inp, weight, accumulator, m=rows, n=output_features,
-                           k=input_features, bias_idx=bias)
-    graph.requantize(accumulator, output, params)
+    graph.transformer_gemm_requant(
+        inp, weight, output, params, m=rows, n=output_features,
+        k=input_features, bias_idx=bias)
     return graph.package(inp, output)
 
 

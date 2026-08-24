@@ -121,7 +121,7 @@ class TransformerOpsTest(unittest.TestCase):
         model = upload_model(Device.mock(), graph.package(lhs, out))
         self.assertEqual(values(model.run([120, -120, 50, -50])), [127, -128, 127, -128])
 
-    def test_transformer_diagnostics_preserve_v3_record_abi(self):
+    def test_transformer_diagnostics_preserve_v4_record_abi(self):
         graph = GraphBuilder("debug")
         inp = graph.add_buffer("input", (4,), DType.INT8)
         out = graph.add_buffer("output", (4,), DType.INT8, BufferUsage.OUTPUT)
@@ -134,7 +134,7 @@ class TransformerOpsTest(unittest.TestCase):
         self.assertEqual(result.diagnostics.layers[0].output_bytes, 4)
         self.assertEqual(result.diagnostics.layers[0].transformer_cycles["memory_stall_cycles"], 0)
 
-    def test_v3_diagnostics_preserve_counters_beyond_32_bits(self):
+    def test_v4_diagnostics_preserve_counters_beyond_32_bits(self):
         settings = DiagnosticsSettings()
         self.assertEqual(settings.peak_operations_per_cycle, 256)
         raw = bytearray(settings.initial_buffer(1))
@@ -144,13 +144,17 @@ class TransformerOpsTest(unittest.TestCase):
         DIAGNOSTICS_HEADER_STRUCT.pack_into(raw, 0, *header)
         record = (0, int(OpType.GEMM), 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0,
                   large, large - 1, large - 2, large - 3, large - 4,
-                  large - 5, large - 6, 7, 0)
+                  large - 5, large - 6, 11, 12, 13, 14, 7, 0)
         DIAGNOSTICS_RECORD_STRUCT.pack_into(
             raw, DIAGNOSTICS_HEADER_STRUCT.size, *record)
-        parsed = parse_diagnostics(raw, settings).layers[0].transformer_cycles
+        layer = parse_diagnostics(raw, settings).layers[0]
+        parsed = layer.transformer_cycles
         self.assertEqual(parsed["window_cycles"], large)
         self.assertEqual(parsed["max_op_cycles"], large - 6)
+        self.assertEqual(parsed["gemm_load_a_cycles"], 11)
+        self.assertEqual(parsed["gemm_write_cycles"], 14)
         self.assertEqual(parsed["completed_ops"], 7)
+        self.assertEqual(layer.hardware_completed_ops, 7)
 
     def test_cycle_summary_always_ranks_module_consumption(self):
         graph = GraphBuilder("debug")
@@ -187,9 +191,29 @@ class TransformerOpsTest(unittest.TestCase):
             self.assertEqual(package.buffers[package.name_to_index["deit_mlp.fc1.weight"]].layout,
                              expected_weight_layout)
             self.assertEqual(package.buffers[package.name_to_index["deit_mlp.fc1.q"]].size_bytes, 64)
+            self.assertEqual([layer.op_type for layer in package.layers], [
+                OpType.LAYERNORM, OpType.GEMM, OpType.GELU,
+                OpType.GEMM, OpType.RESIDUAL_ADD,
+            ])
             model = upload_model(Device.mock(), package)
             sample = [-3, -1, 1, 3] * 3
             self.assertEqual(values(model.run(sample)), sample)
+
+    def test_fused_transformer_gemm_bias_requantizes_directly_to_tiled_int8(self):
+        graph = GraphBuilder("fused_w4a8")
+        inp = graph.add_transformer_activation("input", 1, 2)
+        weight = graph.add_transformer_weight("weight", 2, 2, [[-2, 3], [4, -1]], int4=True)
+        bias = graph.add_buffer("bias", (2,), DType.INT32, BufferUsage.WEIGHT, [10, -2])
+        scale = graph.requantize_params("requant", 1, 0, 0, 0)
+        output = graph.add_transformer_activation("output", 1, 2, usage=BufferUsage.OUTPUT)
+        graph.transformer_gemm_requant(inp, weight, output, scale, m=1, n=2, k=2, bias_idx=bias)
+        package = graph.package(inp, output)
+        self.assertEqual(len(package.layers), 1)
+        self.assertEqual(package.layers[0].scale, scale)
+        model = upload_model(Device.mock(), package)
+        packed = pack_transformer_activations_int8([[1, 2]], 1, 2)
+        result = values(model.run(packed))
+        self.assertEqual([result[0], result[8]], [16, 255])
 
     def test_transformer_gemm_applies_exported_int32_bias(self):
         graph = GraphBuilder("biased")
@@ -227,7 +251,8 @@ class TransformerOpsTest(unittest.TestCase):
         op_types = [layer.op_type for layer in package.layers]
         self.assertEqual(op_types.count(OpType.GEMM), 16)
         self.assertEqual(op_types.count(OpType.SOFTMAX), 3)
-        self.assertEqual(op_types.count(OpType.ACTIVATION_B_PACK), 10)
+        self.assertEqual(op_types.count(OpType.ACTIVATION_B_PACK), 0)
+        self.assertEqual(op_types.count(OpType.REQUANTIZE), 0)
         self.assertEqual(op_types.count(OpType.TOKEN_CONCAT), 1)
         model = upload_model(Device.mock(), package)
         sample = [-3, -2, -1, 1, 2, 3] * 2

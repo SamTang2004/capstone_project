@@ -64,6 +64,7 @@ module rowwise_norm_softmax_engine #(
     logic signed [79:0] affine_product;
     logic signed [63:0] scaled_hold, rounded_value;
     logic signed [7:0] output_hold;
+    logic [32:0] quotient_remainder_next;
 
     function automatic [15:0] exp_q15(input logic signed [8:0] delta);
         integer distance;
@@ -99,6 +100,7 @@ module rowwise_norm_softmax_engine #(
     assign output_last = output_valid && index == length_r - 1'b1;
     assign busy = state != IDLE;
     assign rounded_value = scaled_hold >= 0 ? scaled_hold + 128 : scaled_hold - 128;
+    assign quotient_remainder_next = numerator_abs - quotient_product[32:0];
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin
@@ -189,14 +191,25 @@ module rowwise_norm_softmax_engine #(
                     else begin sqrt_count <= sqrt_count + 1'b1; state <= LN_SQRT_TRIAL; end
                 end
                 SM_EXP_LOOKUP: begin
+                    // Prime the streaming lookup/accumulate pipeline.  Keeping
+                    // the sample RAM and exponential LUT out of the 32-bit sum
+                    // carry chain preserves one-element-per-cycle throughput
+                    // after this single preload cycle.
+                    exponentials[index] <= current_exp;
                     exponential_hold <= current_exp;
+                    index <= index + 1'b1;
                     state <= SM_EXP_SUM;
                 end
                 SM_EXP_SUM: begin
-                    exponentials[index] <= exponential_hold;
                     exponential_sum <= exponential_sum + exponential_hold;
-                    if (index == length_r - 1'b1) begin index <= 0; state <= RECIP_PREP; end
-                    else begin index <= index + 1'b1; state <= SM_EXP_LOOKUP; end
+                    if (index == length_r) begin
+                        index <= 0;
+                        state <= RECIP_PREP;
+                    end else begin
+                        exponentials[index] <= current_exp;
+                        exponential_hold <= current_exp;
+                        index <= index + 1'b1;
+                    end
                 end
                 RECIP_PREP: begin
                     reciprocal_divisor <= mode_r ? exponential_sum : denominator;
@@ -246,15 +259,10 @@ module rowwise_norm_softmax_engine #(
                     state <= QUOTIENT_REMAINDER;
                 end
                 QUOTIENT_REMAINDER: begin
-                    quotient_remainder <= numerator_abs - quotient_product[32:0];
-                    state <= QUOTIENT_DECIDE;
-                end
-                QUOTIENT_DECIDE: begin
-                    correction_needed <= quotient_remainder >= reciprocal_divisor;
-                    state <= QUOTIENT_CORRECT;
-                end
-                QUOTIENT_CORRECT: begin
-                    corrected_hold <= quotient_estimate + correction_needed;
+                    quotient_remainder <= quotient_remainder_next;
+                    correction_needed <= quotient_remainder_next >= reciprocal_divisor;
+                    corrected_hold <= quotient_estimate +
+                        (quotient_remainder_next >= reciprocal_divisor);
                     state <= mode_r ? SM_OUTPUT : LN_SIGN;
                 end
                 SM_OUTPUT: begin

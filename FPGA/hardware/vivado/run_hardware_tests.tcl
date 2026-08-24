@@ -12,6 +12,7 @@ set rtl_files [list \
     [file join $hw_dir "rtl" "pe_int8_mac.sv"] \
     [file join $hw_dir "rtl" "matrix_array_8x8.sv"] \
     [file join $hw_dir "rtl" "gemm_8x8_tile_core.sv"] \
+    [file join $hw_dir "rtl" "gemm_requantize_writer.sv"] \
     [file join $hw_dir "rtl" "transformer_gemm_scheduler.sv"] \
     [file join $hw_dir "rtl" "packed_w4_weight_reader.sv"] \
     [file join $hw_dir "rtl" "simple_dual_port_bram.sv"] \
@@ -38,6 +39,7 @@ set sim_files [list \
     [file join $hw_dir "sim" "tb_memory_io_driver_burst.sv"] \
     [file join $hw_dir "sim" "tb_memory_io_load_balance_stress.sv"] \
     [file join $hw_dir "sim" "tb_gemm_8x8_tile_core.sv"] \
+    [file join $hw_dir "sim" "tb_gemm_requantize_writer.sv"] \
     [file join $hw_dir "sim" "tb_transformer_gemm_scheduler.sv"] \
     [file join $hw_dir "sim" "tb_packed_w4_weight_reader.sv"] \
     [file join $hw_dir "sim" "tb_w4a8_operand_buffers.sv"] \
@@ -89,6 +91,7 @@ if {[catch {exec {*}$compile_cmd} output options]} {
 
 set test_tops {
     tb_gemm_8x8_tile_core
+    tb_gemm_requantize_writer
     tb_transformer_gemm_scheduler
     tb_packed_w4_weight_reader
     tb_w4a8_operand_buffers

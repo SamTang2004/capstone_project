@@ -6,6 +6,7 @@ set final_rtl_files [list \
     [file join $hw_dir "rtl" "weight_vector_decode.sv"] \
     [file join $hw_dir "rtl" "matrix_array_8x8.sv"] \
     [file join $hw_dir "rtl" "gemm_8x8_tile_core.sv"] \
+    [file join $hw_dir "rtl" "gemm_requantize_writer.sv"] \
     [file join $hw_dir "rtl" "transformer_gemm_scheduler.sv"] \
     [file join $hw_dir "rtl" "requantize_ddr.sv"] \
     [file join $hw_dir "rtl" "requantize_pack_int8.sv"] \

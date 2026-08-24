@@ -25,7 +25,7 @@ module bcuda_transformer_ddr_ip (
     input wire mem_read_valid,output wire mem_read_ready,input wire [63:0] mem_read_data,input wire mem_read_last,
     input wire [3:0] mem_debug_arlen,input wire [2:0] mem_debug_arsize,input wire [4:0] mem_debug_rbeats,input wire [1:0] mem_debug_rresp
 );
-    bcuda_transformer_ddr_top accelerator (
+    bcuda_transformer_ddr_top #(.ENABLE_LEGACY_STANDALONE(1'b0)) accelerator (
         .aclk(aclk), .aresetn(aresetn),
         .s_axi_awaddr(s_axi_awaddr), .s_axi_awvalid(s_axi_awvalid), .s_axi_awready(s_axi_awready),
         .s_axi_wdata(s_axi_wdata), .s_axi_wstrb(s_axi_wstrb), .s_axi_wvalid(s_axi_wvalid), .s_axi_wready(s_axi_wready),

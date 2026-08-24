@@ -288,6 +288,31 @@ class FirmwareGraphExecutorTest(unittest.TestCase):
             self.assertEqual(self.dma.last_k_tiles, 2)
             self.assertEqual(self.dma.last_control_word & 0x800, control_mask)
 
+    def test_bcuda_execute_graph_routes_fused_w4a8_gemm_bias_requant(self):
+        a = alloc_buffer(self.lib, 16, tensor_desc(BC_DTYPE_INT8, 2, 3, 2, layout=BC_LAYOUT_TRANSFORMER_ACTIVATION_TILED_INT8))
+        w = alloc_buffer(self.lib, 8, tensor_desc(BC_DTYPE_INT8, 2, 2, 2, layout=BC_LAYOUT_TRANSFORMER_WEIGHT_TILED_INT4))
+        bias = alloc_buffer(self.lib, 8, tensor_desc(BC_DTYPE_INT32, 1, 2))
+        scale = alloc_buffer(self.lib, 16, tensor_desc(BC_DTYPE_INT32, 1, 4))
+        c = alloc_buffer(self.lib, 16, tensor_desc(BC_DTYPE_INT8, 2, 3, 2, layout=BC_LAYOUT_TRANSFORMER_ACTIVATION_TILED_INT8), usage=BC_USAGE_OUTPUT)
+        write_buffer(self.lib, scale, struct.pack("<iIii", 7, 2, 0, -3))
+        descriptor = pack_model_descriptor(
+            [
+                (a, BC_DTYPE_INT8, BC_LAYOUT_TRANSFORMER_ACTIVATION_TILED_INT8, 1, 16, 2, 3, 2),
+                (w, BC_DTYPE_INT8, BC_LAYOUT_TRANSFORMER_WEIGHT_TILED_INT4, 1, 8, 2, 2, 2),
+                (bias, BC_DTYPE_INT32, BC_LAYOUT_ROW_MAJOR, 4, 8, 1, 2, 1),
+                (scale, BC_DTYPE_INT32, BC_LAYOUT_ROW_MAJOR, 4, 16, 1, 4, 1),
+                (c, BC_DTYPE_INT8, BC_LAYOUT_TRANSFORMER_ACTIVATION_TILED_INT8, 1, 16, 2, 3, 2),
+            ],
+            [layer_entry(BC_OP_GEMM, input0=0, weight=1, bias=2, scale=3, output=4, n=3, c=2, out_c=2)],
+            output_index=4,
+        )
+        model = alloc_buffer(self.lib, len(descriptor), tensor_desc(BC_DTYPE_INT8, 1, len(descriptor)), usage=BC_USAGE_DESCRIPTOR)
+        write_buffer(self.lib, model, descriptor)
+        self.assertEqual(self.lib.bcuda_execute_graph(
+            ctypes.byref(self.runtime), ctypes.byref(BcudaGraphExecDesc(model, a, c, 0, 0))), BC_STATUS_OK)
+        self.assertEqual(self.dma.last_control_word, 0x100801)
+        self.assertEqual([self.dma.last_m_tiles, self.dma.last_n_tiles, self.dma.last_k_tiles], [1, 1, 2])
+
     def test_bcuda_execute_graph_records_layer_diagnostics(self):
         A = alloc_buffer(self.lib, 256, tensor_desc(BC_DTYPE_INT8, 2, 16, 16))
         B = alloc_buffer(self.lib, 256, tensor_desc(BC_DTYPE_INT8, 2, 16, 16))
@@ -314,7 +339,7 @@ class FirmwareGraphExecutorTest(unittest.TestCase):
         desc = BcudaGraphExecDesc(model, A, C, BCUDA_DIAG_ALL, report)
 
         self.assertEqual(ctypes.sizeof(BcudaDiagnosticsHeader), 48)
-        self.assertEqual(ctypes.sizeof(BcudaDiagnosticsRecord), 144)
+        self.assertEqual(ctypes.sizeof(BcudaDiagnosticsRecord), 176)
         self.assertEqual(self.lib.bcuda_execute_graph(ctypes.byref(self.runtime), ctypes.byref(desc)), BC_STATUS_OK)
         raw_report = read_buffer(self.lib, report, len(report_data))
         parsed_header = BcudaDiagnosticsHeader.from_buffer_copy(raw_report)

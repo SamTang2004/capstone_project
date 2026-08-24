@@ -54,7 +54,7 @@ BC_OP_ACTIVATION_B_PACK = 16
 BC_OP_TOKEN_CONCAT = 17
 BC_OP_TOKEN_EMBEDDING = 18
 BCUDA_DIAGNOSTICS_MAGIC = 0x47444342
-BCUDA_DIAGNOSTICS_VERSION = 3
+BCUDA_DIAGNOSTICS_VERSION = 4
 BCUDA_DIAG_TIMING = 1
 BCUDA_DIAG_MEMORY = 2
 BCUDA_DIAG_OPERATIONS = 4
@@ -154,6 +154,16 @@ class BcudaRequantDesc(ctypes.Structure):
     ]
 
 
+class BcudaRequantParams(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [
+        ("multiplier", ctypes.c_int32),
+        ("right_shift", ctypes.c_uint32),
+        ("input_zero_point", ctypes.c_int32),
+        ("output_zero_point", ctypes.c_int32),
+    ]
+
+
 class BcudaTileLoadDesc(ctypes.Structure):
     _pack_ = 1
     _fields_ = [
@@ -239,7 +249,7 @@ class BcudaDiagnosticsRecord(ctypes.Structure):
         ("operations", ctypes.c_uint64),
         ("throughput_ops_per_second", ctypes.c_uint64),
         ("utilization_ppm", ctypes.c_uint32),
-        ("reserved1", ctypes.c_uint32),
+        ("gemm_bias_elapsed_ns", ctypes.c_uint32),
         ("hardware_total_cycles", ctypes.c_uint64),
         ("hardware_busy_cycles", ctypes.c_uint64),
         ("hardware_memory_stall_cycles", ctypes.c_uint64),
@@ -247,6 +257,10 @@ class BcudaDiagnosticsRecord(ctypes.Structure):
         ("hardware_output_stall_cycles", ctypes.c_uint64),
         ("hardware_last_op_cycles", ctypes.c_uint64),
         ("hardware_max_op_cycles", ctypes.c_uint64),
+        ("hardware_gemm_load_a_cycles", ctypes.c_uint64),
+        ("hardware_gemm_load_b_cycles", ctypes.c_uint64),
+        ("hardware_gemm_compute_cycles", ctypes.c_uint64),
+        ("hardware_gemm_write_cycles", ctypes.c_uint64),
         ("hardware_completed_ops", ctypes.c_uint32),
         ("hardware_status", ctypes.c_uint32),
     ]

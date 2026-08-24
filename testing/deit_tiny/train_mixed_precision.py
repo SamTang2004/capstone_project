@@ -31,6 +31,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, default=here / "artifacts")
     parser.add_argument("--weight-bits", type=int, default=4)
     parser.add_argument("--activation-bits", type=int, default=8)
+    parser.add_argument(
+        "--weight-scale", choices=("per-channel", "per-tensor"),
+        default="per-tensor",
+        help="Use per-tensor for the current FPGA scalar-requantization contract",
+    )
     parser.add_argument("--qat-epochs", type=int, default=12)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--workers", type=int, default=4)
@@ -60,8 +65,13 @@ def main() -> None:
     model_name = checkpoint.get("model_name", MODEL_NAME)
     float_model = timm.create_model(model_name, pretrained=False, num_classes=len(CLASS_NAMES))
     float_model.load_state_dict(checkpoint["state_dict"], strict=True)
-    model = prepare_qat_model(float_model, args.weight_bits, args.activation_bits)
+    weight_per_channel = args.weight_scale == "per-channel"
+    model = prepare_qat_model(
+        float_model, args.weight_bits, args.activation_bits,
+        weight_per_channel=weight_per_channel)
     stage = f"w{args.weight_bits}a{args.activation_bits}"
+    if not weight_per_channel:
+        stage += "_per_tensor"
     print(f"device={device} stage=qat_{stage} fake_quantizers={quantizer_count(model)}")
 
     train_loader, validation_loader, test_loader = build_loaders(args, args.seed)
@@ -93,7 +103,10 @@ def main() -> None:
             "state_dict": cpu_state_dict(model),
             "metrics": metrics,
             "quantization": {
-                "weights": f"signed INT{args.weight_bits}, symmetric, per-output-channel",
+                "weights": (
+                    f"signed INT{args.weight_bits}, symmetric, "
+                    f"{args.weight_scale}"
+                ),
                 "activations": f"signed INT{args.activation_bits}, symmetric, per-tensor",
                 "attention_probabilities": f"unsigned INT{args.activation_bits}, per-tensor",
                 "accumulation": "floating-point simulation of integer accumulation",

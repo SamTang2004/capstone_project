@@ -29,6 +29,8 @@ module transformer_rowwise_ddr #(
     logic [15:0] rows_r, cols_r, row_idx, col_idx;
     logic [31:0] eps_r, input_addr_r, byte_output_addr;
     (* extract_enable = "no" *) logic [31:0] output_row_base_r;
+    (* extract_enable = "no" *) logic [31:0] next_output_row_base_r;
+    logic [31:0] tiled_row_wrap_increment_r;
     logic [31:0] gamma_base_r, beta_base_r;
     logic [16:0] param_byte_index, param_total_bytes;
     logic [7:0] param_low;
@@ -127,7 +129,9 @@ module transformer_rowwise_ddr #(
             state <= IDLE; done <= 1'b0; error <= 1'b0;
             mode_r <= 1'b0; tiled_r <= 1'b0; rows_r <= '0; cols_r <= '0;
             row_idx <= '0; col_idx <= '0; eps_r <= '0;
-            input_addr_r <= '0; output_row_base_r <= '0; byte_output_addr <= '0;
+            input_addr_r <= '0; output_row_base_r <= '0;
+            next_output_row_base_r <= '0; tiled_row_wrap_increment_r <= '0;
+            byte_output_addr <= '0;
             gamma_base_r <= '0; beta_base_r <= '0;
             param_byte_index <= '0; param_total_bytes <= '0; param_low <= '0;
             response_bytes_left <= '0; read_addr_r <= '0; read_len_r <= '0;
@@ -148,6 +152,7 @@ module transformer_rowwise_ddr #(
                         rows_r <= rows; cols_r <= columns; eps_r <= epsilon_term;
                         row_idx <= 0; col_idx <= 0; input_addr_r <= input_base_addr;
                         output_row_base_r <= output_base_addr;
+                        tiled_row_wrap_increment_r <= (columns << 3) - 7;
                         gamma_base_r <= gamma_base_addr; beta_base_r <= beta_base_addr;
                         param_total_bytes <= columns << 1; param_byte_index <= 0;
                         state <= softmax_mode ? ROW_START : PARAM_G_PREP;
@@ -209,6 +214,15 @@ module transformer_rowwise_ddr #(
                 ROW_START: begin
                     col_idx <= 0;
                     byte_output_addr <= output_row_base_r;
+                    // Compute the following row's base outside the accepted
+                    // output beat.  Keeping the tiled shift/subtract off that
+                    // state-transition path materially improves Fmax.
+                    if (tiled_r)
+                        next_output_row_base_r <= row_idx[2:0] == 3'd7 ?
+                            output_row_base_r + tiled_row_wrap_increment_r :
+                            output_row_base_r + 1'b1;
+                    else
+                        next_output_row_base_r <= output_row_base_r + cols_r;
                     state <= IN_PREP;
                 end
                 IN_PREP: begin
@@ -241,11 +255,7 @@ module transformer_rowwise_ddr #(
                         if (row_idx + 1'b1 == rows_r) state <= WRITE_ARM;
                         else begin
                             row_idx <= row_idx + 1'b1;
-                            if (tiled_r) begin
-                                if (row_idx[2:0] == 3'd7)
-                                    output_row_base_r <= output_row_base_r + (cols_r << 3) - 7;
-                                else output_row_base_r <= output_row_base_r + 1'b1;
-                            end else output_row_base_r <= byte_output_addr + 1'b1;
+                            output_row_base_r <= next_output_row_base_r;
                             state <= ROW_START;
                         end
                     end else begin

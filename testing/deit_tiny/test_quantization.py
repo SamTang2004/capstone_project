@@ -49,6 +49,17 @@ def test_w4a8_uses_separate_weight_and_activation_widths() -> None:
     assert layer.output_quant.bits == 8
 
 
+def test_w4a8_can_match_fpga_per_tensor_weight_scale() -> None:
+    model = prepare_qat_model(
+        nn.Sequential(nn.Linear(8, 4)), 4, 8, weight_per_channel=False)
+    layer = model[0]
+    assert isinstance(layer, QuantizedLinear)
+    assert not layer.weight_quant.per_channel
+    layer.train()
+    layer(torch.randn(2, 8))
+    assert layer.weight_quant.scale.numel() == 1
+
+
 def test_fp4_e2m1_uses_standard_codebook_and_ste() -> None:
     quantizer = FP4E2M1FakeQuantizer(signed=True)
     quantizer.train()

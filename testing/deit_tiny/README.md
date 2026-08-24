@@ -36,7 +36,9 @@ All quantized models start from the same best float fine-tuned checkpoint.
 - INT8 is W8A8; mixed precision is W4A8; INT4 is W4A4.
 - FP4 uses the E2M1 codebook `{0, +/-0.5, +/-1, +/-1.5, +/-2, +/-3,
   +/-4, +/-6}` for both weights and matrix activations.
-- Matrix weights are symmetric and per-output-channel.
+- Research QAT weights may use symmetric per-output-channel scales. The FPGA
+  W4A8 checkpoint uses a symmetric per-tensor scale to match scalar hardware
+  requantization.
 - Matrix inputs and outputs are signed symmetric per-tensor activations.
 - Attention probabilities are unsigned per-tensor values at the same bit width.
 - LayerNorm, GELU, softmax, residual additions, and simulated accumulations
@@ -48,10 +50,9 @@ The FP4 run uses the same scale granularity as INT4 to isolate the element
 format. It is not NVFP4: NVFP4 adds hierarchical 16-element block scaling and
 FP8 scale metadata.
 
-The table in `RESULTS.md` remains a fake-quantized QAT accuracy comparison. A
-separate shared-scale W8A8 hardware manifest can now be exported and executed
-on the PYNQ-Z2; its integer scaling contract is intentionally more restrictive
-than the per-output-channel QAT experiment.
+The table in `RESULTS.md` remains a fake-quantized QAT accuracy comparison. The
+deployable per-tensor W4A8 checkpoint scores 97.75% on the held-out set and is
+exported into a packed W4 hardware manifest.
 
 ## Reproduce
 
@@ -74,11 +75,11 @@ python testing/deit_tiny/evaluate_checkpoint.py `
   testing/deit_tiny/artifacts/int4/best_fake_quant.pt --device cuda
 ```
 
-To run a complete W8A8 image through a BudgetCUDA board server:
+To run a complete W4A8 image through a BudgetCUDA board server:
 
 ```powershell
 python testing/deit_tiny/run_budgetcuda_deit.py path/to/image.jpg `
-  --manifest testing/deit_tiny/artifacts/budgetcuda_w8a8/manifest.json `
+  --manifest testing/deit_tiny/artifacts/budgetcuda_w4a8/manifest.json `
   --address 192.168.2.99 --repeat 2
 ```
 
@@ -87,6 +88,25 @@ module and stage cycle consumption. Add
 `--cycle-report testing/deit_tiny/results/fpga_cycle_report.json` to also save
 the complete operation, stage, and per-layer report. Repeated runs report cycle
 totals separately rather than reporting only host elapsed time.
+
+The current detailed GEMM phase analysis is in
+`results/FPGA_GEMM_PHASE_REPORT.md`. Future command output includes the same
+per-role and per-layer GEMM detail in `gemm_detail`.
+
+The W4A8 BRAM-cache implementation and physical before/after counters are in
+`results/FPGA_W4A8_CACHE_REPORT.md`.
+
+The fused GEMM+bias+requant writeback implementation and physical before/after
+counters are in `results/FPGA_OPERATOR_FUSION_REPORT.md`. It preserves logits
+while reducing the exact 100 MHz PL window from 2.729 to 2.176 seconds.
+
+The subsequent pipelined, tile-buffered GEMM writer is measured in
+`results/FPGA_WRITEBACK_PIPELINE_REPORT.md`. It cuts GEMM writeback by 43.55%
+and the full PL window from 2.176 to 2.050 seconds with unchanged logits.
+
+The subsequent pipelined, tile-buffered GEMM writer is measured in
+`results/FPGA_WRITEBACK_PIPELINE_REPORT.md`. It cuts GEMM writeback by 43.55%
+and the full PL window from 2.176 to 2.050 seconds with unchanged logits.
 
 The runner validates the manifest and uploads one fused full-model graph into a
 64 MiB DDR3 arena. Weights, class/position embeddings, activation workspaces,

@@ -24,6 +24,11 @@ wait_on_run synth_1
 open_run synth_1
 report_utilization -file [file join $hw_dir "pynq_z2_utilization_synth.rpt"]
 
+# Keep the distributed row buffers, write cache, and dual GEMM datapaths close
+# enough that their high-fanout control/address nets do not dominate routing.
+# These directives are deterministic parts of signoff, not a relaxed clock.
+set_property STEPS.PLACE_DESIGN.ARGS.DIRECTIVE ExtraTimingOpt [get_runs impl_1]
+set_property STEPS.PHYS_OPT_DESIGN.ARGS.DIRECTIVE AggressiveExplore [get_runs impl_1]
 # The design is dense enough that the default router can lose timing after a
 # clean physical-optimization result. Use its timing-focused search directly
 # instead of relying on a memory-heavy post-route recovery pass.

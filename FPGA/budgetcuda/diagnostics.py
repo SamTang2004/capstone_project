@@ -6,11 +6,11 @@ import struct
 from .dtypes import OpType
 
 DIAGNOSTICS_MAGIC = 0x47444342
-DIAGNOSTICS_VERSION = 3
+DIAGNOSTICS_VERSION = 4
 DIAG_TIMING, DIAG_MEMORY, DIAG_OPERATIONS, DIAG_UTILIZATION = 1, 2, 4, 8
 DIAG_ALL = 15
 DIAGNOSTICS_HEADER_STRUCT = struct.Struct("<IIIIIIIIQQ")
-DIAGNOSTICS_RECORD_STRUCT = struct.Struct("<IIIIQQQQQQQII7QII")
+DIAGNOSTICS_RECORD_STRUCT = struct.Struct("<IIIIQQQQQQQII11QII")
 
 
 @dataclass(frozen=True)
@@ -43,6 +43,7 @@ class LayerDiagnostics:
     layer_index: int; op_type: int; status: int; elapsed_ns: int; cycles: int
     input_bytes: int; output_bytes: int; weight_bytes: int; operations: int
     throughput_ops_per_second: int; utilization_percent: float
+    gemm_bias_elapsed_ns: int = 0
     hardware_counters: tuple[int, ...] = ()
 
     @property
@@ -52,7 +53,13 @@ class LayerDiagnostics:
 
     @property
     def transformer_cycles(self):
-        names = ("window_cycles", "busy_cycles", "memory_stall_cycles", "input_stall_cycles", "output_stall_cycles", "last_op_cycles", "max_op_cycles", "completed_ops", "hardware_status")
+        names = (
+            "window_cycles", "busy_cycles", "memory_stall_cycles",
+            "input_stall_cycles", "output_stall_cycles", "last_op_cycles",
+            "max_op_cycles", "gemm_load_a_cycles", "gemm_load_b_cycles",
+            "gemm_compute_cycles", "gemm_write_cycles", "completed_ops",
+            "hardware_status",
+        )
         return dict(zip(names, self.hardware_counters))
 
     @property
@@ -65,7 +72,7 @@ class LayerDiagnostics:
 
     @property
     def hardware_completed_ops(self) -> int:
-        return self.hardware_counters[7] if len(self.hardware_counters) > 7 else 0
+        return self.hardware_counters[11] if len(self.hardware_counters) > 11 else 0
 
 
 @dataclass(frozen=True)
@@ -97,7 +104,10 @@ def parse_diagnostics(raw, settings: DiagnosticsSettings) -> RunDiagnostics:
     layers = []
     for i in range(count):
         record = DIAGNOSTICS_RECORD_STRUCT.unpack_from(raw, DIAGNOSTICS_HEADER_STRUCT.size + i * record_bytes)
-        layers.append(LayerDiagnostics(record[0], record[1], record[2], record[4], record[5], record[6], record[7], record[8], record[9], record[10], record[11] / 10000.0, tuple(record[13:])))
+        layers.append(LayerDiagnostics(
+            record[0], record[1], record[2], record[4], record[5], record[6],
+            record[7], record[8], record[9], record[10], record[11] / 10000.0,
+            record[12], tuple(record[13:])))
     return RunDiagnostics(settings, layers, total_ns, arena)
 
 
@@ -113,12 +123,15 @@ def summarize_cycle_report(report: RunDiagnostics, layer_names=None, layer_stage
     additive_counters = (
         "window_cycles", "busy_cycles", "memory_stall_cycles",
         "input_stall_cycles", "output_stall_cycles", "completed_ops",
+        "gemm_load_a_cycles", "gemm_load_b_cycles",
+        "gemm_compute_cycles", "gemm_write_cycles",
     )
 
     def empty_group():
         return {
             "layer_count": 0,
             "firmware_elapsed_ns": 0,
+            "gemm_bias_elapsed_ns": 0,
             "operations": 0,
             **{key: 0 for key in additive_counters},
             "hardware_op_cycles": 0,
@@ -142,6 +155,7 @@ def summarize_cycle_report(report: RunDiagnostics, layer_names=None, layer_stage
         for group in groups:
             group["layer_count"] += 1
             group["firmware_elapsed_ns"] += layer.elapsed_ns
+            group["gemm_bias_elapsed_ns"] += layer.gemm_bias_elapsed_ns
             group["operations"] += layer.operations
             for key in additive_counters:
                 value = counters.get(key, 0)
@@ -162,6 +176,7 @@ def summarize_cycle_report(report: RunDiagnostics, layer_names=None, layer_stage
             "input_bytes": layer.input_bytes,
             "output_bytes": layer.output_bytes,
             "weight_bytes": layer.weight_bytes,
+            "gemm_bias_elapsed_ns": layer.gemm_bias_elapsed_ns,
             **counters,
         })
 
@@ -173,6 +188,7 @@ def summarize_cycle_report(report: RunDiagnostics, layer_names=None, layer_stage
         group["busy_percent"] = 100.0 * group.get("busy_cycles", 0) / window if window else 0.0
         group["memory_stall_percent"] = 100.0 * group.get("memory_stall_cycles", 0) / window if window else 0.0
         group["effective_gops"] = group["operations"] / group["firmware_elapsed_ns"] if group["firmware_elapsed_ns"] else 0.0
+        group["gemm_bias_cycles"] = group["gemm_bias_elapsed_ns"] * clock_hz // 1_000_000_000
 
     def ranked_breakdown(groups, label):
         total_cycles = totals["window_cycles"]

@@ -426,6 +426,46 @@ class GraphBuilder:
                 raise ValueError("Transformer GEMM bias must be row-major INT32 with N elements")
         self.gemm(input_idx, weight_idx, output_idx, m=m, n=n, k=k, bias_idx=bias_idx)
 
+    def transformer_gemm_requant(
+        self, input_idx: int, weight_idx: int, output_idx: int, scale_idx: int,
+        *, m: int, n: int, k: int, bias_idx: int = 0,
+        dynamic_b_transpose: bool = False,
+    ) -> None:
+        """Fuse tiled GEMM, optional INT32 bias, requantize, and A packing."""
+        activation = self.buffers[input_idx]
+        weight = self.buffers[weight_idx]
+        output = self.buffers[output_idx]
+        scale = self.buffers[scale_idx]
+        if activation.layout != Layout.TRANSFORMER_ACTIVATION_TILED_INT8 or activation.shape != (m, k):
+            raise ValueError("Fused Transformer GEMM activation must use matching tiled MxK INT8")
+        if weight.layout not in (
+            Layout.TRANSFORMER_WEIGHT_TILED_INT8,
+            Layout.TRANSFORMER_WEIGHT_TILED_INT4,
+            Layout.TRANSFORMER_DYNAMIC_B_TILED_INT8,
+        ) or weight.shape != (k, n):
+            raise ValueError("Fused Transformer GEMM weight must use matching tiled KxN layout")
+        valid_output = (
+            output.dtype == DType.INT8 and (
+                (output.layout in (Layout.TRANSFORMER_ACTIVATION_TILED_INT8, Layout.ROW_MAJOR)
+                 and output.shape == (m, n)) or
+                (output.layout == Layout.TRANSFORMER_DYNAMIC_B_TILED_INT8 and
+                 output.shape == ((n, m) if dynamic_b_transpose else (m, n)))
+            )
+        )
+        if not valid_output:
+            raise ValueError("Fused Transformer GEMM output layout/shape does not match MxN")
+        if scale.dtype != DType.INT32 or scale.layout != Layout.ROW_MAJOR or scale.shape != (4,):
+            raise ValueError("Fused Transformer GEMM requant parameters must contain four INT32 values")
+        if bias_idx:
+            bias = self.buffers[bias_idx]
+            if bias.dtype != DType.INT32 or bias.layout != Layout.ROW_MAJOR or bias.shape != (n,):
+                raise ValueError("Fused Transformer GEMM bias must be row-major INT32 with N elements")
+        self.layers.append(Layer(
+            OpType.GEMM, input0=input_idx, weight=weight_idx, output=output_idx,
+            bias=bias_idx, scale=scale_idx, n=m, out_c=n, c=k,
+            flags=1 if output.layout == Layout.TRANSFORMER_DYNAMIC_B_TILED_INT8 and dynamic_b_transpose else 0,
+        ))
+
     def activation_b_pack(self, input_idx: int, output_idx: int, *, reduction: int, outputs: int, transpose: bool = False) -> None:
         source = self.buffers[input_idx]
         output = self.buffers[output_idx]
@@ -537,6 +577,13 @@ class GraphBuilder:
     def softmax(self, input_idx: int, output_idx: int, *, rows: int, length: int) -> None:
         if rows <= 0 or length <= 0:
             raise ValueError("Invalid Softmax dimensions")
+        source, output = self.buffers[input_idx], self.buffers[output_idx]
+        if source.dtype != DType.INT8 or source.layout != Layout.ROW_MAJOR or source.shape != (rows, length):
+            raise ValueError("Softmax input must be matching row-major INT8")
+        if output.dtype != DType.INT8 or output.layout not in (
+            Layout.ROW_MAJOR, Layout.TRANSFORMER_ACTIVATION_TILED_INT8,
+        ) or output.shape != (rows, length):
+            raise ValueError("Softmax output must be matching row-major or tiled INT8")
         self.layers.append(Layer(OpType.SOFTMAX, input0=input_idx, output=output_idx, n=rows, c=length))
 
     def residual_add(self, lhs_idx: int, rhs_idx: int, output_idx: int, *, lhs_shift: int = 0, rhs_shift: int = 0) -> None:
@@ -552,8 +599,10 @@ class GraphBuilder:
             if buffer.dtype != DType.INT8 or buffer.layout != Layout.ROW_MAJOR or buffer.shape != (rows, width):
                 raise ValueError("Token concat inputs must be matching row-major INT8 tensors")
         output = self.buffers[output_idx]
-        if output.dtype != DType.INT8 or output.layout != Layout.ROW_MAJOR or output.shape != (rows, sum(widths)):
-            raise ValueError("Token concat output must be matching row-major INT8")
+        if output.dtype != DType.INT8 or output.layout not in (
+            Layout.ROW_MAJOR, Layout.TRANSFORMER_ACTIVATION_TILED_INT8,
+        ) or output.shape != (rows, sum(widths)):
+            raise ValueError("Token concat output must be matching row-major or tiled INT8")
         padded_inputs = inputs + [0] * (3 - len(inputs))
         padded_widths = widths + [0] * (3 - len(widths))
         self.layers.append(Layer(OpType.TOKEN_CONCAT, input0=padded_inputs[0], input1=padded_inputs[1],
