@@ -103,10 +103,11 @@ module transformer_rowwise_ddr #(
         read_data_valid && read_data_ready && param_byte_index[0];
     assign beta_write_en = pipeline_enable && state == PARAM_B_RECV &&
         read_data_valid && read_data_ready && param_byte_index[0];
-    // col_idx advances when an output is accepted. The normalization core has
-    // many cycles before its next parameter handshake, so a synchronous read
-    // of the new current index is ready in time and remains stable.
-    assign param_read_addr = col_idx[9:0];
+    // The BRAM read is synchronous.  On an accepted output, prefetch the next
+    // column at the same edge that col_idx advances; otherwise LN_CENTER would
+    // see the previous column's gamma/beta for every element after column 0.
+    assign param_read_addr = state == OUTPUT && write_req_valid && write_req_ready &&
+        !engine_output_last ? col_idx[9:0] + 1'b1 : col_idx[9:0];
 
     // Canonical synchronous simple-dual-port pattern keeps both parameter
     // vectors in BRAM instead of expanding them into thousands of registers.

@@ -1,0 +1,48 @@
+{
+  "image": "C:\\python_projects\\capstone_project\\testing\\deit_tiny\\data\\cache_256\\FreshApple\\FreshApple (1).jpg",
+  "manifest": "C:\\python_projects\\capstone_project\\testing\\deit_tiny\\artifacts\\budgetcuda_w8a8\\manifest.json",
+  "layer_count": 666,
+  "captured_layer_count": 4,
+  "layers": [
+    {
+      "layer_index": 0,
+      "layer_name": "patch_embedding.layer_0.GEMM",
+      "stage": "patch_embedding",
+      "op_type": "GEMM",
+      "output_buffer": "deit_patch_embedding.acc",
+      "output_bytes": 150528,
+      "sha256": "8a143665d6d49d96786c7e7a537c61770c697db38503400e3a5a0ab87664dd83",
+      "first_32_bytes_hex": "3bf1ffffac0000009961ffff1ddeffff25610000a353ffff19e1ffffc1160000"
+    },
+    {
+      "layer_index": 1,
+      "layer_name": "patch_embedding.layer_1.REQUANTIZE",
+      "stage": "patch_embedding",
+      "op_type": "REQUANTIZE",
+      "output_buffer": "deit_patch_embedding.output",
+      "output_bytes": 37632,
+      "sha256": "a86834a2fe909ab3be0bd1602addc1770439a782781f8e9a3e60f81ddf5d49d3",
+      "first_32_bytes_hex": "fe00edfc0becfc02fef706fc0003fffefcfdfffa08f8fcff09fdfd0402fa04ff"
+    },
+    {
+      "layer_index": 2,
+      "layer_name": "token_embedding.layer_0.TOKEN_EMBEDDING",
+      "stage": "token_embedding",
+      "op_type": "TOKEN_EMBEDDING",
+      "output_buffer": "deit_token_embedding.output",
+      "output_bytes": 37824,
+      "sha256": "5102efbd1bc472378e2ba9f9ebb93e56e501272cfee416cb929f8356afe412de",
+      "first_32_bytes_hex": "00fff30206ee0008faec06fffc07fcfbf5fafdfd137f02f40df8ff0302f7fb04"
+    },
+    {
+      "layer_index": 3,
+      "layer_name": "block_0.attention.layer_0.LAYERNORM",
+      "stage": "block_0.attention",
+      "op_type": "LAYERNORM",
+      "output_buffer": "deit_block_0_attention.norm.output",
+      "output_bytes": 38400,
+      "sha256": "937e4348ea06313c3fc121f6fba3701710af1ea074fff26f82f406c8da87c52e",
+      "first_32_bytes_hex": "ff010101fe00ffffff000000fe00fefe00ffffffff00000000fefefefdfdfefd"
+    }
+  ]
+}
