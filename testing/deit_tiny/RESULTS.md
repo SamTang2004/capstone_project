@@ -185,3 +185,9 @@ documented in [results/FPGA_FULL_OPERATOR_FUSION_REPORT.md](results/FPGA_FULL_OP
   the baseline mean PL window from 110,543,499 to 105,505,267 cycles. Balanced
   HeatViT averages 72,260,821 cycles (722.608 ms), 30.81% above the 500 ms
   target. See `results/FPGA_LOAD_B_PREFETCH_REPORT.md`.
+- A dual-lane fused requantizer and eight-row BRAM transpose buffer reduce GEMM
+  write by 21.67% and HeatViT Softmax by 41.75%. The timing-clean 100 MHz image
+  passes at WNS +0.022 ns / WHS +0.029 ns and measures 59,194,965 PL cycles
+  (591.950 ms) for balanced HeatViT with unchanged logits. This is 18.07%
+  faster than the preceding image and leaves 91.950 ms to the deployment
+  target. See `results/FPGA_WRITE2_ROWBURST_REPORT.md`.

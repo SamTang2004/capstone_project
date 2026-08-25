@@ -20,11 +20,16 @@ module gemm_requantize_writer (
     logic signed [31:0] multiplier_r, zero_point_r;
     logic [5:0] shift_r;
 
-    logic v0, v1, v2, v3, last0, last1, last2, last3;
+    logic v0, v1, v2, v3, vb0, vb1, vb2, vb3;
+    logic last0, last1, last2, last3;
     logic [2:0] row0, row1, row2, row3, col0, col1, col2, col3;
+    logic [2:0] rowb0, rowb1, rowb2, rowb3, colb0, colb1, colb2, colb3;
     logic signed [31:0] sum_r, multiply_lhs_r, multiply_rhs_r;
+    logic signed [31:0] sum_b_r, multiply_lhs_b_r, multiply_rhs_b_r;
     (* use_dsp = "yes" *) logic signed [63:0] product_r;
+    (* use_dsp = "yes" *) logic signed [63:0] product_b_r;
     logic signed [63:0] scaled_r;
+    logic signed [63:0] scaled_b_r;
 
     // Store one row-major byte copy of the complete 8x8 output tile.  The
     // registered write-data port selects either rows or columns.  Keeping one
@@ -45,7 +50,8 @@ module gemm_requantize_writer (
     endfunction
 
     wire feeding = state == FILL;
-    wire feed_last = feed_row_r + 1'b1 == rows_r && feed_col_r + 1'b1 == cols_r;
+    wire feed_lane_b = feeding && feed_row_r + 1'b1 < rows_r;
+    wire feed_last = feed_row_r + 2 >= rows_r && feed_col_r + 1'b1 == cols_r;
     wire [31:0] next_row_byte_base = row_byte_base_r + row_stride_r;
 
     function automatic logic [31:0] aligned_row_word(
@@ -122,11 +128,15 @@ module gemm_requantize_writer (
             rows_r <= 0; cols_r <= 0; feed_row_r <= 0; feed_col_r <= 0; base_r <= 0; row_stride_r <= 0;
             multiplier_r <= 0; zero_point_r <= 0; shift_r <= 0;
             v0 <= 0; v1 <= 0; v2 <= 0; v3 <= 0;
+            vb0 <= 0; vb1 <= 0; vb2 <= 0; vb3 <= 0;
             last0 <= 0; last1 <= 0; last2 <= 0; last3 <= 0;
             row0 <= 0; row1 <= 0; row2 <= 0; row3 <= 0;
             col0 <= 0; col1 <= 0; col2 <= 0; col3 <= 0;
+            rowb0 <= 0; rowb1 <= 0; rowb2 <= 0; rowb3 <= 0;
+            colb0 <= 0; colb1 <= 0; colb2 <= 0; colb3 <= 0;
             sum_r <= 0; multiply_lhs_r <= 0; multiply_rhs_r <= 0;
-            product_r <= 0; scaled_r <= 0;
+            sum_b_r <= 0; multiply_lhs_b_r <= 0; multiply_rhs_b_r <= 0;
+            product_r <= 0; product_b_r <= 0; scaled_r <= 0; scaled_b_r <= 0;
             write_index_r <= 0; write_count_r <= 0; write_data_r <= 0; write_strb_r <= 0;
             write_row_r <= 0; row_word_r <= 0; row_word_count_r <= 0; row_byte_base_r <= 0;
             for (int byte_index = 0; byte_index < 64; byte_index++) output_bytes[byte_index] <= 0;
@@ -138,24 +148,36 @@ module gemm_requantize_writer (
                     // Explicit A/B/P registers remain inside the DSP chain, but
                     // every stage advances concurrently for one result per clock.
                     v0 <= feeding; v1 <= v0; v2 <= v1; v3 <= v2;
+                    vb0 <= feed_lane_b; vb1 <= vb0; vb2 <= vb1; vb3 <= vb2;
                     last0 <= feeding && feed_last;
                     last1 <= last0; last2 <= last1; last3 <= last2;
                     row1 <= row0; row2 <= row1; row3 <= row2;
                     col1 <= col0; col2 <= col1; col3 <= col2;
+                    rowb1 <= rowb0; rowb2 <= rowb1; rowb3 <= rowb2;
+                    colb1 <= colb0; colb2 <= colb1; colb3 <= colb2;
                     if (feeding) begin
                         row0 <= feed_row_r; col0 <= feed_col_r;
+                        rowb0 <= feed_row_r + 1'b1; colb0 <= feed_col_r;
                         sum_r <= accumulators[(feed_row_r*8+feed_col_r)*32 +: 32] +
                             (bias_enable_r ? bias_values[feed_col_r*32 +: 32] : 32'd0);
+                        if (feed_lane_b)
+                            sum_b_r <= accumulators[((feed_row_r+1'b1)*8+feed_col_r)*32 +: 32] +
+                                (bias_enable_r ? bias_values[feed_col_r*32 +: 32] : 32'd0);
                         if (feed_last) state <= DRAIN;
-                        else if (feed_row_r + 1'b1 == rows_r) begin
+                        else if (feed_row_r + 2 >= rows_r) begin
                             feed_row_r <= 0; feed_col_r <= feed_col_r + 1'b1;
-                        end else feed_row_r <= feed_row_r + 1'b1;
+                        end else feed_row_r <= feed_row_r + 2;
                     end
                     if (v0) begin multiply_lhs_r <= sum_r; multiply_rhs_r <= multiplier_r; end
+                    if (vb0) begin multiply_lhs_b_r <= sum_b_r; multiply_rhs_b_r <= multiplier_r; end
                     if (v1) product_r <= multiply_lhs_r * multiply_rhs_r;
+                    if (vb1) product_b_r <= multiply_lhs_b_r * multiply_rhs_b_r;
                     if (v2) scaled_r <= (product_r >>> shift_r) + zero_point_r;
+                    if (vb2) scaled_b_r <= (product_b_r >>> shift_r) + zero_point_r;
                     if (v3) begin
                         output_bytes[row3*8 + col3] <= saturate_int8(scaled_r);
+                        if (vb3)
+                            output_bytes[rowb3*8 + colb3] <= saturate_int8(scaled_b_r);
                         if (last3) begin
                             capture_done <= 1'b1;
                             state <= PREP_WRITE;
@@ -176,6 +198,7 @@ module gemm_requantize_writer (
                             shift_r <= right_shift; zero_point_r <= output_zero_point;
                             feed_row_r <= 0; feed_col_r <= 0;
                             v0 <= 0; v1 <= 0; v2 <= 0; v3 <= 0;
+                            vb0 <= 0; vb1 <= 0; vb2 <= 0; vb3 <= 0;
                             last0 <= 0; last1 <= 0; last2 <= 0; last3 <= 0;
                             write_index_r <= 0;
                             for (int byte_index = 0; byte_index < 64; byte_index++) output_bytes[byte_index] <= 0;

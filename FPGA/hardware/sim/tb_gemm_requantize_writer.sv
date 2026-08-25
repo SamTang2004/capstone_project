@@ -13,7 +13,7 @@ module tb_gemm_requantize_writer;
     logic [31:0] write_req_addr,write_req_data;
     logic [3:0] write_req_strb;
     logic [7:0] mem[0:511];
-    integer errors=0;
+    integer errors=0, launch_cycles, capture_cycle;
     always #5 clk=~clk;
 
     gemm_requantize_writer dut(.*);
@@ -29,7 +29,18 @@ module tb_gemm_requantize_writer;
     endtask
 
     task automatic launch;
-        begin @(negedge clk);start=1;@(negedge clk);start=0;wait(done);@(posedge clk);end
+        begin
+            launch_cycles=0;capture_cycle=-1;
+            @(negedge clk);start=1;@(negedge clk);start=0;
+            while(!done)begin
+                @(posedge clk);launch_cycles++;
+                if(capture_done)capture_cycle=launch_cycles;
+            end
+            if(capture_cycle<0||capture_cycle>38)begin
+                $error("two-lane capture exceeded bound cycles=%0d",capture_cycle);errors++;
+            end
+            @(posedge clk);
+        end
     endtask
 
     initial begin

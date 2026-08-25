@@ -20,7 +20,7 @@ module transformer_rowwise_ddr #(
     typedef enum logic [4:0] {
         IDLE, PARAM_G_PREP, PARAM_G_REQ, PARAM_G_RECV,
         PARAM_B_PREP, PARAM_B_REQ, PARAM_B_RECV,
-        ROW_START, IN_PREP, IN_REQ, IN_RECV, OUTPUT,
+        ROW_START, IN_PREP, IN_REQ, IN_RECV, OUTPUT, FLUSH_READ, FLUSH_WRITE,
         WRITE_ARM, WRITE_WAIT, FINISH, FAIL
     } state_t;
     state_t state;
@@ -48,6 +48,18 @@ module transformer_rowwise_ddr #(
     logic engine_output_valid, engine_output_last, engine_busy, engine_done, engine_error;
     logic signed [7:0] engine_output_data;
     logic [7:0] output_byte;
+    logic engine_output_ready;
+
+    // Tiled rowwise output is naturally produced one row at a time, while DDR
+    // stores each group of eight rows contiguously by column.  Buffer one row
+    // tile and transpose it in BRAM so the memory driver receives full-word,
+    // contiguous bursts instead of one masked transaction per output byte.
+    (* ram_style = "block" *) logic [63:0] output_tile_mem [0:MAX_COLUMNS-1];
+    logic [63:0] flush_qword_r;
+    logic [15:0] flush_col_r;
+    logic flush_half_r, flush_last_tile_r;
+    logic [3:0] flush_rows_r;
+    logic [31:0] flush_base_r;
 
     function automatic logic [6:0] request_size(
         input logic [16:0] remaining,
@@ -66,7 +78,7 @@ module transformer_rowwise_ddr #(
         .input_valid(engine_input_valid), .input_ready(engine_input_ready), .input_data(read_data),
         .param_valid(engine_param_valid), .param_ready(engine_param_ready),
         .gamma_q8(gamma_r), .beta_q8(beta_r),
-        .output_valid(engine_output_valid), .output_ready(write_req_ready && state == OUTPUT),
+        .output_valid(engine_output_valid), .output_ready(engine_output_ready),
         .output_data(engine_output_data), .output_last(engine_output_last),
         .busy(engine_busy), .done(engine_done), .error(engine_error)
     );
@@ -90,11 +102,24 @@ module transformer_rowwise_ddr #(
          (state == IN_RECV && engine_input_ready));
 
     assign output_byte = engine_output_data;
-    assign write_req_valid = pipeline_enable && state == OUTPUT && engine_output_valid;
-    assign write_req_addr = {byte_output_addr[31:2], 2'b0};
-    assign write_req_data = {4{output_byte}} << (byte_output_addr[1:0] * 8);
-    assign write_req_strb = 4'b1 << byte_output_addr[1:0];
-    assign write_req_last = 1'b1;
+    assign engine_output_ready = pipeline_enable && state == OUTPUT &&
+        (tiled_r || write_req_ready);
+    assign write_req_valid = pipeline_enable &&
+        ((state == OUTPUT && !tiled_r && engine_output_valid) || state == FLUSH_WRITE);
+    assign write_req_addr = state == FLUSH_WRITE
+        ? flush_base_r + (flush_col_r << 3) + (flush_half_r << 2)
+        : {byte_output_addr[31:2], 2'b0};
+    assign write_req_data = state == FLUSH_WRITE
+        ? (flush_half_r ? flush_qword_r[63:32] : flush_qword_r[31:0])
+        : ({4{output_byte}} << (byte_output_addr[1:0] * 8));
+    assign write_req_strb = state == FLUSH_WRITE
+        ? (flush_half_r
+            ? (4'hf >> (8 - flush_rows_r))
+            : (flush_rows_r >= 4 ? 4'hf : (4'hf >> (4 - flush_rows_r))))
+        : (4'b1 << byte_output_addr[1:0]);
+    assign write_req_last = state == FLUSH_WRITE
+        ? (flush_col_r + 1'b1 == cols_r && (flush_half_r || flush_rows_r <= 4))
+        : 1'b1;
     assign memory_stall = busy && ((read_req_valid && !read_req_ready) ||
                                    (read_data_ready && !read_data_valid) ||
                                    (write_req_valid && !write_req_ready));
@@ -108,7 +133,7 @@ module transformer_rowwise_ddr #(
     // The BRAM read is synchronous.  On an accepted output, prefetch the next
     // column at the same edge that col_idx advances; otherwise LN_CENTER would
     // see the previous column's gamma/beta for every element after column 0.
-    assign param_read_addr = state == OUTPUT && write_req_valid && write_req_ready &&
+    assign param_read_addr = state == OUTPUT && engine_output_valid && engine_output_ready &&
         !engine_output_last ? col_idx[9:0] + 1'b1 : col_idx[9:0];
 
     // Canonical synchronous simple-dual-port pattern keeps both parameter
@@ -135,6 +160,8 @@ module transformer_rowwise_ddr #(
             gamma_base_r <= '0; beta_base_r <= '0;
             param_byte_index <= '0; param_total_bytes <= '0; param_low <= '0;
             response_bytes_left <= '0; read_addr_r <= '0; read_len_r <= '0;
+            flush_qword_r <= '0; flush_col_r <= '0; flush_half_r <= 1'b0;
+            flush_last_tile_r <= 1'b0; flush_rows_r <= '0; flush_base_r <= '0;
         end else begin
             done <= 1'b0;
             if (memory_error || engine_error) begin
@@ -250,9 +277,27 @@ module transformer_rowwise_ddr #(
                     end
                 end
 
-                OUTPUT: if (write_req_valid && write_req_ready) begin
+                OUTPUT: if (engine_output_valid && engine_output_ready) begin
+                    if (tiled_r) begin
+                        case (row_idx[2:0])
+                            3'd0: output_tile_mem[col_idx][7:0] <= engine_output_data;
+                            3'd1: output_tile_mem[col_idx][15:8] <= engine_output_data;
+                            3'd2: output_tile_mem[col_idx][23:16] <= engine_output_data;
+                            3'd3: output_tile_mem[col_idx][31:24] <= engine_output_data;
+                            3'd4: output_tile_mem[col_idx][39:32] <= engine_output_data;
+                            3'd5: output_tile_mem[col_idx][47:40] <= engine_output_data;
+                            3'd6: output_tile_mem[col_idx][55:48] <= engine_output_data;
+                            default: output_tile_mem[col_idx][63:56] <= engine_output_data;
+                        endcase
+                    end
                     if (engine_output_last) begin
-                        if (row_idx + 1'b1 == rows_r) state <= WRITE_ARM;
+                        if (tiled_r && (row_idx[2:0] == 3'd7 || row_idx + 1'b1 == rows_r)) begin
+                            flush_col_r <= 0; flush_half_r <= 0;
+                            flush_rows_r <= {1'b0, row_idx[2:0]} + 1'b1;
+                            flush_last_tile_r <= row_idx + 1'b1 == rows_r;
+                            flush_base_r <= output_row_base_r - row_idx[2:0];
+                            state <= FLUSH_READ;
+                        end else if (row_idx + 1'b1 == rows_r) state <= WRITE_ARM;
                         else begin
                             row_idx <= row_idx + 1'b1;
                             output_row_base_r <= next_output_row_base_r;
@@ -261,6 +306,25 @@ module transformer_rowwise_ddr #(
                     end else begin
                         col_idx <= col_idx + 1'b1;
                         byte_output_addr <= byte_output_addr + (tiled_r ? 8 : 1);
+                    end
+                end
+                FLUSH_READ: begin
+                    flush_qword_r <= output_tile_mem[flush_col_r];
+                    state <= FLUSH_WRITE;
+                end
+                FLUSH_WRITE: if (write_req_valid && write_req_ready) begin
+                    if (!flush_half_r && flush_rows_r > 4) begin
+                        flush_half_r <= 1'b1;
+                    end else if (flush_col_r + 1'b1 < cols_r) begin
+                        flush_col_r <= flush_col_r + 1'b1;
+                        flush_half_r <= 1'b0;
+                        state <= FLUSH_READ;
+                    end else if (flush_last_tile_r) begin
+                        state <= WRITE_ARM;
+                    end else begin
+                        row_idx <= row_idx + 1'b1;
+                        output_row_base_r <= next_output_row_base_r;
+                        state <= ROW_START;
                     end
                 end
                 WRITE_ARM: state <= WRITE_WAIT;

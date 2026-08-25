@@ -8,7 +8,11 @@ buffer, and GEMM/bias accumulation remains INT32.
 
 - `layernorm_int8`: vector statistics and streamed per-channel gamma/beta.
 - `gelu_int8`: eight Q4.4 piecewise-quadratic lanes.
-- `softmax_int8`: max subtraction, Q15 exponential LUT, Q0.7 output.
+- `softmax_int8`: max subtraction, a 17-entry Q15 `exp(-distance/4)` LUT,
+  one Q32 reciprocal per row, exact corrected normalization, and Q0.7 output.
+- Tiled LayerNorm/Softmax output buffers eight rows in BRAM and transposes them
+  into contiguous 32-bit DDR bursts instead of issuing one masked write per
+  byte.
 - `residual_add_int8`: eight saturating lanes with alignment shifts.
 - `bias_add_int32`: eight parallel INT32 bias additions.
 - `transformer_debug_counters`: cycle, stall, operation, error, and trace state.
