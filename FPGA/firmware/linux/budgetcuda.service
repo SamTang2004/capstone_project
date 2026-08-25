@@ -1,8 +1,7 @@
 [Unit]
 Description=BudgetCUDA protocol service
 Requires=budgetcuda-fpga.service
-After=network-online.target budgetcuda-fpga.service
-Wants=network-online.target
+After=network.target budgetcuda-fpga.service
 
 [Service]
 Type=simple

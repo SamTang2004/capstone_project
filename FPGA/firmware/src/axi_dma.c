@@ -49,6 +49,10 @@ int bcuda_axi_dma_read_transformer_debug(BcudaAxiDma *dma, BcudaTransformerDebug
     snapshot->gemm_load_b_cycles = bcuda_pl_read_u64(dma, BCUDA_PL_REG_GEMM_LOAD_B_LO);
     snapshot->gemm_compute_cycles = bcuda_pl_read_u64(dma, BCUDA_PL_REG_GEMM_COMPUTE_LO);
     snapshot->gemm_write_cycles = bcuda_pl_read_u64(dma, BCUDA_PL_REG_GEMM_WRITE_LO);
+    snapshot->gemm_load_b_weight_cycles = bcuda_pl_read_u64(dma, BCUDA_PL_REG_GEMM_LOAD_B_WEIGHT_LO);
+    snapshot->gemm_load_b_bias_cycles = bcuda_pl_read_u64(dma, BCUDA_PL_REG_GEMM_LOAD_B_BIAS_LO);
+    snapshot->gemm_w4_cache_hit_tiles = bcuda_pl_read(dma, BCUDA_PL_REG_GEMM_W4_CACHE_HITS);
+    snapshot->gemm_w4_cache_miss_tiles = bcuda_pl_read(dma, BCUDA_PL_REG_GEMM_W4_CACHE_MISSES);
     snapshot->completed_ops = bcuda_pl_read(dma, BCUDA_PL_REG_COMPLETED_OPS);
     uint32_t status = bcuda_pl_read(dma, BCUDA_PL_REG_DEBUG_STATUS);
     snapshot->active_op = status & 0xffu; snapshot->error_latched = (status >> 8) & 1u; snapshot->trace_valid = (status >> 9) & 1u;
@@ -435,6 +439,40 @@ int bcuda_axi_dma_submit_transformer_rowwise(BcudaAxiDma *dma, BcudaBuffer *inpu
     dma->last_source_address=input->physical_address;dma->last_transfer_bytes=(uint32_t)(input_bytes+output_bytes+(softmax?0u:columns*4u));dma->last_control_word=BCUDA_PL_CONTROL_START|(softmax?BCUDA_PL_CONTROL_TRANSFORMER_SOFTMAX:BCUDA_PL_CONTROL_TRANSFORMER_LAYERNORM)|(softmax&&tiled_output?BCUDA_PL_CONTROL_TRANSFORMER_OUTPUT_LAYOUT_ALT:0u);dma->last_m_tiles=rows;dma->last_n_tiles=columns;
     if(dma->register_base!=0){if(input->physical_address>0xffffffffu||output->physical_address>0xffffffffu||(!softmax&&(gamma->physical_address>0xffffffffu||beta->physical_address>0xffffffffu)))return BC_STATUS_SHAPE_MISMATCH;
       bcuda_pl_write(dma,BCUDA_PL_REG_CONTROL,0);bcuda_pl_write(dma,BCUDA_PL_REG_A_BASE,(uint32_t)input->physical_address);bcuda_pl_write(dma,BCUDA_PL_REG_B_BASE,softmax?0:(uint32_t)gamma->physical_address);bcuda_pl_write(dma,BCUDA_PL_REG_B_STRIDE,softmax?0:(uint32_t)beta->physical_address);bcuda_pl_write(dma,BCUDA_PL_REG_C_BASE,(uint32_t)output->physical_address);bcuda_pl_write(dma,BCUDA_PL_REG_M,rows);bcuda_pl_write(dma,BCUDA_PL_REG_N,columns);bcuda_pl_write(dma,BCUDA_PL_REG_RQ_MULTIPLIER,epsilon_term);bcuda_pl_write(dma,BCUDA_PL_REG_CONTROL,dma->last_control_word);}
+    return BC_STATUS_OK;
+}
+
+int bcuda_axi_dma_submit_heatvit_token_prune(BcudaAxiDma *dma, BcudaBuffer *input, BcudaBuffer *weight, BcudaBuffer *output, uint32_t input_tokens, uint32_t output_tokens, uint32_t features, uint32_t weight_int4) {
+    uint64_t input_bytes, output_bytes, weight_bytes;
+    uint32_t removed_count, reciprocal_q16;
+    if (dma == 0 || input == 0 || weight == 0 || output == 0) return BC_STATUS_GENERAL_ERROR;
+    if (input->dtype != BC_DTYPE_INT8 || weight->dtype != BC_DTYPE_INT8 || output->dtype != BC_DTYPE_INT8) return BC_STATUS_UNSUPPORTED_DTYPE;
+    if (input_tokens < 3u || input_tokens > 256u || output_tokens < 2u || output_tokens >= input_tokens ||
+        features == 0u || features > 192u || (features & 7u) != 0u || weight_int4 > 1u ||
+        input->layout != BC_LAYOUT_ROW_MAJOR || output->layout != BC_LAYOUT_ROW_MAJOR ||
+        weight->layout != (weight_int4 ? BC_LAYOUT_TRANSFORMER_WEIGHT_TILED_INT4 : BC_LAYOUT_TRANSFORMER_WEIGHT_TILED_INT8)) return BC_STATUS_SHAPE_MISMATCH;
+    input_bytes = (uint64_t)input_tokens * features; output_bytes = (uint64_t)output_tokens * features;
+    weight_bytes = (uint64_t)features * (weight_int4 ? 4u : 8u);
+    if (input_bytes > input->size_bytes || output_bytes > output->size_bytes || weight_bytes > weight->size_bytes) return BC_STATUS_SHAPE_MISMATCH;
+    if (dma->register_base != 0 && (input->physical_address > 0xffffffffu || weight->physical_address > 0xffffffffu || output->physical_address > 0xffffffffu)) return BC_STATUS_SHAPE_MISMATCH;
+    removed_count = input_tokens - output_tokens + 1u;
+    reciprocal_q16 = (65536u + removed_count / 2u) / removed_count;
+    dma->last_source_address = input->physical_address;
+    dma->last_transfer_bytes = (uint32_t)(input_bytes + output_bytes + weight_bytes);
+    dma->last_m_tiles = input_tokens; dma->last_n_tiles = output_tokens; dma->last_k_tiles = features;
+    dma->last_control_word = BCUDA_PL_CONTROL_START | BCUDA_PL_CONTROL_HEATVIT_TOKEN_PRUNE |
+        (weight_int4 ? BCUDA_PL_CONTROL_TRANSFORMER_WEIGHT_INT4 : 0u);
+    if (dma->register_base != 0) {
+        bcuda_pl_write(dma, BCUDA_PL_REG_CONTROL, 0u);
+        bcuda_pl_write(dma, BCUDA_PL_REG_A_BASE, (uint32_t)input->physical_address);
+        bcuda_pl_write(dma, BCUDA_PL_REG_B_BASE, (uint32_t)weight->physical_address);
+        bcuda_pl_write(dma, BCUDA_PL_REG_C_BASE, (uint32_t)output->physical_address);
+        bcuda_pl_write(dma, BCUDA_PL_REG_M, input_tokens);
+        bcuda_pl_write(dma, BCUDA_PL_REG_N, output_tokens);
+        bcuda_pl_write(dma, BCUDA_PL_REG_K, features);
+        bcuda_pl_write(dma, BCUDA_PL_REG_RQ_MULTIPLIER, reciprocal_q16);
+        bcuda_pl_write(dma, BCUDA_PL_REG_CONTROL, dma->last_control_word);
+    }
     return BC_STATUS_OK;
 }
 

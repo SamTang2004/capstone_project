@@ -153,3 +153,35 @@ The timing-qualified fused production build runs in 116,181,263 PL cycles
 (1.16181263 s at 100 MHz), a 43.32% reduction from the pipelined-writeback
 baseline, while preserving exact logits. The complete per-module breakdown is
 documented in [results/FPGA_FULL_OPERATOR_FUSION_REPORT.md](results/FPGA_FULL_OPERATOR_FUSION_REPORT.md).
+# HeatViT token-pruner training
+
+- The accelerator-compatible W4A8 per-tensor baseline has 93.33% validation
+  accuracy and 96.63% test accuracy.
+- A frozen-backbone, three-selector aggressive profile at blocks 2/5/8 with
+  `197 -> 151 -> 106 -> 44` tokens reached 85.56% validation and 88.20% test
+  accuracy. This profile is retained for maximum-throughput experiments but is
+  not the recommended accuracy point.
+- The selected balanced profile uses W8 scorer projections with W4A8 backbone
+  weights and `197 -> 168 -> 133 -> 80` tokens. Scorer-QAT results are 89.44%
+  validation accuracy / 89.45% macro-F1 and 93.26% test accuracy / 93.30%
+  macro-F1. This is a 3.37 percentage-point test loss versus baseline.
+- BudgetCUDA graph analysis predicts 28.13% fewer GEMM MACs and 41.30% fewer
+  softmax elements for the balanced profile. Its resident graph footprint is
+  11,268,788 bytes versus 14,723,066 bytes for the unpruned graph.
+- The mixed W4-backbone/W8-selector package contains 77 tensors and 2,733,312
+  packed weight bytes. Hash, padding, and sampled integer-GEMM conformance pass
+  with zero accumulator error.
+- Firmware and RTL now implement the selector as a toggleable resident-graph
+  operation. The row-major PL path performs DDR scoring, top-K selection,
+  source-order compaction, and removed-token mean packaging; tiled tensors keep
+  the bit-exact firmware fallback.
+- Isolated pruner synthesis meets 100 MHz with +0.311 ns slack and uses 3,282
+  LUTs, 744 registers, and 9 DSPs. Full-top OOC utilization is 34.67% LUT,
+  28.21% BRAM, and 77.73% DSP; post-route and FPGA latency are not measured yet.
+- The production image now closes 100 MHz timing with 0.300 ns extra setup
+  uncertainty (WNS +0.027 ns, WHS +0.009 ns). W8A8/W4A8 graph and selector
+  smokes pass on the board. Load-B request pipelining, next-N-tile prefetch,
+  W4 cache reuse, and BRAM bias caching reduce full-model Load B by 28.87% and
+  the baseline mean PL window from 110,543,499 to 105,505,267 cycles. Balanced
+  HeatViT averages 72,260,821 cycles (722.608 ms), 30.81% above the 500 ms
+  target. See `results/FPGA_LOAD_B_PREFETCH_REPORT.md`.

@@ -21,6 +21,8 @@ set final_rtl_files [list \
     [file join $hw_dir "rtl" "transformer_rowwise_ddr.sv"] \
     [file join $hw_dir "rtl" "transformer_debug_counters.sv"] \
     [file join $hw_dir "rtl" "transformer_control_status.sv"] \
+    [file join $hw_dir "rtl" "heatvit_token_scorer_4lane.sv"] \
+    [file join $hw_dir "rtl" "heatvit_token_pruner_ddr.sv"] \
     [file join $hw_dir "rtl" "memory_io_driver.sv"] \
     [file join $hw_dir "rtl" "bcuda_transformer_ddr_top.sv"] \
 ]

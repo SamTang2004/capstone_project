@@ -10,7 +10,7 @@ from time import perf_counter
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "FPGA"))
 
-from budgetcuda import DeiTManifestRunner, Device
+from budgetcuda import DeiTManifestRunner, Device, DiagnosticsSettings
 
 
 def main() -> None:
@@ -22,6 +22,11 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=9000)
     parser.add_argument("--timeout", type=float, default=120.0)
     parser.add_argument("--repeat", type=int, default=1)
+    parser.add_argument("--clock-hz", type=int, default=100_000_000)
+    parser.add_argument(
+        "--heatvit", action=argparse.BooleanOptionalAction, default=None,
+        help="Enable or disable optional manifest token selectors",
+    )
     parser.add_argument(
         "--cycle-report", type=Path,
         help="Also save the standard exact device cycle report as JSON",
@@ -29,14 +34,17 @@ def main() -> None:
     args = parser.parse_args()
     if args.repeat <= 0:
         parser.error("--repeat must be positive")
+    diagnostics = DiagnosticsSettings(clock_hz=args.clock_hz)
     with DeiTManifestRunner(Device(args.address, args.port, args.timeout), args.manifest) as runner:
         load_started = perf_counter()
-        runner.load()
+        runner.load(heatvit=args.heatvit)
         load_seconds = perf_counter() - load_started
         # Performance diagnostics are mandatory for FPGA model runs.  This
         # keeps module-level cycle consumption visible even when the caller
         # does not request a raw report file.
-        results = [runner.run_image(args.image, diagnostics=True) for _ in range(args.repeat)]
+        results = [runner.run_image(
+            args.image, diagnostics=diagnostics, heatvit=args.heatvit,
+        ) for _ in range(args.repeat)]
         resident_weight_bytes = runner.resident_weight_bytes
         resident_buffer_count = runner.resident_buffer_count
         resident_total_bytes = runner.resident_total_bytes

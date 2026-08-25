@@ -6,6 +6,9 @@ from common import (
     BC_DTYPE_INT32,
     BC_LAYOUT_TRANSFORMER_ACTIVATION_TILED_INT8,
     BC_LAYOUT_TRANSFORMER_DYNAMIC_B_TILED_INT8,
+    BC_LAYOUT_ROW_MAJOR,
+    BC_LAYOUT_TRANSFORMER_WEIGHT_TILED_INT4,
+    BC_LAYOUT_TRANSFORMER_WEIGHT_TILED_INT8,
     BC_STATUS_EXECUTION_FAILED,
     BC_STATUS_OK,
     BC_STATUS_SHAPE_MISMATCH,
@@ -34,6 +37,7 @@ class FirmwareAxiDmaTest(unittest.TestCase):
         cls.lib.bcuda_axi_dma_submit_transformer_gemm_requant.restype = ctypes.c_int
         cls.lib.bcuda_axi_dma_submit_transformer_requantize_pack.restype = ctypes.c_int
         cls.lib.bcuda_axi_dma_submit_transformer_b_pack.restype = ctypes.c_int
+        cls.lib.bcuda_axi_dma_submit_heatvit_token_prune.restype = ctypes.c_int
         cls.lib.bcuda_axi_dma_submit_conv2d.restype = ctypes.c_int
         cls.lib.bcuda_axi_dma_submit_tile_load.restype = ctypes.c_int
         cls.lib.bcuda_axi_dma_submit_tiled_gemm.restype = ctypes.c_int
@@ -114,6 +118,33 @@ class FirmwareAxiDmaTest(unittest.TestCase):
         self.assertEqual(regs[0], 0x6001)
         self.assertEqual([regs[2], regs[4], regs[8], regs[9]], [0x1000, 0x2000, 2, 3])
         self.assertEqual([dma.last_m_tiles, dma.last_n_tiles, dma.last_k_tiles], [1, 1, 2])
+
+    def test_submit_heatvit_token_prune_programs_ddr_operation(self):
+        regs = (ctypes.c_uint32 * 64)()
+        dma = BcudaAxiDma(ctypes.addressof(regs), 8, 0)
+        inp = BcudaBuffer(1, 0x1000, None, 197 * 192, BC_DTYPE_INT8, BC_LAYOUT_ROW_MAJOR, 2, 2, (ctypes.c_uint32 * 4)(197, 192, 1, 1), 1)
+        weight = BcudaBuffer(2, 0x2000, None, 192 * 8, BC_DTYPE_INT8, BC_LAYOUT_TRANSFORMER_WEIGHT_TILED_INT8, 1, 2, (ctypes.c_uint32 * 4)(192, 1, 1, 1), 1)
+        out = BcudaBuffer(3, 0x3000, None, 168 * 192, BC_DTYPE_INT8, BC_LAYOUT_ROW_MAJOR, 4, 2, (ctypes.c_uint32 * 4)(168, 192, 1, 1), 1)
+        result = self.lib.bcuda_axi_dma_submit_heatvit_token_prune(
+            ctypes.byref(dma), ctypes.byref(inp), ctypes.byref(weight), ctypes.byref(out), 197, 168, 192, 0,
+        )
+        self.assertEqual(result, BC_STATUS_OK)
+        self.assertEqual(regs[0], 0x00800001)
+        self.assertEqual([regs[2], regs[3], regs[4]], [0x1000, 0x2000, 0x3000])
+        self.assertEqual([regs[8], regs[9], regs[10]], [197, 168, 192])
+        self.assertEqual(regs[13], (65536 + 15) // 30)
+        self.assertEqual([dma.last_m_tiles, dma.last_n_tiles, dma.last_k_tiles], [197, 168, 192])
+
+    def test_submit_heatvit_token_prune_supports_tiled_w4_scorer(self):
+        dma = BcudaAxiDma(0, 8, 0)
+        inp = BcudaBuffer(1, 0x1000, None, 5 * 8, BC_DTYPE_INT8, BC_LAYOUT_ROW_MAJOR, 2, 2, (ctypes.c_uint32 * 4)(5, 8, 1, 1), 1)
+        weight = BcudaBuffer(2, 0x2000, None, 8 * 4, BC_DTYPE_INT8, BC_LAYOUT_TRANSFORMER_WEIGHT_TILED_INT4, 1, 2, (ctypes.c_uint32 * 4)(8, 1, 1, 1), 1)
+        out = BcudaBuffer(3, 0x3000, None, 3 * 8, BC_DTYPE_INT8, BC_LAYOUT_ROW_MAJOR, 4, 2, (ctypes.c_uint32 * 4)(3, 8, 1, 1), 1)
+        result = self.lib.bcuda_axi_dma_submit_heatvit_token_prune(
+            ctypes.byref(dma), ctypes.byref(inp), ctypes.byref(weight), ctypes.byref(out), 5, 3, 8, 1,
+        )
+        self.assertEqual(result, BC_STATUS_OK)
+        self.assertEqual(dma.last_control_word, 0x00800801)
 
     def test_bcuda_axi_dma_submit_conv2d_programs_presliced_weight_stride(self):
         regs = (ctypes.c_uint32 * 16)()

@@ -7,6 +7,7 @@ clock_helper=/usr/local/lib/budgetcuda/pynq_fclk0.py
 overlay_helper=/usr/local/lib/budgetcuda/budgetcuda_overlay.py
 afi_helper=/usr/local/lib/budgetcuda/pynq_afi_hp0.py
 pynq_python=/usr/local/share/pynq-venv/bin/python3
+# The production image is timing-qualified for the Zynq /10 FCLK0 divider.
 clock_mhz=${BCUDA_FCLK_MHZ:-100}
 
 if [ ! -r "$overlay_path" ] || [ ! -r "${overlay_path%.bit}.hwh" ]; then
@@ -22,20 +23,8 @@ if [ ! -w "$manager/firmware" ]; then
     exit 1
 fi
 
-# Stock PYNQ boot.py configures board services and then loads base.bin. Wait
-# for that load so BudgetCUDA is always the final image programmed into PL.
-if systemctl is-enabled bootpy.service >/dev/null 2>&1; then
-    attempts=0
-    until dmesg | grep -q "writing base.bin"; do
-        attempts=$((attempts + 1))
-        if [ "$attempts" -ge 90 ]; then
-            echo "Timed out waiting for PYNQ boot.py to load base.bin" >&2
-            exit 1
-        fi
-        /bin/sleep 2
-    done
-fi
-
+# The systemd unit is ordered after PYNQ's bootpy.service, when that unit is
+# present. Do not infer readiness from a version-specific kernel-log phrase.
 /usr/bin/python3 "$afi_helper" --width 64
 /usr/bin/python3 "$clock_helper" --mhz "$clock_mhz"
 XILINX_XRT=/usr "$pynq_python" "$overlay_helper" "$overlay_path"

@@ -18,6 +18,7 @@ set_property target_language Verilog [current_project]
 set_property board_part tul.com.tw:pynq-z2:part0:1.0 [current_project]
 add_files -norecurse $final_rtl_files
 add_files -norecurse $board_wrapper_rtl_files
+add_files -fileset constrs_1 -norecurse [file join $script_dir "pynq_z2_timing_margin.xdc"]
 set_property file_type SystemVerilog [get_files *.sv]
 update_compile_order -fileset sources_1
 
@@ -27,14 +28,23 @@ set ps7 [create_bd_cell -type ip -vlnv xilinx.com:ip:processing_system7:5.5 proc
 apply_bd_automation -rule xilinx.com:bd_rule:processing_system7 \
     -config {make_external "FIXED_IO, DDR" apply_board_preset "1"} $ps7
 
-# The major runtime address generators are explicitly pipelined; use the
-# production 100 MHz target to expose any remaining integrated timing limits.
+# Keep 100 MHz as the production default, but permit a lower bring-up clock
+# without maintaining a second block-design script.  The chosen frequency is
+# recorded in the generated HWH/XSA by the processing-system configuration.
+set pl_clock_mhz 100.0
+if {[info exists ::env(BCUDA_FCLK_MHZ)]} {
+    set pl_clock_mhz $::env(BCUDA_FCLK_MHZ)
+}
+if {![string is double -strict $pl_clock_mhz] || $pl_clock_mhz <= 0.0} {
+    error "BCUDA_FCLK_MHZ must be a positive number, got '$pl_clock_mhz'"
+}
+puts "Configuring PL FCLK0 at ${pl_clock_mhz} MHz"
 set_property -dict [list \
     CONFIG.PCW_USE_M_AXI_GP0 {1} \
     CONFIG.PCW_USE_S_AXI_HP0 {1} \
     CONFIG.PCW_S_AXI_HP0_DATA_WIDTH {64} \
     CONFIG.PCW_M_AXI_GP0_ENABLE_STATIC_REMAP {0} \
-    CONFIG.PCW_FPGA0_PERIPHERAL_FREQMHZ {100.0} \
+    CONFIG.PCW_FPGA0_PERIPHERAL_FREQMHZ $pl_clock_mhz \
 ] $ps7
 
 set reset [create_bd_cell -type ip -vlnv xilinx.com:ip:proc_sys_reset:5.0 rst_ps7_0_100M]

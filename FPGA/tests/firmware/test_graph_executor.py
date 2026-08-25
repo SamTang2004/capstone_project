@@ -19,6 +19,7 @@ from common import (
     BC_OP_ACTIVATION_B_PACK,
     BC_OP_TOKEN_CONCAT,
     BC_OP_TOKEN_EMBEDDING,
+    BC_OP_TOKEN_PRUNE,
     BCUDA_DIAG_ALL,
     BCUDA_DIAGNOSTICS_MAGIC,
     BCUDA_DIAGNOSTICS_VERSION,
@@ -213,6 +214,37 @@ class FirmwareGraphExecutorTest(unittest.TestCase):
     def test_bcuda_graph_runtime_init_stores_dma_pointer(self):
         self.assertTrue(bool(self.runtime.dma))
 
+    def test_token_prune_retains_cls_top_score_and_package_token(self):
+        input_values = [9, 9, 1, 10, 7, 20, 3, 30, -2, 40]
+        # Pack 5x2 tiled-A activations.
+        packed = bytearray(16)
+        for row in range(5):
+            for col in range(2):
+                packed[col * 8 + row] = input_values[row * 2 + col] & 0xff
+        inp = alloc_buffer(self.lib, 16, tensor_desc(BC_DTYPE_INT8, 2, 5, 2,
+                           layout=BC_LAYOUT_TRANSFORMER_ACTIVATION_TILED_INT8))
+        weight = alloc_buffer(self.lib, 16, tensor_desc(BC_DTYPE_INT8, 2, 2, 1,
+                              layout=BC_LAYOUT_TRANSFORMER_WEIGHT_TILED_INT8))
+        out = alloc_buffer(self.lib, 16, tensor_desc(BC_DTYPE_INT8, 2, 3, 2,
+                           layout=BC_LAYOUT_TRANSFORMER_ACTIVATION_TILED_INT8), usage=BC_USAGE_OUTPUT)
+        write_buffer(self.lib, inp, bytes(packed))
+        write_buffer(self.lib, weight, bytes([1, 0, 0, 0, 0, 0, 0, 0,
+                                              0, 0, 0, 0, 0, 0, 0, 0]))
+        descriptor = pack_model_descriptor([
+            (inp, BC_DTYPE_INT8, BC_LAYOUT_TRANSFORMER_ACTIVATION_TILED_INT8, 2, 16, 2, 5, 2),
+            (weight, BC_DTYPE_INT8, BC_LAYOUT_TRANSFORMER_WEIGHT_TILED_INT8, 1, 16, 2, 2, 1),
+            (out, BC_DTYPE_INT8, BC_LAYOUT_TRANSFORMER_ACTIVATION_TILED_INT8, 4, 16, 2, 3, 2),
+        ], [layer_entry(BC_OP_TOKEN_PRUNE, input0=0, output=2, weight=1,
+                        n=5, c=2, out_c=3, flags=1)])
+        model = alloc_buffer(self.lib, len(descriptor), tensor_desc(BC_DTYPE_INT8, 1, len(descriptor)),
+                             usage=BC_USAGE_DESCRIPTOR)
+        write_buffer(self.lib, model, descriptor)
+        request = BcudaGraphExecDesc(model, inp, out, 0, 0)
+        self.assertEqual(self.lib.bcuda_execute_graph(ctypes.byref(self.runtime), ctypes.byref(request)), BC_STATUS_OK)
+        result = read_buffer(self.lib, out, 16)
+        self.assertEqual([result[0], result[8], result[1], result[9], result[2], result[10]],
+                         [9, 9, 7, 20, 1, 27])
+
     def test_firmware_and_python_il_struct_sizes_match(self):
         self.assertEqual(ctypes.sizeof(BcudaModelDesc), MODEL_DESC_STRUCT.size)
         self.assertEqual(ctypes.sizeof(BcudaModelBufferDesc), BUFFER_DESC_STRUCT.size)
@@ -339,7 +371,7 @@ class FirmwareGraphExecutorTest(unittest.TestCase):
         desc = BcudaGraphExecDesc(model, A, C, BCUDA_DIAG_ALL, report)
 
         self.assertEqual(ctypes.sizeof(BcudaDiagnosticsHeader), 48)
-        self.assertEqual(ctypes.sizeof(BcudaDiagnosticsRecord), 176)
+        self.assertEqual(ctypes.sizeof(BcudaDiagnosticsRecord), 208)
         self.assertEqual(self.lib.bcuda_execute_graph(ctypes.byref(self.runtime), ctypes.byref(desc)), BC_STATUS_OK)
         raw_report = read_buffer(self.lib, report, len(report_data))
         parsed_header = BcudaDiagnosticsHeader.from_buffer_copy(raw_report)

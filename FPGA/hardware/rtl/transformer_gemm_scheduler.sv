@@ -17,6 +17,8 @@ module transformer_gemm_scheduler #(
     output logic memory_stall, input_stall, output_stall,
     output logic [31:0] debug_state,
     output logic [63:0] phase_load_a_cycles, phase_load_b_cycles,
+    output logic [63:0] phase_load_b_weight_cycles, phase_load_b_bias_cycles,
+    output logic [63:0] w4_cache_hit_tiles, w4_cache_miss_tiles,
     output logic [63:0] phase_compute_cycles, phase_write_cycles,
 
     output logic read_req_valid, input logic read_req_ready,
@@ -35,6 +37,7 @@ module transformer_gemm_scheduler #(
         IDLE, LOAD_A_PREP, LOAD_A_REQ, LOAD_A_RECV,
         LOAD_B_PREP, LOAD_B_REQ, LOAD_B_RECV,
         LOAD_BIAS_PREP, LOAD_BIAS_REQ, LOAD_BIAS_RECV,
+        LOAD_BIAS_CACHE_PREFETCH, LOAD_BIAS_CACHE_RECV,
         CORE_START, CORE_PREFETCH, CORE_FEED, CORE_RESULT, WRITE_RESULT,
         FUSED_START, FUSED_WAIT, FUSED_DRAIN, WRITE_ARM, WRITE_WAIT,
         NEXT_TILE, FINISH, FAIL
@@ -57,12 +60,21 @@ module transformer_gemm_scheduler #(
     (* ram_style = "block" *) logic [63:0]
         w4_weight_cache [0:MAX_W4_CACHE_QWORDS-1];
     logic [W4_CACHE_TILES-1:0] w4_cache_valid;
+    logic [W4_CACHE_TILES-1:0] bias_cache_valid;
+    // Four whole 64-bit words per N tile infer a compact synchronous BRAM.
+    (* ram_style = "block" *) logic [63:0] bias_cache [0:W4_CACHE_TILES*4-1];
+    logic [63:0] bias_cache_qword;
     logic [W4_CACHE_QW_AW-1:0] w4_cache_tile_base;
     logic [63:0] w4_cache_qword;
     logic w4_cache_half_q;
     logic [63:0] weight_ram_q;
     logic [63:0] feed_activation0, feed_activation1, feed_weight;
-    logic [K_WIDTH-1:0] load_index, feed_index;
+    logic [K_WIDTH-1:0] load_index, feed_index, b_issue_index;
+    logic prefetch_active;
+    logic [K_WIDTH-1:0] prefetch_issue_index, prefetch_recv_index;
+    logic [31:0] prefetch_b_addr;
+    logic [W4_CACHE_QW_AW-1:0] prefetch_cache_tile_base;
+    logic [$clog2(W4_CACHE_TILES)-1:0] prefetch_cache_tile_index;
     logic [15:0] m_index, n_index;
     logic [3:0] valid_rows0, valid_rows1, valid_cols, write_row, write_col;
     logic load_a_bank, write_core_select, second_core_active;
@@ -99,6 +111,36 @@ module transformer_gemm_scheduler #(
     wire [W4_CACHE_QW_AW-1:0] w4_cache_read_index =
         w4_cache_tile_base + (ram_read_index >> 1);
     wire [$clog2(W4_CACHE_TILES)-1:0] w4_cache_tile_index = n_index[15:3];
+    wire [$clog2(W4_CACHE_TILES*4)-1:0] bias_cache_word_index =
+        {w4_cache_tile_index, 2'b00} + load_index[1:0];
+    wire [31:0] b_issue_addr = b_tile_addr +
+        (weight_int4_r ? (b_issue_index << 2) : (b_issue_index << 3));
+    wire [16:0] b_issue_bytes_remaining = (k_r - b_issue_index) *
+        (weight_int4_r ? 17'd4 : 17'd8);
+    wire [6:0] b_issue_line_remaining = 7'd64 - {1'b0, b_issue_addr[5:0]};
+    wire [6:0] b_issue_len = b_issue_bytes_remaining < b_issue_line_remaining
+        ? b_issue_bytes_remaining[6:0] : b_issue_line_remaining;
+    wire [31:0] prefetch_issue_addr = prefetch_b_addr + (prefetch_issue_index << 2);
+    wire [16:0] prefetch_bytes_remaining = (k_r - prefetch_issue_index) * 17'd4;
+    wire [6:0] prefetch_line_remaining = 7'd64 - {1'b0, prefetch_issue_addr[5:0]};
+    wire [6:0] prefetch_issue_len = prefetch_bytes_remaining < prefetch_line_remaining
+        ? prefetch_bytes_remaining[6:0] : prefetch_line_remaining;
+    wire foreground_read_req_valid =
+        state == LOAD_A_REQ || state == LOAD_B_REQ || state == LOAD_BIAS_REQ ||
+        (state == LOAD_B_RECV && b_issue_index < k_r);
+    wire foreground_qword_ready =
+        state == LOAD_A_RECV || state == LOAD_B_RECV || state == LOAD_BIAS_RECV;
+    wire prefetch_bus_enable = prefetch_active && !foreground_read_req_valid &&
+        !foreground_qword_ready;
+    wire prefetch_read_req_valid = prefetch_bus_enable && prefetch_issue_index < k_r;
+    wire prefetch_response_error = prefetch_bus_enable && read_qword_valid &&
+        read_qword_ready &&
+        (read_qword_keep != (prefetch_recv_index + 1'b1 == k_r ? 8'h0f : 8'hff) ||
+         (prefetch_recv_index + (read_qword_keep[7:4] != 0 ? 2 : 1) == k_r &&
+          !read_qword_last));
+    wire [W4_CACHE_QW_AW-1:0] active_w4_cache_write_index = prefetch_bus_enable
+        ? prefetch_cache_tile_base + (prefetch_recv_index >> 1)
+        : w4_cache_write_index;
 
     assign weight_bytes = weight_int4_r ? 32'd4 : 32'd8;
     assign busy = state != IDLE && state != FINISH && state != FAIL;
@@ -125,8 +167,11 @@ module transformer_gemm_scheduler #(
                                    : w4_cache_qword[31:0])}
         : weight_ram_q;
 
+    // W4 B loading is a pipelined ordered stream.  While responses from the
+    // current cache line are being consumed, queue following lines in the
+    // memory driver's four-entry request FIFO.
     assign read_req_valid = pipeline_enable &&
-        (state == LOAD_A_REQ || state == LOAD_B_REQ || state == LOAD_BIAS_REQ);
+        (foreground_read_req_valid || prefetch_read_req_valid);
     assign active_read_addr = state == LOAD_A_PREP
         ? a_tile_addr + (load_a_bank ? a_tile_stride : 0) + (load_index << 3)
         : state == LOAD_BIAS_PREP
@@ -135,8 +180,10 @@ module transformer_gemm_scheduler #(
     assign active_read_bytes_remaining = (k_r - load_index) *
         ((state == LOAD_B_PREP && weight_int4_r) ? 17'd4 : 17'd8);
     assign active_read_line_remaining = 7'd64 - {1'b0, active_read_addr[5:0]};
-    assign read_req_addr = read_req_addr_r;
-    assign read_req_len = read_req_len_r;
+    assign read_req_addr = prefetch_read_req_valid ? prefetch_issue_addr :
+        (state == LOAD_B_RECV ? b_issue_addr : read_req_addr_r);
+    assign read_req_len = prefetch_read_req_valid ? prefetch_issue_len :
+        (state == LOAD_B_RECV ? b_issue_len : read_req_len_r);
     wire [6:0] prepared_read_len = state == LOAD_BIAS_PREP
         ? ((load_index << 1) + 1 < valid_cols ? 7'd8 : 7'd4)
         : active_read_bytes_remaining < active_read_line_remaining
@@ -144,9 +191,9 @@ module transformer_gemm_scheduler #(
     assign read_req_wide = 1'b1;
     assign read_req_qword = 1'b1;
     assign read_req_allow_ahead = weight_int4_r &&
-        (state == LOAD_B_REQ || state == LOAD_B_RECV);
+        (state == LOAD_B_REQ || state == LOAD_B_RECV || prefetch_bus_enable);
     assign read_qword_ready = pipeline_enable &&
-        (state == LOAD_A_RECV || state == LOAD_B_RECV || state == LOAD_BIAS_RECV);
+        (foreground_qword_ready || prefetch_bus_enable);
 
     assign write_req_valid = fused_requant_r ? fused_write_req_valid :
         state == WRITE_RESULT && pipeline_enable;
@@ -159,8 +206,8 @@ module transformer_gemm_scheduler #(
         write_col + 1'b1 == valid_cols;
     assign fused_write_req_ready = fused_requant_r && write_req_ready;
 
-    assign memory_stall = busy && ((read_req_valid && !read_req_ready) ||
-                                   (read_qword_ready && !read_qword_valid) ||
+    assign memory_stall = busy && ((foreground_read_req_valid && !read_req_ready) ||
+                                   (foreground_qword_ready && !read_qword_valid) ||
                                    (write_req_valid && !write_req_ready));
     assign input_stall = state == CORE_FEED &&
         (!core0_input_ready || (second_core_active && !core1_input_ready));
@@ -175,7 +222,8 @@ module transformer_gemm_scheduler #(
         read_qword_ready && !load_a_bank;
     assign activation1_write_en = state == LOAD_A_RECV && read_qword_valid &&
         read_qword_ready && load_a_bank;
-    assign weight_write_en = state == LOAD_B_RECV && read_qword_valid && read_qword_ready;
+    assign weight_write_en = (state == LOAD_B_RECV || prefetch_bus_enable) &&
+        read_qword_valid && read_qword_ready;
     assign ram_read_index = state == CORE_FEED && feed_advance &&
         feed_index + 1'b1 < k_r ? feed_index + 1'b1 : feed_index;
 
@@ -197,9 +245,14 @@ module transformer_gemm_scheduler #(
     end
     always_ff @(posedge clk) begin
         if (weight_write_en && weight_int4_r)
-            w4_weight_cache[w4_cache_write_index] <= read_qword_data;
+            w4_weight_cache[active_w4_cache_write_index] <= read_qword_data;
         w4_cache_qword <= w4_weight_cache[w4_cache_read_index];
         w4_cache_half_q <= ram_read_index[0];
+    end
+    always_ff @(posedge clk) begin
+        if (state == LOAD_BIAS_RECV && read_qword_valid && read_qword_ready)
+            bias_cache[bias_cache_word_index] <= read_qword_data;
+        bias_cache_qword <= bias_cache[bias_cache_word_index];
     end
 
     gemm_8x8_tile_core core0 (
@@ -241,7 +294,7 @@ module transformer_gemm_scheduler #(
     always_ff @(posedge clk) begin
         if (!rst_n) begin
             state <= IDLE; done <= 1'b0; error <= 1'b0;
-            load_index <= '0; feed_index <= '0; m_index <= '0; n_index <= '0;
+            load_index <= '0; feed_index <= '0; b_issue_index <= '0; m_index <= '0; n_index <= '0;
             valid_rows0 <= '0; valid_rows1 <= '0; valid_cols <= '0;
             write_row <= '0; write_col <= '0; load_a_bank <= 1'b0;
             write_core_select <= 1'b0; second_core_active <= 1'b0;
@@ -253,17 +306,41 @@ module transformer_gemm_scheduler #(
             a_tile_addr <= '0; b_tile_addr <= '0; c_tile_addr <= '0;
             a_tile_stride <= '0; b_tile_stride <= '0; c_m_pair_stride <= '0; write_addr_r <= '0;
             read_req_addr_r <= '0; read_req_len_r <= '0;
-            w4_cache_valid <= '0; w4_cache_tile_base <= '0;
+            w4_cache_valid <= '0; bias_cache_valid <= '0; w4_cache_tile_base <= '0;
+            prefetch_active <= 1'b0; prefetch_issue_index <= '0; prefetch_recv_index <= '0;
+            prefetch_b_addr <= '0; prefetch_cache_tile_base <= '0;
+            prefetch_cache_tile_index <= '0;
             phase_load_a_cycles <= '0; phase_load_b_cycles <= '0;
+            phase_load_b_weight_cycles <= '0; phase_load_b_bias_cycles <= '0;
+            w4_cache_hit_tiles <= '0; w4_cache_miss_tiles <= '0;
             phase_compute_cycles <= '0; phase_write_cycles <= '0;
         end else begin
             done <= 1'b0;
             if (pipeline_enable) begin
+                if (prefetch_read_req_valid && read_req_ready)
+                    prefetch_issue_index <= prefetch_issue_index + (read_req_len >> 2);
+                if (prefetch_bus_enable && read_qword_valid && read_qword_ready) begin
+                    if (!prefetch_response_error && prefetch_recv_index +
+                            (read_qword_keep[7:4] != 0 ? 2 : 1) == k_r) begin
+                        w4_cache_valid[prefetch_cache_tile_index] <= 1'b1;
+                        prefetch_active <= 1'b0;
+                        prefetch_recv_index <= '0;
+                    end else if (!prefetch_response_error) begin
+                        prefetch_recv_index <= prefetch_recv_index +
+                            (read_qword_keep[7:4] != 0 ? 2 : 1);
+                    end
+                end
                 if (state == LOAD_A_PREP || state == LOAD_A_REQ || state == LOAD_A_RECV)
                     phase_load_a_cycles <= phase_load_a_cycles + 1'b1;
                 if (state == LOAD_B_PREP || state == LOAD_B_REQ || state == LOAD_B_RECV ||
-                    state == LOAD_BIAS_PREP || state == LOAD_BIAS_REQ || state == LOAD_BIAS_RECV)
+                    state == LOAD_BIAS_PREP || state == LOAD_BIAS_REQ || state == LOAD_BIAS_RECV ||
+                    state == LOAD_BIAS_CACHE_PREFETCH || state == LOAD_BIAS_CACHE_RECV)
                     phase_load_b_cycles <= phase_load_b_cycles + 1'b1;
+                if (state == LOAD_B_PREP || state == LOAD_B_REQ || state == LOAD_B_RECV)
+                    phase_load_b_weight_cycles <= phase_load_b_weight_cycles + 1'b1;
+                if (state == LOAD_BIAS_PREP || state == LOAD_BIAS_REQ || state == LOAD_BIAS_RECV ||
+                    state == LOAD_BIAS_CACHE_PREFETCH || state == LOAD_BIAS_CACHE_RECV)
+                    phase_load_b_bias_cycles <= phase_load_b_bias_cycles + 1'b1;
                 if (state == CORE_START || state == CORE_PREFETCH ||
                     state == CORE_FEED || state == CORE_RESULT)
                     phase_compute_cycles <= phase_compute_cycles + 1'b1;
@@ -272,7 +349,8 @@ module transformer_gemm_scheduler #(
                     state == WRITE_ARM || state == WRITE_WAIT)
                     phase_write_cycles <= phase_write_cycles + 1'b1;
             end
-            if (memory_error || core0_error || core1_error || fused_writer_error) begin error <= 1'b1; state <= FAIL; end
+            if (memory_error || core0_error || core1_error || fused_writer_error ||
+                prefetch_response_error) begin error <= 1'b1; state <= FAIL; end
             else if (pipeline_enable) unique case (state)
                 IDLE: if (start) begin
                     error <= 1'b0;
@@ -297,7 +375,9 @@ module transformer_gemm_scheduler #(
                         rq_output_zero_point_r <= rq_output_zero_point;
                         m_r <= dim_m; n_r <= dim_n; k_r <= dim_k;
                         m_index <= 0; n_index <= 0; load_index <= 0; load_a_bank <= 1'b0;
-                        w4_cache_valid <= '0; w4_cache_tile_base <= '0;
+                        w4_cache_valid <= '0; bias_cache_valid <= '0; w4_cache_tile_base <= '0;
+                        prefetch_active <= 1'b0;
+                        b_issue_index <= '0;
                         a_tile_addr <= a_base; b_tile_addr <= b_base; c_tile_addr <= c_base;
                         a_tile_stride <= dim_k << 3;
                         b_tile_stride <= weight_int4 ? (dim_k << 2) : (dim_k << 3);
@@ -337,17 +417,30 @@ module transformer_gemm_scheduler #(
                     end
                 end
                 LOAD_B_PREP: begin
-                    if (weight_int4_r && w4_cache_valid[w4_cache_tile_index]) begin
+                    if (prefetch_active) begin
+                        // The background stream owns the ordered response
+                        // channel until this next tile is completely valid.
+                    end else if (weight_int4_r && w4_cache_valid[w4_cache_tile_index]) begin
+                        w4_cache_hit_tiles <= w4_cache_hit_tiles + 1'b1;
                         load_index <= 0;
                         state <= LOAD_BIAS_PREP;
                     end else begin
+                        if (weight_int4_r)
+                            w4_cache_miss_tiles <= w4_cache_miss_tiles + 1'b1;
+                        b_issue_index <= 0;
                         read_req_addr_r <= active_read_addr;
                         read_req_len_r <= prepared_read_len;
                         state <= LOAD_B_REQ;
                     end
                 end
-                LOAD_B_REQ: if (read_req_valid && read_req_ready) state <= LOAD_B_RECV;
-                LOAD_B_RECV: if (read_qword_valid) begin
+                LOAD_B_REQ: if (read_req_valid && read_req_ready) begin
+                    b_issue_index <= b_issue_index + (read_req_len >> (weight_int4_r ? 2 : 3));
+                    state <= LOAD_B_RECV;
+                end
+                LOAD_B_RECV: begin
+                    if (read_req_valid && read_req_ready)
+                        b_issue_index <= b_issue_index + (read_req_len >> (weight_int4_r ? 2 : 3));
+                    if (read_qword_valid) begin
                     if ((!weight_int4_r && read_qword_keep != 8'hff) ||
                         (weight_int4_r && read_qword_keep !=
                             (load_index + 1'b1 == k_r ? 8'h0f : 8'hff)) ||
@@ -364,15 +457,27 @@ module transformer_gemm_scheduler #(
                         end
                         else begin
                             load_index <= load_index + (weight_int4_r ? 2 : 1);
-                            if (read_qword_last) state <= LOAD_B_PREP;
                         end
+                    end
                     end
                 end
                 LOAD_BIAS_PREP: begin
                     if (!fused_requant_r || bias_base_r == 0) begin
+                        if (weight_int4_r && m_index == 0 &&
+                            n_index + valid_cols < n_r) begin
+                            prefetch_active <= 1'b1;
+                            prefetch_issue_index <= '0; prefetch_recv_index <= '0;
+                            prefetch_b_addr <= b_tile_addr + b_tile_stride;
+                            prefetch_cache_tile_base <= w4_cache_tile_base + ((k_r + 1'b1) >> 1);
+                            prefetch_cache_tile_index <= w4_cache_tile_index + 1'b1;
+                        end
                         load_index <= 0;
                         state <= CORE_START;
+                    end else if (bias_cache_valid[w4_cache_tile_index]) begin
+                        load_index <= 0;
+                        state <= LOAD_BIAS_CACHE_PREFETCH;
                     end else begin
+                        if (load_index == 0) bias_values <= '0;
                         read_req_addr_r <= active_read_addr;
                         read_req_len_r <= prepared_read_len;
                         state <= LOAD_BIAS_REQ;
@@ -388,11 +493,39 @@ module transformer_gemm_scheduler #(
                         if ((load_index << 1) + 1 < valid_cols)
                             bias_values[(load_index*2+1)*32 +: 32] <= read_qword_data[63:32];
                         if ((load_index << 1) + 2 >= valid_cols) begin
+                            bias_cache_valid[w4_cache_tile_index] <= 1'b1;
+                            if (weight_int4_r && m_index == 0 &&
+                                n_index + valid_cols < n_r) begin
+                                prefetch_active <= 1'b1;
+                                prefetch_issue_index <= '0; prefetch_recv_index <= '0;
+                                prefetch_b_addr <= b_tile_addr + b_tile_stride;
+                                prefetch_cache_tile_base <= w4_cache_tile_base + ((k_r + 1'b1) >> 1);
+                                prefetch_cache_tile_index <= w4_cache_tile_index + 1'b1;
+                            end
                             load_index <= 0; state <= CORE_START;
                         end else begin
                             load_index <= load_index + 1'b1;
                             state <= LOAD_BIAS_PREP;
                         end
+                    end
+                end
+                LOAD_BIAS_CACHE_PREFETCH: state <= LOAD_BIAS_CACHE_RECV;
+                LOAD_BIAS_CACHE_RECV: begin
+                    bias_values[(load_index*2)*32 +: 64] <= bias_cache_qword;
+                    if ((load_index << 1) + 2 >= valid_cols) begin
+                        if (weight_int4_r && m_index == 0 &&
+                            n_index + valid_cols < n_r) begin
+                            prefetch_active <= 1'b1;
+                            prefetch_issue_index <= '0; prefetch_recv_index <= '0;
+                            prefetch_b_addr <= b_tile_addr + b_tile_stride;
+                            prefetch_cache_tile_base <= w4_cache_tile_base + ((k_r + 1'b1) >> 1);
+                            prefetch_cache_tile_index <= w4_cache_tile_index + 1'b1;
+                        end
+                        load_index <= 0;
+                        state <= CORE_START;
+                    end else begin
+                        load_index <= load_index + 1'b1;
+                        state <= LOAD_BIAS_CACHE_PREFETCH;
                     end
                 end
                 CORE_START: begin

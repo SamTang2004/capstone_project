@@ -633,6 +633,47 @@ class GraphBuilder:
             weight=position_idx, scale=scale_idx, n=patch_rows, c=features,
         ))
 
+    def token_prune(
+        self, input_idx: int, score_weight_idx: int, output_idx: int, *,
+        input_tokens: int, output_tokens: int, features: int,
+        score_bias_idx: int = 0, package_token: bool = True,
+    ) -> None:
+        """Select image-adaptive tokens and emit a fixed-size dense token matrix.
+
+        Row zero (CLS) is always retained.  When ``package_token`` is enabled,
+        the last output row is the rounded mean of the discarded patch tokens.
+        The remaining rows are the highest scoring patch tokens in original
+        sequence order.  Fixed output cardinality keeps all following graph
+        descriptors static while token identity remains image adaptive.
+        """
+        if input_tokens < 2 or features <= 0:
+            raise ValueError("Token pruning requires CLS plus at least one patch token")
+        minimum = 2 if package_token else 1
+        if output_tokens < minimum or output_tokens >= input_tokens:
+            raise ValueError("Token pruning output must be smaller than its input")
+        source, weight, output = (
+            self.buffers[input_idx], self.buffers[score_weight_idx], self.buffers[output_idx])
+        if (source.dtype != DType.INT8 or
+                source.layout not in (Layout.ROW_MAJOR, Layout.TRANSFORMER_ACTIVATION_TILED_INT8) or
+                source.shape != (input_tokens, features)):
+            raise ValueError("Token-prune input must be a matching row-major or tiled INT8 activation")
+        if (weight.dtype != DType.INT8 or weight.shape != (features, 1) or
+                weight.layout not in (Layout.TRANSFORMER_WEIGHT_TILED_INT8,
+                                      Layout.TRANSFORMER_WEIGHT_TILED_INT4)):
+            raise ValueError("Token-prune scorer must be a tiled [features, 1] INT8/INT4 weight")
+        if (output.dtype != DType.INT8 or output.layout != source.layout or
+                output.shape != (output_tokens, features)):
+            raise ValueError("Token-prune output must use the input activation layout")
+        if score_bias_idx:
+            bias = self.buffers[score_bias_idx]
+            if bias.dtype != DType.INT32 or bias.layout != Layout.ROW_MAJOR or bias.shape != (1,):
+                raise ValueError("Token-prune score bias must contain one INT32 value")
+        self.layers.append(Layer(
+            OpType.TOKEN_PRUNE, input0=input_idx, output=output_idx,
+            weight=score_weight_idx, bias=score_bias_idx, n=input_tokens,
+            c=features, out_c=output_tokens, flags=1 if package_token else 0,
+        ))
+
     def package(self, input_idx: int, output_idx: int) -> ModelPackage:
         return ModelPackage(self.buffers, self.layers, input_idx, output_idx)
 

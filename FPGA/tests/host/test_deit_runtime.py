@@ -63,3 +63,28 @@ def test_manifest_runner_executes_every_encoder_stage(tmp_path):
     assert len(device.protocol.transport.buffers) == resident_count
     runner.close()
     assert not device.protocol.transport.buffers
+
+
+def test_manifest_runner_recognizes_optional_heatvit_selector(tmp_path):
+    hidden = 4
+    manifest = {
+        "format": "budgetcuda-deit-w8a8", "version": 1, "weight_bits": 8,
+        "classes": ["fresh", "rotten"], "tokens": 5, "hidden_dim": hidden,
+        "heads": 2, "depth": 4, "mlp_dim": 8, "tensors": {},
+        "blocks": [{"index": i} for i in range(4)],
+        "heatvit": {"enabled_by_default": False, "selectors": [{
+            "after_block": 2, "output_tokens": 3,
+            "scorer": "heatvit.selectors.0.score", "package_token": True,
+        }]},
+    }
+    _tensor(tmp_path, manifest, "heatvit.selectors.0.score", [[1], [0], [0], [0]], hidden, 1, [0])
+    manifest["weight_bits"] = 4
+    manifest["tensors"]["heatvit.selectors.0.score"]["weight_bits"] = 8
+    path = tmp_path / "manifest.json"
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    runner = DeiTManifestRunner(Device.mock(), path)
+    assert runner.heatvit_available
+    assert not runner.heatvit_enabled
+    selector = runner._selector_package(0, 5)
+    assert selector.buffers[selector.output_index].shape == (3, hidden)
+    assert [layer.op_type.name for layer in selector.layers] == ["TOKEN_PRUNE"]

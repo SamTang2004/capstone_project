@@ -14,7 +14,7 @@
 #define BCUDA_POOL_AVERAGE 0x00000001u
 #define BCUDA_CONV_PRESLICED_WEIGHTS 0x00000001u
 #define BCUDA_DIAGNOSTICS_MAGIC 0x47444342u
-#define BCUDA_DIAGNOSTICS_VERSION 4u
+#define BCUDA_DIAGNOSTICS_VERSION 5u
 #define BCUDA_DIAG_TIMING 0x00000001u
 #define BCUDA_DIAG_MEMORY 0x00000002u
 #define BCUDA_DIAG_OPERATIONS 0x00000004u
@@ -72,7 +72,8 @@ enum {
     BC_OP_RESIDUAL_ADD = 15,
     BC_OP_ACTIVATION_B_PACK = 16,
     BC_OP_TOKEN_CONCAT = 17,
-    BC_OP_TOKEN_EMBEDDING = 18
+    BC_OP_TOKEN_EMBEDDING = 18,
+    BC_OP_TOKEN_PRUNE = 19
 };
 
 /* Transformer primitive flags. Existing opcodes and descriptor layout remain ABI-compatible. */
@@ -80,6 +81,7 @@ enum {
 #define BCUDA_RESIDUAL_RHS_SHIFT_SHIFT 4u
 #define BCUDA_RESIDUAL_RHS_SHIFT_MASK 0x00000070u
 #define BCUDA_GEMM_DYNAMIC_B_TRANSPOSE 0x00000001u
+#define BCUDA_TOKEN_PRUNE_PACKAGE 0x00000001u
 
 #pragma pack(push, 1)
 typedef struct {
@@ -290,6 +292,10 @@ typedef struct {
     uint64_t hardware_max_op_cycles;
     uint64_t hardware_gemm_load_a_cycles;
     uint64_t hardware_gemm_load_b_cycles;
+    uint64_t hardware_gemm_load_b_weight_cycles;
+    uint64_t hardware_gemm_load_b_bias_cycles;
+    uint64_t hardware_gemm_w4_cache_hit_tiles;
+    uint64_t hardware_gemm_w4_cache_miss_tiles;
     uint64_t hardware_gemm_compute_cycles;
     uint64_t hardware_gemm_write_cycles;
     uint32_t hardware_completed_ops;

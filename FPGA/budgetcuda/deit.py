@@ -254,3 +254,33 @@ def build_deit_layernorm_package(
         "output", rows, features, usage=BufferUsage.OUTPUT)
     graph.layer_norm(inp, gamma, beta, output, rows=rows, features=features)
     return graph.package(inp, output)
+
+
+def build_heatvit_selector_package(
+    input_tokens: int,
+    output_tokens: int,
+    hidden_dim: int,
+    score_weights,
+    *,
+    score_bias_int32=None,
+    weight_int4: bool = False,
+    package_token: bool = True,
+    name: str = "heatvit_selector",
+) -> ModelPackage:
+    """Build a fixed-cardinality, image-adaptive HeatViT selector stage."""
+    graph = GraphBuilder(name)
+    inp = graph.add_buffer("input", (input_tokens, hidden_dim), DType.INT8)
+    scorer = graph.add_transformer_weight(
+        "score.weight", hidden_dim, 1,
+        _matrix(score_weights, hidden_dim, 1), int4=weight_int4,
+    )
+    bias = (0 if score_bias_int32 is None else graph.add_buffer(
+        "score.bias", (1,), DType.INT32, BufferUsage.WEIGHT, score_bias_int32))
+    output = graph.add_buffer(
+        "output", (output_tokens, hidden_dim), DType.INT8, BufferUsage.OUTPUT)
+    graph.token_prune(
+        inp, scorer, output, input_tokens=input_tokens,
+        output_tokens=output_tokens, features=hidden_dim,
+        score_bias_idx=bias, package_token=package_token,
+    )
+    return graph.package(inp, output)

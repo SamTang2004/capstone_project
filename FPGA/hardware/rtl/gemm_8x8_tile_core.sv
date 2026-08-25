@@ -24,10 +24,28 @@ module gemm_8x8_tile_core (
 
     logic weight_int4_r;
     logic [15:0] k_steps_r, accepted_steps;
-    logic [3:0] valid_rows_r, valid_cols_r;
+    logic [7:0] active_rows_r, active_cols_r;
     logic drain_cycle;
     logic [63:0] decoded_weights, masked_activations, masked_weights;
     logic array_clear, array_step;
+
+    // Decode the tile dimensions once at command acceptance.  Keeping the
+    // binary counts live during RUN made each count bit feed comparisons for
+    // all 64 PEs; the resulting 162-fanout route was the 100 MHz critical
+    // path.  Each thermometer bit below controls only one array lane.
+    function automatic logic [7:0] lane_mask(input logic [3:0] count);
+        unique case (count)
+            4'd1: lane_mask = 8'h01;
+            4'd2: lane_mask = 8'h03;
+            4'd3: lane_mask = 8'h07;
+            4'd4: lane_mask = 8'h0f;
+            4'd5: lane_mask = 8'h1f;
+            4'd6: lane_mask = 8'h3f;
+            4'd7: lane_mask = 8'h7f;
+            4'd8: lane_mask = 8'hff;
+            default: lane_mask = 8'h00;
+        endcase
+    endfunction
 
     weight_vector_decode decode (
         .weight_int4(weight_int4_r),
@@ -39,9 +57,9 @@ module gemm_8x8_tile_core (
         masked_activations = '0;
         masked_weights = '0;
         for (int lane = 0; lane < 8; lane++) begin
-            if (lane < valid_rows_r)
+            if (active_rows_r[lane])
                 masked_activations[lane*8 +: 8] = activation_vector[lane*8 +: 8];
-            if (lane < valid_cols_r)
+            if (active_cols_r[lane])
                 masked_weights[lane*8 +: 8] = decoded_weights[lane*8 +: 8];
         end
     end
@@ -68,8 +86,8 @@ module gemm_8x8_tile_core (
             weight_int4_r <= 1'b0;
             k_steps_r <= '0;
             accepted_steps <= '0;
-            valid_rows_r <= '0;
-            valid_cols_r <= '0;
+            active_rows_r <= '0;
+            active_cols_r <= '0;
             drain_cycle <= 1'b0;
             error <= 1'b0;
         end else begin
@@ -79,8 +97,8 @@ module gemm_8x8_tile_core (
                     if (start) begin
                         weight_int4_r <= weight_int4;
                         k_steps_r <= k_steps;
-                        valid_rows_r <= valid_rows;
-                        valid_cols_r <= valid_cols;
+                        active_rows_r <= lane_mask(valid_rows);
+                        active_cols_r <= lane_mask(valid_cols);
                         accepted_steps <= '0;
                         drain_cycle <= 1'b0;
                         if (k_steps == 0 || valid_rows == 0 || valid_rows > 8 ||

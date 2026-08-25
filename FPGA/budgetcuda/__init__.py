@@ -6,7 +6,8 @@ from .pynq import PynqBuffer, PynqDevice, PynqPlRuntime, connect, pack_transform
 from .diagnostics import (DiagnosticResult, DiagnosticsSettings, LayerDiagnostics,
                           RunDiagnostics, summarize_cycle_report)
 from .deit import (DeiTConfig, build_deit_attention_block_package, build_deit_layernorm_package,
-                   build_deit_linear_package, build_deit_mlp_block_package)
+                   build_deit_linear_package, build_deit_mlp_block_package,
+                   build_heatvit_selector_package)
 from .deit_runtime import DeiTInferenceResult, DeiTManifestRunner
 from .compiler import ResidentBufferPool
 
@@ -20,5 +21,6 @@ __all__ = [
     "DeiTConfig", "DeiTInferenceResult", "DeiTManifestRunner", "ResidentBufferPool",
     "build_deit_attention_block_package", "build_deit_layernorm_package",
     "build_deit_linear_package", "build_deit_mlp_block_package",
+    "build_heatvit_selector_package",
     "pack_transformer_activations_int8", "pack_transformer_weights",
 ]

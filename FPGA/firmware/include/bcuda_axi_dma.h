@@ -44,6 +44,9 @@ enum {
     BCUDA_PL_REG_GEMM_LOAD_B_LO = 0x50u, BCUDA_PL_REG_GEMM_LOAD_B_HI = 0x54u,
     BCUDA_PL_REG_GEMM_COMPUTE_LO = 0x58u, BCUDA_PL_REG_GEMM_COMPUTE_HI = 0x5cu,
     BCUDA_PL_REG_GEMM_WRITE_LO = 0x60u, BCUDA_PL_REG_GEMM_WRITE_HI = 0x64u,
+    BCUDA_PL_REG_GEMM_LOAD_B_WEIGHT_LO = 0xccu, BCUDA_PL_REG_GEMM_LOAD_B_WEIGHT_HI = 0xd0u,
+    BCUDA_PL_REG_GEMM_LOAD_B_BIAS_LO = 0xd4u, BCUDA_PL_REG_GEMM_LOAD_B_BIAS_HI = 0xd8u,
+    BCUDA_PL_REG_GEMM_W4_CACHE_HITS = 0xdcu, BCUDA_PL_REG_GEMM_W4_CACHE_MISSES = 0xe0u,
     BCUDA_PL_REG_DEBUG_CONTROL = 0x80u,
     BCUDA_PL_REG_TOTAL_CYCLES_LO = 0x84u, BCUDA_PL_REG_TOTAL_CYCLES_HI = 0x88u,
     BCUDA_PL_REG_BUSY_CYCLES_LO = 0x8cu, BCUDA_PL_REG_BUSY_CYCLES_HI = 0x90u,
@@ -62,6 +65,8 @@ typedef struct {
     uint64_t total_cycles, busy_cycles, memory_stall_cycles, input_stall_cycles, output_stall_cycles;
     uint64_t last_op_cycles, max_op_cycles;
     uint64_t gemm_load_a_cycles, gemm_load_b_cycles, gemm_compute_cycles, gemm_write_cycles;
+    uint64_t gemm_load_b_weight_cycles, gemm_load_b_bias_cycles;
+    uint32_t gemm_w4_cache_hit_tiles, gemm_w4_cache_miss_tiles;
     uint32_t completed_ops;
     uint8_t active_op, error_latched, trace_valid, trace_event;
     uint32_t trace_data;
@@ -90,6 +95,7 @@ enum {
     BCUDA_PL_CONTROL_TRANSFORMER_FUSED_REQUANT = 0x00100000u,
     BCUDA_PL_CONTROL_TRANSFORMER_OUTPUT_LAYOUT_ALT = 0x00200000u,
     BCUDA_PL_CONTROL_TRANSFORMER_OUTPUT_DYNAMIC_B = 0x00400000u,
+    BCUDA_PL_CONTROL_HEATVIT_TOKEN_PRUNE = 0x00800000u,
     BCUDA_PL_STATUS_BUSY = 0x00000001u,
     BCUDA_PL_STATUS_DONE = 0x00000002u,
     BCUDA_PL_STATUS_ERROR = 0x00000004u,
@@ -147,6 +153,7 @@ int bcuda_axi_dma_submit_transformer_requantize_pack(BcudaAxiDma *dma, const Bcu
 int bcuda_axi_dma_submit_transformer_b_pack(BcudaAxiDma *dma, BcudaBuffer *input, BcudaBuffer *packed_output, uint32_t reduction, uint32_t outputs, uint32_t transpose, uint32_t source_row_major);
 int bcuda_axi_dma_submit_transformer_elementwise(BcudaAxiDma *dma, BcudaBuffer *input0, BcudaBuffer *input1, BcudaBuffer *output, uint32_t rows, uint32_t columns, uint32_t residual, uint32_t lhs_shift, uint32_t rhs_shift);
 int bcuda_axi_dma_submit_transformer_rowwise(BcudaAxiDma *dma, BcudaBuffer *input, BcudaBuffer *gamma, BcudaBuffer *beta, BcudaBuffer *output, uint32_t rows, uint32_t columns, uint32_t softmax, uint32_t epsilon_term);
+int bcuda_axi_dma_submit_heatvit_token_prune(BcudaAxiDma *dma, BcudaBuffer *input, BcudaBuffer *weight, BcudaBuffer *output, uint32_t input_tokens, uint32_t output_tokens, uint32_t features, uint32_t weight_int4);
 int bcuda_axi_dma_submit_requantize(BcudaAxiDma *dma, const BcudaRequantDesc *desc, BcudaBuffer *input, BcudaBuffer *output);
 int bcuda_axi_dma_submit_conv2d(BcudaAxiDma *dma, const BcudaLayerDesc *layer, BcudaBuffer *input, BcudaBuffer *weight, BcudaBuffer *bias, BcudaBuffer *output);
 int bcuda_axi_dma_submit_activation(BcudaAxiDma *dma, const BcudaLayerDesc *layer, BcudaBuffer *input, BcudaBuffer *output);

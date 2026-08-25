@@ -27,7 +27,7 @@ LAYER_DESC_STRUCT = struct.Struct("<IIIIIIIIIIIIIIIIIIIIIIII")
 MODEL_MAGIC = 0x444D4342
 MODEL_VERSION = 1
 DIAGNOSTICS_HEADER_STRUCT = struct.Struct("<IIIIIIIIQQ")
-DIAGNOSTICS_RECORD_STRUCT = struct.Struct("<IIIIQQQQQQQII11QII")
+DIAGNOSTICS_RECORD_STRUCT = struct.Struct("<IIIIQQQQQQQII15QII")
 
 
 class MockBackend:
@@ -164,7 +164,7 @@ class MockBackend:
                 raise ValueError("Diagnostics flags and buffer must be provided together")
             diag = self._get_buffer(diagnostics_buffer)
             magic, version, flags, capacity, _, record_bytes, clock_hz, peak, _, _ = DIAGNOSTICS_HEADER_STRUCT.unpack_from(diag)
-            if magic != 0x47444342 or version != 4 or flags != diagnostics_flags or capacity < num_layers or record_bytes != DIAGNOSTICS_RECORD_STRUCT.size:
+            if magic != 0x47444342 or version != 5 or flags != diagnostics_flags or capacity < num_layers or record_bytes != DIAGNOSTICS_RECORD_STRUCT.size:
                 raise ValueError("Invalid diagnostics buffer")
         for idx in range(num_layers):
             layer = LAYER_DESC_STRUCT.unpack_from(raw_model, layer_offset + idx * LAYER_DESC_STRUCT.size)
@@ -200,6 +200,8 @@ class MockBackend:
                 self._execute_graph_token_concat(table, layer)
             elif op_type == OpType.TOKEN_EMBEDDING:
                 self._execute_graph_token_embedding(table, layer)
+            elif op_type == OpType.TOKEN_PRUNE:
+                self._execute_graph_token_prune(table, layer)
             else:
                 raise ValueError(f"Unsupported graph op: {op_type}")
             if diag is not None:
@@ -211,7 +213,7 @@ class MockBackend:
                 cycles = elapsed * clock_hz // 1_000_000_000
                 throughput = operations * 1_000_000_000 // elapsed
                 utilization = min(1_000_000, operations * 1_000_000 // max(1, cycles * peak))
-                record = (idx, int(op_type), 0, 0, elapsed, cycles, input_bytes, output_bytes, weight_bytes, operations, throughput, utilization, 0, *([0] * 13))
+                record = (idx, int(op_type), 0, 0, elapsed, cycles, input_bytes, output_bytes, weight_bytes, operations, throughput, utilization, 0, *([0] * 17))
                 DIAGNOSTICS_RECORD_STRUCT.pack_into(diag, DIAGNOSTICS_HEADER_STRUCT.size + idx * DIAGNOSTICS_RECORD_STRUCT.size, *record)
         if diag is not None:
             header = list(DIAGNOSTICS_HEADER_STRUCT.unpack_from(diag))
@@ -352,6 +354,65 @@ class MockBackend:
     @staticmethod
     def _signed8(value: int) -> int:
         return value if value < 128 else value - 256
+
+    @staticmethod
+    def _tiled_a_index(row: int, column: int, columns: int) -> int:
+        return ((row // 8) * columns + column) * 8 + (row & 7)
+
+    def _execute_graph_token_prune(self, table, layer) -> None:
+        _, input0, _, _, output, weight, bias, _, input_tokens, features, _, _, output_tokens, *tail = layer
+        flags = tail[-2]
+        source_entry, weight_entry, output_entry = table[input0], table[weight], table[output]
+        if (source_entry[1] != DType.INT8 or output_entry[1] != DType.INT8 or
+                source_entry[2] not in (Layout.ROW_MAJOR, Layout.TRANSFORMER_ACTIVATION_TILED_INT8) or
+                output_entry[2] != source_entry[2]):
+            raise ValueError("Token prune requires matching row-major or tiled INT8 activations")
+        if input_tokens < 2 or output_tokens < (2 if flags & 1 else 1) or output_tokens >= input_tokens:
+            raise ValueError("Invalid token-prune cardinality")
+        src = self._get_buffer(source_entry[0])
+        weights = self._get_buffer(weight_entry[0])
+        dst = self._get_buffer(output_entry[0])
+        score_bias = 0
+        if bias:
+            raw_bias = self._get_buffer(table[bias][0])
+            score_bias = int.from_bytes(raw_bias[:4], "little", signed=True)
+
+        def activation_index(entry, row, column):
+            return (self._tiled_a_index(row, column, features)
+                    if entry[2] == Layout.TRANSFORMER_ACTIVATION_TILED_INT8 else row * features + column)
+
+        def activation(row, column):
+            return self._signed8(src[activation_index(source_entry, row, column)])
+
+        def scorer_weight(column):
+            if weight_entry[2] == Layout.TRANSFORMER_WEIGHT_TILED_INT4:
+                packed = weights[column * 4]
+                nibble = packed & 0xF
+                return nibble if nibble < 8 else nibble - 16
+            if weight_entry[2] == Layout.TRANSFORMER_WEIGHT_TILED_INT8:
+                return self._signed8(weights[column * 8])
+            raise ValueError("Token prune requires a tiled INT8/INT4 scorer")
+
+        scores = []
+        for row in range(1, input_tokens):
+            score = score_bias
+            for column in range(features):
+                score += activation(row, column) * scorer_weight(column)
+            scores.append((score, row))
+        selected_count = output_tokens - (2 if flags & 1 else 1)
+        selected = {row for _, row in sorted(scores, key=lambda item: (-item[0], item[1]))[:selected_count]}
+        ordered = [0, *(row for row in range(1, input_tokens) if row in selected)]
+        dst[:] = b"\0" * len(dst)
+        for output_row, source_row in enumerate(ordered):
+            for column in range(features):
+                dst[activation_index(output_entry, output_row, column)] = activation(source_row, column) & 0xFF
+        if flags & 1:
+            removed = [row for row in range(1, input_tokens) if row not in selected]
+            package_row = output_tokens - 1
+            for column in range(features):
+                total = sum(activation(row, column) for row in removed)
+                value = (total + len(removed) // 2) // len(removed) if total >= 0 else -((-total + len(removed) // 2) // len(removed))
+                dst[activation_index(output_entry, package_row, column)] = max(-128, min(127, value)) & 0xFF
 
     def _execute_graph_residual(self, table, layer) -> None:
         _, lhs, rhs, _, output, *_, flags, _ = layer

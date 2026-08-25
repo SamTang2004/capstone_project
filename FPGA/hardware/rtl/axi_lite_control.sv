@@ -26,6 +26,7 @@ module axi_lite_control #(
     input  logic [31:0]           status_word,
     input  logic [32*16-1:0]      perf_regs_flat,
     input  logic [32*18-1:0]      debug_regs_flat,
+    input  logic [32*6-1:0]       extended_perf_regs_flat,
     output logic [31:0]           ctrl_word,
     output logic [31:0]           debug_ctrl_word,
     output logic [32*16-1:0]      regs_flat
@@ -114,6 +115,7 @@ module axi_lite_control #(
                 else if (read_index < 32) s_axi_rdata <= perf_regs_flat[(read_index - 16)*32 +: 32];
                 else if (read_index == 32) s_axi_rdata <= debug_ctrl_word;
                 else if (read_index <= 50) s_axi_rdata <= debug_regs_flat[(read_index - 33)*32 +: 32];
+                else if (read_index <= 56) s_axi_rdata <= extended_perf_regs_flat[(read_index - 51)*32 +: 32];
                 else s_axi_rdata <= '0;
                 s_axi_rvalid <= 1'b1;
                 s_axi_rresp <= 2'b00;

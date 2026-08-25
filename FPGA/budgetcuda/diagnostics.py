@@ -6,11 +6,11 @@ import struct
 from .dtypes import OpType
 
 DIAGNOSTICS_MAGIC = 0x47444342
-DIAGNOSTICS_VERSION = 4
+DIAGNOSTICS_VERSION = 5
 DIAG_TIMING, DIAG_MEMORY, DIAG_OPERATIONS, DIAG_UTILIZATION = 1, 2, 4, 8
 DIAG_ALL = 15
 DIAGNOSTICS_HEADER_STRUCT = struct.Struct("<IIIIIIIIQQ")
-DIAGNOSTICS_RECORD_STRUCT = struct.Struct("<IIIIQQQQQQQII11QII")
+DIAGNOSTICS_RECORD_STRUCT = struct.Struct("<IIIIQQQQQQQII15QII")
 
 
 @dataclass(frozen=True)
@@ -57,6 +57,8 @@ class LayerDiagnostics:
             "window_cycles", "busy_cycles", "memory_stall_cycles",
             "input_stall_cycles", "output_stall_cycles", "last_op_cycles",
             "max_op_cycles", "gemm_load_a_cycles", "gemm_load_b_cycles",
+            "gemm_load_b_weight_cycles", "gemm_load_b_bias_cycles",
+            "gemm_w4_cache_hit_tiles", "gemm_w4_cache_miss_tiles",
             "gemm_compute_cycles", "gemm_write_cycles", "completed_ops",
             "hardware_status",
         )
@@ -72,7 +74,7 @@ class LayerDiagnostics:
 
     @property
     def hardware_completed_ops(self) -> int:
-        return self.hardware_counters[11] if len(self.hardware_counters) > 11 else 0
+        return self.hardware_counters[15] if len(self.hardware_counters) > 15 else 0
 
 
 @dataclass(frozen=True)
@@ -124,6 +126,8 @@ def summarize_cycle_report(report: RunDiagnostics, layer_names=None, layer_stage
         "window_cycles", "busy_cycles", "memory_stall_cycles",
         "input_stall_cycles", "output_stall_cycles", "completed_ops",
         "gemm_load_a_cycles", "gemm_load_b_cycles",
+        "gemm_load_b_weight_cycles", "gemm_load_b_bias_cycles",
+        "gemm_w4_cache_hit_tiles", "gemm_w4_cache_miss_tiles",
         "gemm_compute_cycles", "gemm_write_cycles",
     )
 

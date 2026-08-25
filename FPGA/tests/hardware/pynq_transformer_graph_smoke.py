@@ -15,8 +15,8 @@ def _values(result) -> list[int]:
     return result.reshape(-1).tolist() if hasattr(result, "reshape") else list(result)
 
 
-def _run_with_diagnostics(model, input_values):
-    settings = DiagnosticsSettings()
+def _run_with_diagnostics(model, input_values, clock_hz):
+    settings = DiagnosticsSettings(clock_hz=clock_hz)
     initial = settings.initial_buffer(len(model.package.layers))
     diagnostics = model.device.alloc((len(initial),), "int8", usage="workspace")
     try:
@@ -55,8 +55,9 @@ def _run_with_diagnostics(model, input_values):
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--address", default="192.168.2.99")
-    parser.add_argument("--port", type=int, default=9001)
+    parser.add_argument("--port", type=int, default=9000)
     parser.add_argument("--timeout", type=float, default=30.0)
+    parser.add_argument("--clock-hz", type=int, default=100_000_000)
     parser.add_argument("--mode", choices=("w8", "w4", "both"), default="both")
     args = parser.parse_args()
 
@@ -73,7 +74,7 @@ def main() -> None:
         try:
             print(f"{label} MLP buffers=" + ",".join(str(t.buffer_id) for t in mlp.tensors) +
                   f" descriptor={mlp.descriptor_tensor.buffer_id} input={mlp.input_tensor.buffer_id} output={mlp.output_tensor.buffer_id}")
-            actual = _values(_run_with_diagnostics(mlp, mlp_input))
+            actual = _values(_run_with_diagnostics(mlp, mlp_input, args.clock_hz))
             if actual != mlp_input:
                 raise RuntimeError(f"{label} MLP residual mismatch: {actual}")
         finally:
@@ -88,7 +89,7 @@ def main() -> None:
         try:
             print(f"{label} attention buffers=" + ",".join(str(t.buffer_id) for t in attention.tensors) +
                   f" descriptor={attention.descriptor_tensor.buffer_id} input={attention.input_tensor.buffer_id} output={attention.output_tensor.buffer_id}")
-            actual = _values(_run_with_diagnostics(attention, attention_input))
+            actual = _values(_run_with_diagnostics(attention, attention_input, args.clock_hz))
             if actual != attention_input:
                 raise RuntimeError(f"{label} attention residual mismatch: {actual}")
         finally:

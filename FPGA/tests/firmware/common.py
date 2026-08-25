@@ -53,8 +53,9 @@ BC_OP_RESIDUAL_ADD = 15
 BC_OP_ACTIVATION_B_PACK = 16
 BC_OP_TOKEN_CONCAT = 17
 BC_OP_TOKEN_EMBEDDING = 18
+BC_OP_TOKEN_PRUNE = 19
 BCUDA_DIAGNOSTICS_MAGIC = 0x47444342
-BCUDA_DIAGNOSTICS_VERSION = 4
+BCUDA_DIAGNOSTICS_VERSION = 5
 BCUDA_DIAG_TIMING = 1
 BCUDA_DIAG_MEMORY = 2
 BCUDA_DIAG_OPERATIONS = 4
@@ -259,6 +260,10 @@ class BcudaDiagnosticsRecord(ctypes.Structure):
         ("hardware_max_op_cycles", ctypes.c_uint64),
         ("hardware_gemm_load_a_cycles", ctypes.c_uint64),
         ("hardware_gemm_load_b_cycles", ctypes.c_uint64),
+        ("hardware_gemm_load_b_weight_cycles", ctypes.c_uint64),
+        ("hardware_gemm_load_b_bias_cycles", ctypes.c_uint64),
+        ("hardware_gemm_w4_cache_hit_tiles", ctypes.c_uint64),
+        ("hardware_gemm_w4_cache_miss_tiles", ctypes.c_uint64),
         ("hardware_gemm_compute_cycles", ctypes.c_uint64),
         ("hardware_gemm_write_cycles", ctypes.c_uint64),
         ("hardware_completed_ops", ctypes.c_uint32),

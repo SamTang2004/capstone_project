@@ -33,6 +33,8 @@ set rtl_files [list \
     [file join $hw_dir "rtl" "activation_b_pack_int8.sv"] \
     [file join $hw_dir "rtl" "transformer_elementwise_ddr.sv"] \
     [file join $hw_dir "rtl" "transformer_rowwise_ddr.sv"] \
+    [file join $hw_dir "rtl" "heatvit_token_scorer_4lane.sv"] \
+    [file join $hw_dir "rtl" "heatvit_token_pruner_ddr.sv"] \
 ]
 set sim_files [list \
     [file join $hw_dir "sim" "tb_memory_io_axi3_bridge_burst.sv"] \
@@ -60,6 +62,8 @@ set sim_files [list \
     [file join $hw_dir "sim" "tb_activation_b_pack_int8.sv"] \
     [file join $hw_dir "sim" "tb_transformer_elementwise_ddr.sv"] \
     [file join $hw_dir "sim" "tb_transformer_rowwise_ddr.sv"] \
+    [file join $hw_dir "sim" "tb_heatvit_token_scorer_4lane.sv"] \
+    [file join $hw_dir "sim" "tb_heatvit_token_pruner_ddr.sv"] \
 ]
 
 if {[info exists ::env(BCUDA_XSIM_WORK)]} {
@@ -109,12 +113,17 @@ set test_tops {
     tb_activation_b_pack_int8
     tb_transformer_elementwise_ddr
     tb_transformer_rowwise_ddr
+    tb_heatvit_token_scorer_4lane
+    tb_heatvit_token_pruner_ddr
     tb_memory_io_driver_burst
     tb_memory_io_load_balance_stress
     tb_read_word_to_byte_adapter
     tb_memory_io_axi3_bridge_burst
     tb_ps_pl_mmio_control
     tb_bcuda_transformer_ddr_top
+}
+if {[info exists ::env(BCUDA_TEST_TOPS)]} {
+    set test_tops [split $::env(BCUDA_TEST_TOPS)]
 }
 foreach top $test_tops {
     set sim_name "${top}_sim"

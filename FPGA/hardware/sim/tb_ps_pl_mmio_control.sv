@@ -22,6 +22,7 @@ module tb_ps_pl_mmio_control;
     logic [31:0] ctrl_word;
     logic [31:0] debug_ctrl_word;
     logic [32*18-1:0] debug_regs_flat;
+    logic [32*6-1:0] extended_perf_regs_flat;
     int errors;
 
     always #5 clk = ~clk;
@@ -49,6 +50,7 @@ module tb_ps_pl_mmio_control;
         .status_word(status_word),
         .perf_regs_flat('0),
         .debug_regs_flat(debug_regs_flat),
+        .extended_perf_regs_flat(extended_perf_regs_flat),
         .ctrl_word(ctrl_word),
         .debug_ctrl_word(debug_ctrl_word)
     );
@@ -109,6 +111,8 @@ module tb_ps_pl_mmio_control;
         status_word = 32'h0000_0000;
         debug_regs_flat = '0;
         debug_regs_flat[0 +: 32] = 32'h1234_5678;
+        extended_perf_regs_flat = '0;
+        extended_perf_regs_flat[5*32 +: 32] = 32'h89ab_cdef;
 
         repeat (5) @(posedge clk);
         rst_n = 1'b1;
@@ -141,6 +145,11 @@ module tb_ps_pl_mmio_control;
         axi_read(8'h84, got);
         if (got !== 32'h1234_5678) begin
             $error("Debug counter read mismatch got=0x%08h", got);
+            errors++;
+        end
+        axi_read(8'he0, got);
+        if (got !== 32'h89ab_cdef) begin
+            $error("Extended performance counter read mismatch got=0x%08h", got);
             errors++;
         end
 

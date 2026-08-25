@@ -1,7 +1,6 @@
 [Unit]
 Description=Program the BudgetCUDA PYNQ-Z2 FPGA image
-Wants=network-online.target
-After=local-fs.target network-online.target
+After=local-fs.target bootpy.service
 Before=budgetcuda.service
 
 [Service]

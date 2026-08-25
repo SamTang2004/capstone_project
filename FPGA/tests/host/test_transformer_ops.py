@@ -134,7 +134,7 @@ class TransformerOpsTest(unittest.TestCase):
         self.assertEqual(result.diagnostics.layers[0].output_bytes, 4)
         self.assertEqual(result.diagnostics.layers[0].transformer_cycles["memory_stall_cycles"], 0)
 
-    def test_v4_diagnostics_preserve_counters_beyond_32_bits(self):
+    def test_v5_diagnostics_preserve_counters_beyond_32_bits(self):
         settings = DiagnosticsSettings()
         self.assertEqual(settings.peak_operations_per_cycle, 256)
         raw = bytearray(settings.initial_buffer(1))
@@ -144,7 +144,7 @@ class TransformerOpsTest(unittest.TestCase):
         DIAGNOSTICS_HEADER_STRUCT.pack_into(raw, 0, *header)
         record = (0, int(OpType.GEMM), 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0,
                   large, large - 1, large - 2, large - 3, large - 4,
-                  large - 5, large - 6, 11, 12, 13, 14, 7, 0)
+                  large - 5, large - 6, 11, 12, 8, 4, 3, 2, 13, 14, 7, 0)
         DIAGNOSTICS_RECORD_STRUCT.pack_into(
             raw, DIAGNOSTICS_HEADER_STRUCT.size, *record)
         layer = parse_diagnostics(raw, settings).layers[0]
@@ -152,6 +152,10 @@ class TransformerOpsTest(unittest.TestCase):
         self.assertEqual(parsed["window_cycles"], large)
         self.assertEqual(parsed["max_op_cycles"], large - 6)
         self.assertEqual(parsed["gemm_load_a_cycles"], 11)
+        self.assertEqual(parsed["gemm_load_b_weight_cycles"], 8)
+        self.assertEqual(parsed["gemm_load_b_bias_cycles"], 4)
+        self.assertEqual(parsed["gemm_w4_cache_hit_tiles"], 3)
+        self.assertEqual(parsed["gemm_w4_cache_miss_tiles"], 2)
         self.assertEqual(parsed["gemm_write_cycles"], 14)
         self.assertEqual(parsed["completed_ops"], 7)
         self.assertEqual(layer.hardware_completed_ops, 7)
@@ -242,6 +246,25 @@ class TransformerOpsTest(unittest.TestCase):
         self.assertEqual(package.buffers[dynamic_b].size_bytes, 16)
         model = upload_model(Device.mock(), package)
         self.assertEqual(values(model.run([-3, 3, -1, 1, 2, -2])), [5, 5, -4, 5, 5, -4, -4, -4, 5])
+
+    def test_heatvit_token_prune_keeps_cls_top_scores_and_package(self):
+        graph = GraphBuilder("heatvit")
+        inp = graph.add_transformer_activation("input", 5, 2)
+        scorer = graph.add_transformer_weight("scorer", 2, 1, [[1], [0]], int4=True)
+        out = graph.add_transformer_activation("output", 3, 2, usage=BufferUsage.OUTPUT)
+        graph.token_prune(inp, scorer, out, input_tokens=5, output_tokens=3, features=2)
+        model = upload_model(Device.mock(), graph.package(inp, out))
+        packed = pack_transformer_activations_int8([
+            [9, 9],       # CLS, always retained
+            [1, 10],      # removed
+            [7, 20],      # highest scorer, retained
+            [3, 30],      # removed
+            [-2, 40],     # removed
+        ], 5, 2)
+        raw = bytes(values(model.run(packed)))
+        self.assertEqual(unpack_transformer_activations_int8(raw, 3, 2), [
+            [9, 9], [7, 20], [1, 27],
+        ])
 
     def test_complete_three_head_attention_schedule_preserves_zero_projection_residual(self):
         weights = [0] * 36

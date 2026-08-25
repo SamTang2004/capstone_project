@@ -9,6 +9,8 @@ module tb_transformer_gemm_scheduler;
     logic busy,done,error,op_start,op_done,memory_stall,input_stall,output_stall;
     logic [31:0] debug_state;
     logic [63:0] phase_load_a_cycles,phase_load_b_cycles,phase_compute_cycles,phase_write_cycles;
+    logic [63:0] phase_load_b_weight_cycles,phase_load_b_bias_cycles;
+    logic [63:0] w4_cache_hit_tiles,w4_cache_miss_tiles;
     logic read_req_valid,read_req_ready,read_req_wide,read_req_qword,read_req_allow_ahead;
     logic [31:0] read_req_addr; logic [6:0] read_req_len;
     logic read_qword_valid,read_qword_ready,read_qword_last;
@@ -133,6 +135,12 @@ module tb_transformer_gemm_scheduler;
         if(!phase_load_a_cycles||!phase_load_b_cycles||!phase_compute_cycles||!phase_write_cycles)begin
             $error("Missing GEMM phase cycles A=%0d B=%0d compute=%0d write=%0d",phase_load_a_cycles,phase_load_b_cycles,phase_compute_cycles,phase_write_cycles);errors++;
         end
+        if(!phase_load_b_weight_cycles||phase_load_b_cycles < phase_load_b_weight_cycles||
+           !w4_cache_hit_tiles||!w4_cache_miss_tiles)begin
+            $error("Missing detailed B counters weight=%0d bias=%0d hits=%0d misses=%0d",
+                phase_load_b_weight_cycles,phase_load_b_bias_cycles,
+                w4_cache_hit_tiles,w4_cache_miss_tiles);errors++;
+        end
 
         // Fuse bias and requantization into GEMM so no INT32 accumulator tile
         // is written to DDR. Output is directly packed as tile-major INT8.
@@ -173,8 +181,11 @@ module tb_transformer_gemm_scheduler;
         // K=4 so both halves of each cached 64-bit qword are consumed.
         dim_m=20;dim_n=16;dim_k=4;
         a_base=32'h100;b_base=32'h400;c_base=32'hb00;c_stride=16;
-        bias_base=0;weight_int4=1;fused_requant=1;fused_output_mode=1;
+        bias_base=32'h600;weight_int4=1;fused_requant=1;fused_output_mode=1;
         rq_multiplier=1;rq_right_shift=0;rq_output_zero_point=0;
+        for(int col=0;col<16;col++)
+            for(int byte_index=0;byte_index<4;byte_index++)
+                mem['h600+col*4+byte_index]=(32'd1 >> (byte_index*8));
         for(int group=0;group<20;group+=16)
             for(int bank=0;bank<2;bank++)
                 for(int k_index=0;k_index<4;k_index++)
@@ -188,7 +199,7 @@ module tb_transformer_gemm_scheduler;
         for(int row=0;row<20;row++)begin
             for(int col=0;col<16;col++)begin
                 integer expected;
-                expected=0;
+                expected=1;
                 for(int k_index=0;k_index<4;k_index++)
                     expected=expected+(row+1)*(((col+k_index)%5)-2);
                 if(expected>127)expected=127;
@@ -196,8 +207,17 @@ module tb_transformer_gemm_scheduler;
                 expect_i8('hb00+row*16+col,expected);
             end
         end
+        // Two bias tiles are fetched only for the first M pass.  The second
+        // pass reuses both 256-bit cached vectors: 3 A + 2 B + 8 bias reads.
+        if(read_requests!=33)begin
+            $error("W4 prefetch/bias-cache expected 13 additional requests, cumulative=%0d",read_requests);errors++;
+        end
         if(error||errors)$fatal(1,"Transformer scheduler failed errors=%0d",errors);
         $display("Transformer tiled GEMM scheduler golden trace passed");$finish;
     end
-    initial begin #200000;$fatal(1,"Scheduler timeout state=%0d",dut.state);end
+    initial begin #200000;$fatal(1,
+        "Scheduler timeout state=%0d m=%0d n=%0d pf=%0d pf_issue=%0d pf_recv=%0d fw_busy=%0d fw_capture=%0d fw_done=%0d fw_error=%0d wr_valid=%0d",
+        dut.state,dut.m_index,dut.n_index,dut.prefetch_active,dut.prefetch_issue_index,dut.prefetch_recv_index,
+        dut.fused_writer_busy,dut.fused_writer_capture_done,dut.fused_writer_done,
+        dut.fused_writer_error,write_req_valid);end
 endmodule

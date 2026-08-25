@@ -11,6 +11,7 @@ from .deit import (
     build_deit_layernorm_package,
     build_deit_linear_package,
     build_deit_mlp_block_package,
+    build_heatvit_selector_package,
 )
 from .compiler import GraphBuilder, ResidentBufferPool, compose_model_packages
 from .diagnostics import RunDiagnostics, summarize_cycle_report
@@ -67,6 +68,7 @@ class DeiTManifestRunner:
         self._full_model = None
         self._full_layer_names: tuple[str, ...] = ()
         self._full_layer_stages: tuple[str, ...] = ()
+        self._heatvit_enabled = False
         self._closed = False
         self._validate_manifest()
 
@@ -130,6 +132,9 @@ class DeiTManifestRunner:
         return package
 
     def _attention_package(self, block_index: int):
+        return self._attention_package_for_tokens(block_index, int(self.manifest["tokens"]))
+
+    def _attention_package_for_tokens(self, block_index: int, tokens: int):
         def build():
             block = self.manifest["blocks"][block_index]
             base = f"blocks.{block_index}"
@@ -142,7 +147,7 @@ class DeiTManifestRunner:
             q_scale = float(q_meta["output_scale"])
             projection_input_scale = float(projection_meta["input_scale"])
             return build_deit_attention_block_package(
-                int(self.manifest["tokens"]), hidden, heads, q, k, v, projection,
+                tokens, hidden, heads, q, k, v, projection,
                 gamma_q8=_q8(block["norm1_gamma"]), beta_q8=_q8(block["norm1_beta"]),
                 q_bias_int32=q_meta.get("bias_int32"), k_bias_int32=k_meta.get("bias_int32"),
                 v_bias_int32=v_meta.get("bias_int32"),
@@ -156,16 +161,19 @@ class DeiTManifestRunner:
                 weight_int4=int(self.manifest["weight_bits"]) == 4,
                 name=f"deit_block_{block_index}_attention",
             )
-        return self._cache_package(f"block_{block_index}.attention", build)
+        return self._cache_package(f"block_{block_index}.attention.tokens_{tokens}", build)
 
     def _mlp_package(self, block_index: int):
+        return self._mlp_package_for_tokens(block_index, int(self.manifest["tokens"]))
+
+    def _mlp_package_for_tokens(self, block_index: int, tokens: int):
         def build():
             block = self.manifest["blocks"][block_index]
             base = f"blocks.{block_index}"
             fc1, fc1_meta = self._linear(f"{base}.mlp.fc1")
             fc2, fc2_meta = self._linear(f"{base}.mlp.fc2")
             return build_deit_mlp_block_package(
-                int(self.manifest["tokens"]), int(self.manifest["hidden_dim"]),
+                tokens, int(self.manifest["hidden_dim"]),
                 int(self.manifest["mlp_dim"]), fc1, fc2,
                 gamma_q8=_q8(block["norm2_gamma"]), beta_q8=_q8(block["norm2_beta"]),
                 fc1_bias_int32=fc1_meta.get("bias_int32"),
@@ -175,14 +183,51 @@ class DeiTManifestRunner:
                 weight_int4=int(self.manifest["weight_bits"]) == 4,
                 name=f"deit_block_{block_index}_mlp",
             )
-        return self._cache_package(f"block_{block_index}.mlp", build)
+        return self._cache_package(f"block_{block_index}.mlp.tokens_{tokens}", build)
 
     def _final_norm_package(self):
-        return self._cache_package("final_layernorm", lambda: build_deit_layernorm_package(
-            int(self.manifest["tokens"]), int(self.manifest["hidden_dim"]),
+        return self._final_norm_package_for_tokens(int(self.manifest["tokens"]))
+
+    def _final_norm_package_for_tokens(self, tokens: int):
+        return self._cache_package(
+            f"final_layernorm.tokens_{tokens}", lambda: build_deit_layernorm_package(
+            tokens, int(self.manifest["hidden_dim"]),
             _q8(self.manifest["final_norm"]["gamma"]),
             _q8(self.manifest["final_norm"]["beta"]),
+            name=f"deit_final_norm_tokens_{tokens}",
         ))
+
+    @property
+    def heatvit_available(self) -> bool:
+        return bool(self.manifest.get("heatvit", {}).get("selectors"))
+
+    @property
+    def heatvit_enabled(self) -> bool:
+        return self._heatvit_enabled
+
+    def set_heatvit(self, enabled: bool) -> None:
+        """Select the graph used by subsequent full-image inferences.
+
+        Changing mode is a model-management operation and may rebuild resident
+        activation workspaces. It never inserts a host round trip inside an
+        inference.
+        """
+        self.load(heatvit=bool(enabled))
+
+    def _selector_package(self, selector_index: int, input_tokens: int):
+        selector = self.manifest["heatvit"]["selectors"][selector_index]
+        output_tokens = int(selector["output_tokens"])
+        scorer_name = selector["scorer"]
+        weights, metadata = self._linear(scorer_name)
+        return self._cache_package(
+            f"heatvit_selector_{selector_index}.{input_tokens}_{output_tokens}",
+            lambda: build_heatvit_selector_package(
+                input_tokens, output_tokens, int(self.manifest["hidden_dim"]), weights,
+                score_bias_int32=metadata.get("bias_int32"),
+                weight_int4=int(metadata.get("weight_bits", self.manifest["weight_bits"])) == 4,
+                package_token=bool(selector.get("package_token", True)),
+                name=f"heatvit_selector_{selector_index}",
+            ))
 
     def _head_package(self):
         def build():
@@ -246,23 +291,40 @@ class DeiTManifestRunner:
             return graph.package(inp, output)
         return self._cache_package("token_embedding", build)
 
-    def load(self, *, include_patch: bool = True):
+    def load(self, *, include_patch: bool = True, heatvit: bool | None = None):
         """Upload the full graph, constants, and workspaces to DDR once."""
         if not include_patch:
             return self._load_streaming_encoder()
-        if self._full_model is not None:
+        requested_heatvit = (bool(self.manifest.get("heatvit", {}).get("enabled_by_default", False))
+                             if heatvit is None else bool(heatvit))
+        if requested_heatvit and not self.heatvit_available:
+            raise ValueError("HeatViT requested, but no compatible token-pruner model is present")
+        if self._full_model is not None and self._heatvit_enabled == requested_heatvit:
             return self
+        if self._full_model is not None:
+            self._full_model.close()
+            self._full_model = None
+            self._full_package = None
         named_sequence = [
             ("patch_embedding", self._patch_package()),
             ("token_embedding", self._token_embedding_package()),
         ]
+        selectors = ({int(item["after_block"]): index
+                      for index, item in enumerate(self.manifest.get("heatvit", {}).get("selectors", []))}
+                     if requested_heatvit else {})
+        active_tokens = int(self.manifest["tokens"])
         for block_index in range(int(self.manifest["depth"])):
             named_sequence.extend((
-                (f"block_{block_index}.attention", self._attention_package(block_index)),
-                (f"block_{block_index}.mlp", self._mlp_package(block_index)),
+                (f"block_{block_index}.attention", self._attention_package_for_tokens(block_index, active_tokens)),
+                (f"block_{block_index}.mlp", self._mlp_package_for_tokens(block_index, active_tokens)),
             ))
+            if block_index in selectors:
+                selector_index = selectors[block_index]
+                selector_package = self._selector_package(selector_index, active_tokens)
+                named_sequence.append((f"heatvit_selector_{selector_index}", selector_package))
+                active_tokens = int(self.manifest["heatvit"]["selectors"][selector_index]["output_tokens"])
         named_sequence.extend((
-            ("final_layernorm", self._final_norm_package()),
+            ("final_layernorm", self._final_norm_package_for_tokens(active_tokens)),
             ("six_class_head", self._head_package()),
         ))
         sequence = [package for _, package in named_sequence]
@@ -275,6 +337,7 @@ class DeiTManifestRunner:
             stage for stage, package in named_sequence for _ in package.layers)
         self._full_package = compose_model_packages("deit_full_model", sequence)
         self._full_model = self.device.load_model(self._full_package)
+        self._heatvit_enabled = requested_heatvit
         return self
 
     def _load_streaming_encoder(self):
@@ -301,13 +364,26 @@ class DeiTManifestRunner:
             raw = path.read_bytes()
             if hashlib.sha256(raw).hexdigest() != tensor["sha256"]:
                 raise ValueError(f"Weight hash mismatch: {name}")
+        heatvit = manifest.get("heatvit")
+        if heatvit is not None:
+            previous_block, previous_tokens = -1, int(manifest["tokens"])
+            for selector in heatvit.get("selectors", []):
+                block = int(selector["after_block"])
+                output_tokens = int(selector["output_tokens"])
+                if block <= previous_block or block < 2 or block >= int(manifest["depth"]) - 1:
+                    raise ValueError("HeatViT selectors must be ordered after blocks 2..depth-2")
+                if output_tokens < 2 or output_tokens >= previous_tokens:
+                    raise ValueError("HeatViT selector token counts must decrease progressively")
+                if selector.get("scorer") not in manifest["tensors"]:
+                    raise ValueError("HeatViT selector scorer tensor is missing")
+                previous_block, previous_tokens = block, output_tokens
 
     def _linear(self, name: str) -> tuple[list[list[int]], dict]:
         tensor = self.manifest["tensors"][name]
         k, n = (int(value) for value in tensor["shape_k_n"])
         raw = (self.root / tensor["file"]).read_bytes()
         weights = unpack_transformer_weights(
-            raw, k, n, int4=int(self.manifest["weight_bits"]) == 4)
+            raw, k, n, int4=int(tensor.get("weight_bits", self.manifest["weight_bits"])) == 4)
         return weights, tensor
 
     def _execute(
@@ -375,9 +451,9 @@ class DeiTManifestRunner:
             perf_counter() - started, tuple(stage_times),
         )
 
-    def run_image(self, image, *, diagnostics: bool = False) -> DeiTInferenceResult:
+    def run_image(self, image, *, diagnostics: bool = False, heatvit: bool | None = None) -> DeiTInferenceResult:
         """Preprocess a PIL image/path, execute patch embedding, then all blocks."""
-        self.load()
+        self.load(heatvit=heatvit)
         started = perf_counter()
         try:
             import numpy as np
@@ -444,6 +520,8 @@ class DeiTManifestRunner:
 
         phase_keys = (
             "gemm_load_a_cycles", "gemm_load_b_cycles",
+            "gemm_load_b_weight_cycles", "gemm_load_b_bias_cycles",
+            "gemm_w4_cache_hit_tiles", "gemm_w4_cache_miss_tiles",
             "gemm_compute_cycles", "gemm_write_cycles",
         )
         role_groups = {}

@@ -102,7 +102,10 @@ module gemm_requantize_writer (
         end
     endfunction
 
-    assign busy = state != IDLE && state != FINISH && state != FAIL;
+    // FINISH still owns the writer for one cycle while it publishes done.
+    // Keeping busy asserted prevents a following GEMM tile from presenting a
+    // start pulse that the FINISH state cannot accept.
+    assign busy = state != IDLE && state != FAIL;
     assign write_req_valid = pipeline_enable && state == WRITE_TILE;
     assign write_req_addr = mode_r == 2'd1
         ? {row_byte_base_r[31:2], 2'b0} + (row_word_r << 2)

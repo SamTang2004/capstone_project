@@ -719,6 +719,110 @@ static int bcuda_execute_token_embedding_layer(const BcudaBuffer *model_buffer, 
     return BC_STATUS_OK;
 }
 
+static uint64_t bcuda_tiled_a_index(uint32_t row, uint32_t column, uint32_t columns) {
+    return ((uint64_t)(row / 8u) * columns + column) * 8u + (row & 7u);
+}
+
+static uint64_t bcuda_token_index(const BcudaBuffer *buffer, uint32_t row, uint32_t column, uint32_t columns) {
+    return buffer->layout == BC_LAYOUT_TRANSFORMER_ACTIVATION_TILED_INT8
+        ? bcuda_tiled_a_index(row, column, columns) : (uint64_t)row * columns + column;
+}
+
+static int8_t bcuda_token_prune_weight(const BcudaBuffer *weight, uint32_t feature) {
+    const uint8_t *raw = (const uint8_t *)weight->virtual_address;
+    if (weight->layout == BC_LAYOUT_TRANSFORMER_WEIGHT_TILED_INT4) {
+        uint8_t nibble = raw[(uint64_t)feature * 4u] & 0x0fu;
+        return nibble < 8u ? (int8_t)nibble : (int8_t)(nibble - 16u);
+    }
+    return ((const int8_t *)raw)[(uint64_t)feature * 8u];
+}
+
+static int bcuda_execute_token_prune_layer(BcudaGraphRuntime *runtime, const BcudaBuffer *model_buffer, const BcudaModelDesc *model, const BcudaLayerDesc *layer) {
+    BcudaBuffer *input = 0, *weight = 0, *bias = 0, *output = 0;
+    int status = bcuda_graph_table_buffer(model_buffer, model, layer->input0, &input);
+    if (status != BC_STATUS_OK) return status;
+    status = bcuda_graph_table_buffer(model_buffer, model, layer->weight, &weight);
+    if (status != BC_STATUS_OK) return status;
+    status = bcuda_graph_table_buffer(model_buffer, model, layer->output, &output);
+    if (status != BC_STATUS_OK) return status;
+    if (layer->bias != 0u) {
+        status = bcuda_graph_table_buffer(model_buffer, model, layer->bias, &bias);
+        if (status != BC_STATUS_OK) return status;
+    }
+    uint32_t input_tokens = layer->n, features = layer->c, output_tokens = layer->out_c;
+    uint32_t package = layer->flags & BCUDA_TOKEN_PRUNE_PACKAGE;
+    if (input->dtype != BC_DTYPE_INT8 || output->dtype != BC_DTYPE_INT8 || weight->dtype != BC_DTYPE_INT8 ||
+        (input->layout != BC_LAYOUT_ROW_MAJOR && input->layout != BC_LAYOUT_TRANSFORMER_ACTIVATION_TILED_INT8) ||
+        output->layout != input->layout ||
+        (weight->layout != BC_LAYOUT_TRANSFORMER_WEIGHT_TILED_INT8 &&
+         weight->layout != BC_LAYOUT_TRANSFORMER_WEIGHT_TILED_INT4)) return BC_STATUS_UNSUPPORTED_DTYPE;
+    if ((layer->flags & ~BCUDA_TOKEN_PRUNE_PACKAGE) != 0u || input_tokens < 2u || features == 0u ||
+        output_tokens < (package ? 2u : 1u) || output_tokens >= input_tokens) return BC_STATUS_SHAPE_MISMATCH;
+    uint64_t input_bytes = input->layout == BC_LAYOUT_TRANSFORMER_ACTIVATION_TILED_INT8
+        ? (uint64_t)((input_tokens + 7u) / 8u) * features * 8u : (uint64_t)input_tokens * features;
+    uint64_t output_bytes = output->layout == BC_LAYOUT_TRANSFORMER_ACTIVATION_TILED_INT8
+        ? (uint64_t)((output_tokens + 7u) / 8u) * features * 8u : (uint64_t)output_tokens * features;
+    uint64_t weight_bytes = weight->layout == BC_LAYOUT_TRANSFORMER_WEIGHT_TILED_INT4
+        ? (uint64_t)features * 4u : (uint64_t)features * 8u;
+    if (input_bytes > input->size_bytes || output_bytes > output->size_bytes || weight_bytes > weight->size_bytes ||
+        (bias != 0 && (bias->dtype != BC_DTYPE_INT32 || bias->size_bytes < sizeof(int32_t)))) return BC_STATUS_SHAPE_MISMATCH;
+
+    if (runtime != 0 && runtime->dma != 0 && runtime->dma->register_base != 0 &&
+        package && input_tokens <= 256u && features <= 192u && (features & 7u) == 0u &&
+        input->layout == BC_LAYOUT_ROW_MAJOR && output->layout == BC_LAYOUT_ROW_MAJOR) {
+        status = bcuda_axi_dma_submit_heatvit_token_prune(
+            runtime->dma, input, weight, output, input_tokens, output_tokens, features,
+            weight->layout == BC_LAYOUT_TRANSFORMER_WEIGHT_TILED_INT4);
+        return status == BC_STATUS_OK ? bcuda_axi_dma_poll_done(runtime->dma) : status;
+    }
+
+    /* Scores and selected bits live in bounded firmware scratch. DeiT-Tiny has
+     * 197 tokens; the larger limit leaves room for 384x384/16 models. */
+    if (input_tokens > 1024u) return BC_STATUS_SHAPE_MISMATCH;
+    int64_t scores[1024];
+    uint8_t selected[1024];
+    memset(selected, 0, input_tokens);
+    const int8_t *src = (const int8_t *)input->virtual_address;
+    int8_t *dst = (int8_t *)output->virtual_address;
+    int32_t score_bias = bias == 0 ? 0 : bcuda_read_i32((const uint8_t *)bias->virtual_address);
+    for (uint32_t row = 1u; row < input_tokens; row++) {
+        int64_t score = score_bias;
+        for (uint32_t feature = 0; feature < features; feature++)
+            score += (int32_t)src[bcuda_token_index(input, row, feature, features)] *
+                     (int32_t)bcuda_token_prune_weight(weight, feature);
+        scores[row] = score;
+    }
+    uint32_t selected_count = output_tokens - (package ? 2u : 1u);
+    for (uint32_t pick = 0; pick < selected_count; pick++) {
+        uint32_t best = 0u;
+        for (uint32_t row = 1u; row < input_tokens; row++)
+            if (!selected[row] && (best == 0u || scores[row] > scores[best])) best = row;
+        if (best == 0u) return BC_STATUS_EXECUTION_FAILED;
+        selected[best] = 1u;
+    }
+    memset(dst, 0, (size_t)output_bytes);
+    uint32_t output_row = 0u;
+    for (uint32_t row = 0u; row < input_tokens; row++) {
+        if (row != 0u && !selected[row]) continue;
+        for (uint32_t feature = 0; feature < features; feature++)
+            dst[bcuda_token_index(output, output_row, feature, features)] =
+                src[bcuda_token_index(input, row, feature, features)];
+        output_row++;
+    }
+    if (package) {
+        uint32_t removed_count = input_tokens - 1u - selected_count;
+        for (uint32_t feature = 0; feature < features; feature++) {
+            int32_t sum = 0;
+            for (uint32_t row = 1u; row < input_tokens; row++)
+                if (!selected[row]) sum += src[bcuda_token_index(input, row, feature, features)];
+            int32_t value = sum >= 0 ? (sum + (int32_t)removed_count / 2) / (int32_t)removed_count
+                                     : -((-sum + (int32_t)removed_count / 2) / (int32_t)removed_count);
+            dst[bcuda_token_index(output, output_tokens - 1u, feature, features)] = (int8_t)value;
+        }
+    }
+    return BC_STATUS_OK;
+}
+
 static uint32_t bcuda_integer_sqrt(uint64_t value) {
     uint64_t op = value, result = 0, one = 1ull << 62;
     for (uint32_t i = 0; i < 32; ++i) {
@@ -1297,6 +1401,9 @@ int bcuda_execute_graph(BcudaGraphRuntime *runtime, const BcudaGraphExecDesc *de
             case BC_OP_TOKEN_EMBEDDING:
                 status = bcuda_execute_token_embedding_layer(model, &model_desc, &layer);
                 break;
+            case BC_OP_TOKEN_PRUNE:
+                status = bcuda_execute_token_prune_layer(runtime, model, &model_desc, &layer);
+                break;
             default:
                 status = BC_STATUS_INVALID_COMMAND;
                 break;
@@ -1332,6 +1439,10 @@ int bcuda_execute_graph(BcudaGraphRuntime *runtime, const BcudaGraphExecDesc *de
                     record->hardware_max_op_cycles = after.max_op_cycles;
                     record->hardware_gemm_load_a_cycles = after.gemm_load_a_cycles - debug_before.gemm_load_a_cycles;
                     record->hardware_gemm_load_b_cycles = after.gemm_load_b_cycles - debug_before.gemm_load_b_cycles;
+                    record->hardware_gemm_load_b_weight_cycles = after.gemm_load_b_weight_cycles - debug_before.gemm_load_b_weight_cycles;
+                    record->hardware_gemm_load_b_bias_cycles = after.gemm_load_b_bias_cycles - debug_before.gemm_load_b_bias_cycles;
+                    record->hardware_gemm_w4_cache_hit_tiles = after.gemm_w4_cache_hit_tiles - debug_before.gemm_w4_cache_hit_tiles;
+                    record->hardware_gemm_w4_cache_miss_tiles = after.gemm_w4_cache_miss_tiles - debug_before.gemm_w4_cache_miss_tiles;
                     record->hardware_gemm_compute_cycles = after.gemm_compute_cycles - debug_before.gemm_compute_cycles;
                     record->hardware_gemm_write_cycles = after.gemm_write_cycles - debug_before.gemm_write_cycles;
                     record->hardware_completed_ops = after.completed_ops - debug_before.completed_ops;
