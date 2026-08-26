@@ -93,6 +93,10 @@ The complete architecture and performance history is consolidated in
 `results/FPGA_IMPLEMENTATION_TIMELINE.md`, from the CNN-to-DeiT migration
 through the timing-closed 440.27 ms host-to-host implementation.
 
+For board startup, matched bitstream/daemon deployment, smoke tests, production
+inference, benchmarking, and recovery, follow `FPGA/RUN_GUIDE.md` from the
+repository root.
+
 The current detailed GEMM phase analysis is in
 `results/FPGA_GEMM_PHASE_REPORT.md`. Future command output includes the same
 per-role and per-layer GEMM detail in `gemm_detail`.
