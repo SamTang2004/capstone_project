@@ -89,6 +89,10 @@ module and stage cycle consumption. Add
 the complete operation, stage, and per-layer report. Repeated runs report cycle
 totals separately rather than reporting only host elapsed time.
 
+The complete architecture and performance history is consolidated in
+`results/FPGA_IMPLEMENTATION_TIMELINE.md`, from the CNN-to-DeiT migration
+through the timing-closed 440.27 ms host-to-host implementation.
+
 The current detailed GEMM phase analysis is in
 `results/FPGA_GEMM_PHASE_REPORT.md`. Future command output includes the same
 per-role and per-layer GEMM detail in `gemm_detail`.
@@ -99,10 +103,6 @@ The W4A8 BRAM-cache implementation and physical before/after counters are in
 The fused GEMM+bias+requant writeback implementation and physical before/after
 counters are in `results/FPGA_OPERATOR_FUSION_REPORT.md`. It preserves logits
 while reducing the exact 100 MHz PL window from 2.729 to 2.176 seconds.
-
-The subsequent pipelined, tile-buffered GEMM writer is measured in
-`results/FPGA_WRITEBACK_PIPELINE_REPORT.md`. It cuts GEMM writeback by 43.55%
-and the full PL window from 2.176 to 2.050 seconds with unchanged logits.
 
 The subsequent pipelined, tile-buffered GEMM writer is measured in
 `results/FPGA_WRITEBACK_PIPELINE_REPORT.md`. It cuts GEMM writeback by 43.55%

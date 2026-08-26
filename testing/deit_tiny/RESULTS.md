@@ -153,6 +153,13 @@ The timing-qualified fused production build runs in 116,181,263 PL cycles
 (1.16181263 s at 100 MHz), a 43.32% reduction from the pipelined-writeback
 baseline, while preserving exact logits. The complete per-module breakdown is
 documented in [results/FPGA_FULL_OPERATOR_FUSION_REPORT.md](results/FPGA_FULL_OPERATOR_FUSION_REPORT.md).
+
+# FPGA implementation timeline
+
+The complete chronological engineering record, including architecture
+milestones, debugging incidents, timing closure, and the final sub-500 ms
+physical result, is documented in
+[results/FPGA_IMPLEMENTATION_TIMELINE.md](results/FPGA_IMPLEMENTATION_TIMELINE.md).
 # HeatViT token-pruner training
 
 - The accelerator-compatible W4A8 per-tensor baseline has 93.33% validation
