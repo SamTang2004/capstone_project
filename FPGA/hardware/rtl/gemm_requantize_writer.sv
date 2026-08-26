@@ -1,5 +1,5 @@
 module gemm_requantize_writer (
-    input logic clk, rst_n, pipeline_enable, start,
+    input logic clk, rst_n, pipeline_enable, start, gelu_enable,
     input logic [2047:0] accumulators, input logic [255:0] bias_values,
     input logic bias_enable, input logic [3:0] valid_rows, valid_cols,
     input logic [1:0] output_mode, input logic [31:0] output_row_stride,
@@ -12,7 +12,7 @@ module gemm_requantize_writer (
 );
     typedef enum logic [2:0] {IDLE, FILL, DRAIN, PREP_WRITE, WRITE_TILE, FINISH, FAIL} state_t;
     state_t state;
-    logic bias_enable_r;
+    logic bias_enable_r, gelu_enable_r;
     logic [1:0] mode_r;
     logic [3:0] rows_r, cols_r;
     logic [2:0] feed_row_r, feed_col_r;
@@ -47,6 +47,31 @@ module gemm_requantize_writer (
         if (value < -64'sd128) saturate_int8 = -8'sd128;
         else if (value > 64'sd127) saturate_int8 = 8'sd127;
         else saturate_int8 = value[7:0];
+    endfunction
+
+    function automatic logic signed [7:0] gelu_lane(input logic signed [7:0] x);
+        begin
+            if (x <= -24) gelu_lane = 0;
+            else if (x >= 24) gelu_lane = x;
+            else case (x)
+                -8'sd23,-8'sd1,8'sd0: gelu_lane=0;
+                -8'sd22,-8'sd21,-8'sd3,-8'sd2: gelu_lane=-8'sd1;
+                -8'sd20,-8'sd19,-8'sd18,-8'sd17,-8'sd7,-8'sd6,-8'sd5,-8'sd4: gelu_lane=-8'sd2;
+                -8'sd16,-8'sd15,-8'sd14,-8'sd13,-8'sd12,-8'sd11,-8'sd10,-8'sd9,-8'sd8: gelu_lane=-8'sd3;
+                8'sd1,8'sd2: gelu_lane=8'sd1;
+                8'sd3,8'sd4: gelu_lane=8'sd2;
+                8'sd5: gelu_lane=8'sd3; 8'sd6: gelu_lane=8'sd4;
+                8'sd7,8'sd8: gelu_lane=8'sd5;
+                8'sd9: gelu_lane=8'sd6; 8'sd10: gelu_lane=8'sd7;
+                8'sd11: gelu_lane=8'sd8; 8'sd12: gelu_lane=8'sd9;
+                8'sd13: gelu_lane=8'sd10; 8'sd14: gelu_lane=8'sd11;
+                8'sd15: gelu_lane=8'sd12; 8'sd16: gelu_lane=8'sd13;
+                8'sd17: gelu_lane=8'sd15; 8'sd18: gelu_lane=8'sd16;
+                8'sd19: gelu_lane=8'sd17; 8'sd20: gelu_lane=8'sd18;
+                8'sd21: gelu_lane=8'sd20; 8'sd22: gelu_lane=8'sd21;
+                default: gelu_lane=8'sd23;
+            endcase
+        end
     endfunction
 
     wire feeding = state == FILL;
@@ -124,7 +149,7 @@ module gemm_requantize_writer (
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin
-            state <= IDLE; done <= 0; capture_done <= 0; error <= 0; bias_enable_r <= 0; mode_r <= 0;
+            state <= IDLE; done <= 0; capture_done <= 0; error <= 0; bias_enable_r <= 0; gelu_enable_r <= 0; mode_r <= 0;
             rows_r <= 0; cols_r <= 0; feed_row_r <= 0; feed_col_r <= 0; base_r <= 0; row_stride_r <= 0;
             multiplier_r <= 0; zero_point_r <= 0; shift_r <= 0;
             v0 <= 0; v1 <= 0; v2 <= 0; v3 <= 0;
@@ -175,9 +200,11 @@ module gemm_requantize_writer (
                     if (v2) scaled_r <= (product_r >>> shift_r) + zero_point_r;
                     if (vb2) scaled_b_r <= (product_b_r >>> shift_r) + zero_point_r;
                     if (v3) begin
-                        output_bytes[row3*8 + col3] <= saturate_int8(scaled_r);
+                        output_bytes[row3*8 + col3] <= gelu_enable_r ?
+                            gelu_lane(saturate_int8(scaled_r)) : saturate_int8(scaled_r);
                         if (vb3)
-                            output_bytes[rowb3*8 + colb3] <= saturate_int8(scaled_b_r);
+                            output_bytes[rowb3*8 + colb3] <= gelu_enable_r ?
+                                gelu_lane(saturate_int8(scaled_b_r)) : saturate_int8(scaled_b_r);
                         if (last3) begin
                             capture_done <= 1'b1;
                             state <= PREP_WRITE;
@@ -192,7 +219,8 @@ module gemm_requantize_writer (
                             multiplier[31] || output_base_addr[1:0] != 0) begin
                             error <= 1; state <= FAIL;
                         end else begin
-                            bias_enable_r <= bias_enable; rows_r <= valid_rows; cols_r <= valid_cols;
+                            bias_enable_r <= bias_enable; gelu_enable_r <= gelu_enable;
+                            rows_r <= valid_rows; cols_r <= valid_cols;
                             mode_r <= output_mode; base_r <= output_base_addr; row_stride_r <= output_row_stride;
                             multiplier_r <= multiplier;
                             shift_r <= right_shift; zero_point_r <= output_zero_point;

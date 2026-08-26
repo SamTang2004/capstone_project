@@ -79,8 +79,8 @@ def build_deit_mlp_block_package(
     b1 = (0 if fc1_bias_int32 is None else
           graph.add_buffer("fc1.bias", (mlp_dim,), DType.INT32, BufferUsage.WEIGHT, fc1_bias_int32))
     q1_params = graph.requantize_params("fc1.requant", *fc1_requant)
-    q1 = (graph.add_transformer_activation("fc1.q", tokens, mlp_dim) if accelerator_layout
-          else graph.add_buffer("fc1.q", (tokens, mlp_dim), DType.INT8))
+    q1 = (None if accelerator_layout else
+          graph.add_buffer("fc1.q", (tokens, mlp_dim), DType.INT8))
     gelu = (graph.add_transformer_activation("gelu", tokens, mlp_dim) if accelerator_layout
             else graph.add_buffer("gelu", (tokens, mlp_dim), DType.INT8))
     w2 = (graph.add_transformer_weight("fc2.weight", mlp_dim, hidden_dim,
@@ -95,14 +95,15 @@ def build_deit_mlp_block_package(
     graph.layer_norm(inp, gamma, beta, norm, rows=tokens, features=hidden_dim)
     if accelerator_layout:
         graph.transformer_gemm_requant(
-            norm, w1, q1, q1_params, m=tokens, n=mlp_dim, k=hidden_dim,
-            bias_idx=b1,
+            norm, w1, gelu, q1_params, m=tokens, n=mlp_dim, k=hidden_dim,
+            bias_idx=b1, fused_gelu=True,
         )
     else:
         acc1 = graph.add_buffer("fc1.acc", (tokens, mlp_dim), DType.INT32)
         graph.gemm(norm, w1, acc1, m=tokens, n=mlp_dim, k=hidden_dim, bias_idx=b1)
         graph.requantize(acc1, q1, q1_params)
-    graph.gelu(q1, gelu)
+    if not accelerator_layout:
+        graph.gelu(q1, gelu)
     if accelerator_layout:
         graph.transformer_gemm_requant(
             gelu, w2, q2, q2_params, m=tokens, n=hidden_dim, k=mlp_dim, bias_idx=b2)

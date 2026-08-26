@@ -5,7 +5,8 @@ module transformer_gemm_scheduler #(
     parameter int K_WIDTH = $clog2(MAX_K + 1)
 ) (
     input  logic clk, rst_n, pipeline_enable,
-    input  logic start, weight_int4, fused_requant, input logic [1:0] fused_output_mode,
+    input  logic start, weight_int4, fused_requant, fused_gelu,
+    input logic [1:0] fused_output_mode,
     input  logic [31:0] a_base, b_base, c_base, c_stride,
     input  logic [31:0] bias_base,
     input  logic signed [31:0] rq_multiplier,
@@ -81,7 +82,7 @@ module transformer_gemm_scheduler #(
     logic weight_int4_r;
     logic [31:0] a_base_r, b_base_r, c_base_r, c_stride_r;
     logic [31:0] bias_base_r;
-    logic fused_requant_r; logic [1:0] fused_output_mode_r;
+    logic fused_requant_r, fused_gelu_r; logic [1:0] fused_output_mode_r;
     logic signed [31:0] rq_multiplier_r, rq_output_zero_point_r;
     logic [5:0] rq_right_shift_r;
     logic [255:0] bias_values;
@@ -275,6 +276,7 @@ module transformer_gemm_scheduler #(
     assign fused_writer_start = state == FUSED_START && pipeline_enable;
     gemm_requantize_writer fused_writer (
         .clk, .rst_n, .pipeline_enable, .start(fused_writer_start),
+        .gelu_enable(fused_gelu_r),
         .accumulators(write_core_select ? accumulators1 : accumulators0),
         .bias_values, .bias_enable(bias_base_r != 0),
         .valid_rows(write_core_select ? valid_rows1 : valid_rows0), .valid_cols,
@@ -298,7 +300,8 @@ module transformer_gemm_scheduler #(
             valid_rows0 <= '0; valid_rows1 <= '0; valid_cols <= '0;
             write_row <= '0; write_col <= '0; load_a_bank <= 1'b0;
             write_core_select <= 1'b0; second_core_active <= 1'b0;
-            weight_int4_r <= 1'b0; fused_requant_r <= 1'b0; fused_output_mode_r <= 0;
+            weight_int4_r <= 1'b0; fused_requant_r <= 1'b0; fused_gelu_r <= 1'b0;
+            fused_output_mode_r <= 0;
             a_base_r <= '0; b_base_r <= '0; bias_base_r <= '0;
             c_base_r <= '0; c_stride_r <= '0; m_r <= '0; n_r <= '0; k_r <= '0;
             rq_multiplier_r <= '0; rq_right_shift_r <= '0;
@@ -368,6 +371,7 @@ module transformer_gemm_scheduler #(
                         error <= 1'b1; state <= FAIL;
                     end else begin
                         weight_int4_r <= weight_int4; fused_requant_r <= fused_requant;
+                        fused_gelu_r <= fused_gelu;
                         fused_output_mode_r <= fused_output_mode;
                         a_base_r <= a_base; b_base_r <= b_base; bias_base_r <= bias_base;
                         c_base_r <= c_base; c_stride_r <= c_stride;

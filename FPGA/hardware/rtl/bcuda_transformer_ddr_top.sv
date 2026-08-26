@@ -157,7 +157,8 @@ module bcuda_transformer_ddr_top #(
 
     transformer_gemm_scheduler scheduler (
         .clk(aclk), .rst_n(aresetn), .pipeline_enable, .start(start_pulse && !ctrl_word[1] && !(|ctrl_word[19:12]) && !ctrl_word[23]),
-        .weight_int4(ctrl_word[11]), .fused_requant(ctrl_word[20]), .fused_output_mode(ctrl_word[22:21]),
+        .weight_int4(ctrl_word[11]), .fused_requant(ctrl_word[20]),
+        .fused_gelu(ctrl_word[24]), .fused_output_mode(ctrl_word[22:21]),
         .a_base, .b_base, .c_base, .c_stride, .bias_base(b_stride),
         .rq_multiplier, .rq_right_shift, .rq_output_zero_point,
         .dim_m, .dim_n, .dim_k, .busy(scheduler_busy), .done(scheduler_done), .error(scheduler_error),
@@ -264,7 +265,9 @@ module bcuda_transformer_ddr_top #(
         .write_req_strb(e_write_req_strb),.write_req_last(e_write_req_last),.memory_busy,.memory_error(memory_error&&active_elementwise));
 
     transformer_rowwise_ddr rowwise(.clk(aclk),.rst_n(aresetn),.pipeline_enable,.start(start_pulse&&(ctrl_word[18]||ctrl_word[19])),.softmax_mode(ctrl_word[19]),.output_tiled(ctrl_word[18]||ctrl_word[21]),
-        .input_base_addr(a_base),.gamma_base_addr(b_base),.beta_base_addr(b_stride),.output_base_addr(c_base),.epsilon_term(rq_multiplier),.rows(dim_m),.columns(dim_n),
+        .residual_mode(ctrl_word[25]),.input_base_addr(a_base),.residual_base_addr(a_stride),
+        .lhs_right_shift(rq_right_shift[3:0]),.rhs_right_shift(rq_output_zero_point[3:0]),
+        .gamma_base_addr(b_base),.beta_base_addr(b_stride),.output_base_addr(c_base),.epsilon_term(rq_multiplier),.rows(dim_m),.columns(dim_n),
         .busy(rowwise_busy),.done(rowwise_done),.error(rowwise_error),.op_start(r_op_start),.op_done(r_op_done),.memory_stall(r_memory_stall),.input_stall(r_input_stall),.output_stall(r_output_stall),
         .read_req_valid(r_read_req_valid),.read_req_ready(r_read_req_ready),.read_req_addr(r_read_req_addr),.read_req_len(r_read_req_len),.read_req_wide(r_read_req_wide),.read_req_qword(r_read_req_qword),.read_req_allow_ahead(r_read_req_allow_ahead),
         .read_data_valid,.read_data_ready(r_read_data_ready),.read_data,.read_data_last,.write_req_valid(r_write_req_valid),.write_req_ready(r_write_req_ready),.write_req_addr(r_write_req_addr),.write_req_data(r_write_req_data),.write_req_strb(r_write_req_strb),.write_req_last(r_write_req_last),.memory_busy,.memory_error(memory_error&&active_rowwise));

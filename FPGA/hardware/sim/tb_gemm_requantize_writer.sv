@@ -1,4 +1,5 @@
 module tb_gemm_requantize_writer;
+    logic gelu_enable=0;
     logic clk=0,rst_n=0,pipeline_enable=1,start=0;
     logic [2047:0] accumulators='0;
     logic [255:0] bias_values='0;
@@ -70,6 +71,16 @@ module tb_gemm_requantize_writer;
         launch();
         for(int row=0;row<3;row++)for(int col=0;col<5;col++)
             expect_byte('h040+row*8+col,row*16+col);
+
+        // Optional GELU is applied after requantization and saturation without
+        // adding a standalone DDR pass.
+        gelu_enable=1;valid_rows=1;valid_cols=4;output_mode=1;
+        output_base_addr='h1c0;output_row_stride=4;multiplier=1;right_shift=0;
+        accumulators[0+:32]=-24;accumulators[32+:32]=-8;
+        accumulators[64+:32]=8;accumulators[96+:32]=24;
+        launch();
+        expect_byte('h1c0,0);expect_byte('h1c1,-3);
+        expect_byte('h1c2,5);expect_byte('h1c3,24);
         if(error||errors)$fatal(1,"Fused GEMM requant writer failed errors=%0d",errors);
         $display("Fused GEMM tiled, row-major, and dynamic-B golden trace passed");$finish;
     end

@@ -97,6 +97,62 @@ class TransformerOpsTest(unittest.TestCase):
         model = upload_model(Device.mock(), graph.package(inp, out))
         self.assertEqual(values(model.run([-3, -1, 1, 3])), [-2, -1, 1, 2])
 
+    def test_compose_defers_adjacent_residual_into_layernorm(self):
+        residual_graph = GraphBuilder("residual")
+        inp = residual_graph.add_buffer("input", (1, 4), DType.INT8)
+        skip = residual_graph.add_buffer(
+            "skip", (1, 4), DType.INT8, BufferUsage.WEIGHT, [[5, 5, 5, 5]])
+        residual_out = residual_graph.add_buffer(
+            "output", (1, 4), DType.INT8, BufferUsage.OUTPUT)
+        residual_graph.residual_add(inp, skip, residual_out)
+
+        norm_graph = GraphBuilder("norm")
+        norm_in = norm_graph.add_buffer("input", (1, 4), DType.INT8)
+        gamma = norm_graph.add_buffer(
+            "gamma", (4,), DType.INT16, BufferUsage.WEIGHT, [256] * 4)
+        beta = norm_graph.add_buffer(
+            "beta", (4,), DType.INT16, BufferUsage.WEIGHT, [0] * 4)
+        norm_out = norm_graph.add_buffer(
+            "output", (1, 4), DType.INT8, BufferUsage.OUTPUT)
+        norm_graph.layer_norm(norm_in, gamma, beta, norm_out, rows=1, features=4)
+
+        package = compose_model_packages("fused", [
+            residual_graph.package(inp, residual_out),
+            norm_graph.package(norm_in, norm_out),
+        ])
+        self.assertTrue(package.layers[0].flags & (1 << 31))
+        self.assertEqual(package.layers[1].out_h, 1)
+        model = upload_model(Device.mock(), package)
+        self.assertEqual(values(model.run([-3, -1, 1, 3])), [-2, -1, 1, 2])
+
+    def test_compose_materializes_residual_used_by_later_skip(self):
+        residual_graph = GraphBuilder("residual")
+        inp = residual_graph.add_buffer("input", (1, 4), DType.INT8)
+        skip = residual_graph.add_buffer(
+            "skip", (1, 4), DType.INT8, BufferUsage.WEIGHT, [[5, 5, 5, 5]])
+        residual_out = residual_graph.add_buffer(
+            "output", (1, 4), DType.INT8, BufferUsage.OUTPUT)
+        residual_graph.residual_add(inp, skip, residual_out)
+
+        block = GraphBuilder("prenorm_block")
+        block_in = block.add_buffer("input", (1, 4), DType.INT8)
+        gamma = block.add_buffer(
+            "gamma", (4,), DType.INT16, BufferUsage.WEIGHT, [256] * 4)
+        beta = block.add_buffer(
+            "beta", (4,), DType.INT16, BufferUsage.WEIGHT, [0] * 4)
+        norm_out = block.add_buffer("norm", (1, 4), DType.INT8)
+        block_out = block.add_buffer(
+            "output", (1, 4), DType.INT8, BufferUsage.OUTPUT)
+        block.layer_norm(block_in, gamma, beta, norm_out, rows=1, features=4)
+        block.residual_add(block_in, norm_out, block_out)
+
+        package = compose_model_packages("live_skip", [
+            residual_graph.package(inp, residual_out),
+            block.package(block_in, block_out),
+        ])
+        self.assertFalse(package.layers[0].flags & (1 << 31))
+        self.assertEqual(package.layers[1].out_h, 0)
+
     def test_gelu_matches_piecewise_hardware_approximation(self):
         graph = GraphBuilder("gelu")
         inp = graph.add_buffer("input", (7,), DType.INT8)
@@ -194,11 +250,11 @@ class TransformerOpsTest(unittest.TestCase):
                              Layout.TRANSFORMER_ACTIVATION_TILED_INT8)
             self.assertEqual(package.buffers[package.name_to_index["deit_mlp.fc1.weight"]].layout,
                              expected_weight_layout)
-            self.assertEqual(package.buffers[package.name_to_index["deit_mlp.fc1.q"]].size_bytes, 64)
+            self.assertNotIn("deit_mlp.fc1.q", package.name_to_index)
             self.assertEqual([layer.op_type for layer in package.layers], [
-                OpType.LAYERNORM, OpType.GEMM, OpType.GELU,
-                OpType.GEMM, OpType.RESIDUAL_ADD,
+                OpType.LAYERNORM, OpType.GEMM, OpType.GEMM, OpType.RESIDUAL_ADD,
             ])
+            self.assertEqual(package.layers[1].flags & 2, 2)
             model = upload_model(Device.mock(), package)
             sample = [-3, -1, 1, 3] * 3
             self.assertEqual(values(model.run(sample)), sample)
@@ -229,6 +285,19 @@ class TransformerOpsTest(unittest.TestCase):
         model = upload_model(Device.mock(), graph.package(inp, acc))
         packed = pack_transformer_activations_int8([[1, 2]], 1, 2)
         self.assertEqual(values(model.run(packed)), [3, -4])
+
+    def test_fused_transformer_gemm_can_apply_gelu_before_writeback(self):
+        graph = GraphBuilder("fused_gelu")
+        inp = graph.add_transformer_activation("input", 1, 2)
+        weight = graph.add_transformer_weight("weight", 2, 2, [[1, 0], [0, 1]])
+        scale = graph.requantize_params("requant", 1, 0, 0, 0)
+        output = graph.add_transformer_activation(
+            "output", 1, 2, usage=BufferUsage.OUTPUT)
+        graph.transformer_gemm_requant(
+            inp, weight, output, scale, m=1, n=2, k=2, fused_gelu=True)
+        model = upload_model(Device.mock(), graph.package(inp, output))
+        result = values(model.run(pack_transformer_activations_int8([[-8, 8]], 1, 2)))
+        self.assertEqual([result[0], result[8]], [253, 5])
 
     def test_dynamic_transpose_pack_enables_qk_transpose_gemm(self):
         graph = GraphBuilder("attention")

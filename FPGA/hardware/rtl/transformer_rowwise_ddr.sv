@@ -2,7 +2,10 @@ module transformer_rowwise_ddr #(
     parameter int MAX_COLUMNS = 1024
 ) (
     input  logic clk, rst_n, pipeline_enable, start, softmax_mode, output_tiled,
-    input  logic [31:0] input_base_addr, gamma_base_addr, beta_base_addr,
+    input  logic residual_mode,
+    input  logic [31:0] input_base_addr, residual_base_addr,
+    input  logic [3:0] lhs_right_shift, rhs_right_shift,
+    input  logic [31:0] gamma_base_addr, beta_base_addr,
     input  logic [31:0] output_base_addr, epsilon_term,
     input  logic [15:0] rows, columns,
     output logic busy, done, error, op_start, op_done,
@@ -20,14 +23,17 @@ module transformer_rowwise_ddr #(
     typedef enum logic [4:0] {
         IDLE, PARAM_G_PREP, PARAM_G_REQ, PARAM_G_RECV,
         PARAM_B_PREP, PARAM_B_REQ, PARAM_B_RECV,
-        ROW_START, IN_PREP, IN_REQ, IN_RECV, OUTPUT, FLUSH_READ, FLUSH_WRITE,
+        ROW_START, IN_PREP, IN_REQ, IN_RECV,
+        IN1_PREP, IN1_REQ, IN1_RECV, IN1_FEED_PREP, IN1_FEED_SUM, IN1_FEED,
+        OUTPUT, FLUSH_READ, FLUSH_WRITE,
         WRITE_ARM, WRITE_WAIT, FINISH, FAIL
     } state_t;
     state_t state;
 
-    logic mode_r, tiled_r;
-    logic [15:0] rows_r, cols_r, row_idx, col_idx;
-    logic [31:0] eps_r, input_addr_r, byte_output_addr;
+    logic mode_r, tiled_r, residual_r;
+    logic [15:0] rows_r, cols_r, row_idx, col_idx, param_feed_idx;
+    logic [31:0] eps_r, input_addr_r, residual_addr_r, byte_output_addr;
+    logic [3:0] lhs_shift_r, rhs_shift_r;
     (* extract_enable = "no" *) logic [31:0] output_row_base_r;
     (* extract_enable = "no" *) logic [31:0] next_output_row_base_r;
     logic [31:0] tiled_row_wrap_increment_r;
@@ -41,12 +47,14 @@ module transformer_rowwise_ddr #(
     (* ram_style = "block" *) logic signed [15:0] beta_mem [0:MAX_COLUMNS-1];
     logic signed [15:0] gamma_r, beta_r;
     logic [9:0] param_read_addr;
-    logic gamma_write_en, beta_write_en;
+    logic gamma_write_en, beta_write_en, residual_lhs_write_en, residual_rhs_write_en;
 
     logic engine_start, engine_input_valid, engine_input_ready;
     logic engine_param_valid, engine_param_ready;
     logic engine_output_valid, engine_output_last, engine_busy, engine_done, engine_error;
     logic signed [7:0] engine_output_data;
+    logic signed [7:0] engine_input_data;
+    logic signed [7:0] residual_lhs_r, residual_rhs_r, residual_sum_r;
     logic [7:0] output_byte;
     logic engine_output_ready;
 
@@ -55,6 +63,8 @@ module transformer_rowwise_ddr #(
     // tile and transpose it in BRAM so the memory driver receives full-word,
     // contiguous bursts instead of one masked transaction per output byte.
     (* ram_style = "block" *) logic [63:0] output_tile_mem [0:MAX_COLUMNS-1];
+    (* ram_style = "block" *) logic signed [7:0] residual_lhs_mem [0:MAX_COLUMNS-1];
+    (* ram_style = "block" *) logic signed [7:0] residual_rhs_mem [0:MAX_COLUMNS-1];
     logic [63:0] flush_qword_r;
     logic [15:0] flush_col_r;
     logic flush_half_r, flush_last_tile_r;
@@ -75,7 +85,7 @@ module transformer_rowwise_ddr #(
     rowwise_norm_softmax_engine #(.MAX_LENGTH(MAX_COLUMNS)) engine (
         .clk, .rst_n, .start(engine_start), .softmax_mode(mode_r),
         .vector_length(cols_r), .epsilon_term(eps_r),
-        .input_valid(engine_input_valid), .input_ready(engine_input_ready), .input_data(read_data),
+        .input_valid(engine_input_valid), .input_ready(engine_input_ready), .input_data(engine_input_data),
         .param_valid(engine_param_valid), .param_ready(engine_param_ready),
         .gamma_q8(gamma_r), .beta_q8(beta_r),
         .output_valid(engine_output_valid), .output_ready(engine_output_ready),
@@ -84,22 +94,37 @@ module transformer_rowwise_ddr #(
     );
 
     assign engine_start = state == ROW_START;
-    assign engine_input_valid = state == IN_RECV && read_data_valid;
+    function automatic logic signed [7:0] residual_sum(
+        input logic signed [7:0] lhs, input logic signed [7:0] rhs
+    );
+        logic signed [9:0] value;
+        begin
+            value = (lhs >>> lhs_shift_r) + (rhs >>> rhs_shift_r);
+            if (value > 127) residual_sum = 8'sd127;
+            else if (value < -128) residual_sum = -8'sd128;
+            else residual_sum = value[7:0];
+        end
+    endfunction
+
+    assign engine_input_valid = (state == IN_RECV && !residual_r && read_data_valid) ||
+        state == IN1_FEED;
+    assign engine_input_data = residual_r ? residual_sum_r : $signed(read_data);
     assign engine_param_valid = state == OUTPUT && !mode_r;
     assign busy = state != IDLE && state != FINISH && state != FAIL;
     assign op_start = state == IDLE && start;
     assign op_done = state == FINISH;
 
     assign read_req_valid = pipeline_enable &&
-        (state == PARAM_G_REQ || state == PARAM_B_REQ || state == IN_REQ);
-    assign read_req_addr = read_addr_r;
+        (state == PARAM_G_REQ || state == PARAM_B_REQ || state == IN_REQ || state == IN1_REQ);
+    assign read_req_addr = state == IN1_REQ ? residual_addr_r : read_addr_r;
     assign read_req_len = read_len_r;
     assign read_req_wide = 1'b0;
     assign read_req_qword = 1'b0;
     assign read_req_allow_ahead = 1'b0;
     assign read_data_ready = pipeline_enable &&
         ((state == PARAM_G_RECV || state == PARAM_B_RECV) ||
-         (state == IN_RECV && engine_input_ready));
+         (state == IN_RECV && (residual_r || engine_input_ready)) ||
+         state == IN1_RECV);
 
     assign output_byte = engine_output_data;
     assign engine_output_ready = pipeline_enable && state == OUTPUT &&
@@ -130,11 +155,16 @@ module transformer_rowwise_ddr #(
         read_data_valid && read_data_ready && param_byte_index[0];
     assign beta_write_en = pipeline_enable && state == PARAM_B_RECV &&
         read_data_valid && read_data_ready && param_byte_index[0];
+    assign residual_lhs_write_en = pipeline_enable && state == IN_RECV && residual_r &&
+        read_data_valid && read_data_ready;
+    assign residual_rhs_write_en = pipeline_enable && state == IN1_RECV &&
+        read_data_valid && read_data_ready;
     // The BRAM read is synchronous.  On an accepted output, prefetch the next
     // column at the same edge that col_idx advances; otherwise LN_CENTER would
     // see the previous column's gamma/beta for every element after column 0.
-    assign param_read_addr = state == OUTPUT && engine_output_valid && engine_output_ready &&
-        !engine_output_last ? col_idx[9:0] + 1'b1 : col_idx[9:0];
+    assign param_read_addr = state == OUTPUT && engine_param_valid && engine_param_ready &&
+        param_feed_idx + 1'b1 < cols_r ? param_feed_idx[9:0] + 1'b1 :
+        param_feed_idx[9:0];
 
     // Canonical synchronous simple-dual-port pattern keeps both parameter
     // vectors in BRAM instead of expanding them into thousands of registers.
@@ -149,12 +179,40 @@ module transformer_rowwise_ddr #(
         beta_r <= beta_mem[param_read_addr];
     end
 
+    // Receive both residual operands without interrupting a DDR burst, then
+    // feed them from registered BRAM outputs.  This removes the BRAM -> add ->
+    // square path while retaining one accepted LayerNorm element per cycle.
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            residual_lhs_r <= '0;
+            residual_rhs_r <= '0;
+        end else begin
+            if (residual_lhs_write_en)
+                residual_lhs_mem[col_idx] <= read_data;
+            if (residual_rhs_write_en)
+                residual_rhs_mem[col_idx] <= read_data;
+            if (state == IN1_FEED_PREP) begin
+                residual_lhs_r <= residual_lhs_mem[0];
+                residual_rhs_r <= residual_rhs_mem[0];
+            end else if (state == IN1_FEED_SUM && cols_r > 1) begin
+                residual_lhs_r <= residual_lhs_mem[1];
+                residual_rhs_r <= residual_rhs_mem[1];
+            end else if (state == IN1_FEED && engine_input_ready &&
+                         col_idx + 2 < cols_r) begin
+                residual_lhs_r <= residual_lhs_mem[col_idx + 2];
+                residual_rhs_r <= residual_rhs_mem[col_idx + 2];
+            end
+        end
+    end
+
     always_ff @(posedge clk) begin
         if (!rst_n) begin
             state <= IDLE; done <= 1'b0; error <= 1'b0;
-            mode_r <= 1'b0; tiled_r <= 1'b0; rows_r <= '0; cols_r <= '0;
+            mode_r <= 1'b0; tiled_r <= 1'b0; residual_r <= 1'b0;
+            lhs_shift_r <= '0; rhs_shift_r <= '0; rows_r <= '0; cols_r <= '0;
+            param_feed_idx <= '0;
             row_idx <= '0; col_idx <= '0; eps_r <= '0;
-            input_addr_r <= '0; output_row_base_r <= '0;
+            input_addr_r <= '0; residual_addr_r <= '0; output_row_base_r <= '0;
             next_output_row_base_r <= '0; tiled_row_wrap_increment_r <= '0;
             byte_output_addr <= '0;
             gamma_base_r <= '0; beta_base_r <= '0;
@@ -162,6 +220,7 @@ module transformer_rowwise_ddr #(
             response_bytes_left <= '0; read_addr_r <= '0; read_len_r <= '0;
             flush_qword_r <= '0; flush_col_r <= '0; flush_half_r <= 1'b0;
             flush_last_tile_r <= 1'b0; flush_rows_r <= '0; flush_base_r <= '0;
+            residual_sum_r <= '0;
         end else begin
             done <= 1'b0;
             if (memory_error || engine_error) begin
@@ -171,13 +230,17 @@ module transformer_rowwise_ddr #(
                 IDLE: if (start) begin
                     error <= 1'b0;
                     if (rows == 0 || columns == 0 || columns > MAX_COLUMNS ||
-                        (softmax_mode && columns > 256)) begin
+                        (softmax_mode && columns > 256) ||
+                        (softmax_mode && residual_mode)) begin
                         error <= 1'b1;
                         state <= FAIL;
                     end else begin
                         mode_r <= softmax_mode; tiled_r <= output_tiled;
+                        residual_r <= residual_mode;
+                        lhs_shift_r <= lhs_right_shift; rhs_shift_r <= rhs_right_shift;
                         rows_r <= rows; cols_r <= columns; eps_r <= epsilon_term;
                         row_idx <= 0; col_idx <= 0; input_addr_r <= input_base_addr;
+                        residual_addr_r <= residual_base_addr;
                         output_row_base_r <= output_base_addr;
                         tiled_row_wrap_increment_r <= (columns << 3) - 7;
                         gamma_base_r <= gamma_base_addr; beta_base_r <= beta_base_addr;
@@ -240,6 +303,7 @@ module transformer_rowwise_ddr #(
 
                 ROW_START: begin
                     col_idx <= 0;
+                    param_feed_idx <= 0;
                     byte_output_addr <= output_row_base_r;
                     // Compute the following row's base outside the accepted
                     // output beat.  Keeping the tiled shift/subtract off that
@@ -269,7 +333,7 @@ module transformer_rowwise_ddr #(
                         input_addr_r <= input_addr_r + 1'b1;
                         if (col_idx + 1'b1 == cols_r) begin
                             col_idx <= 0;
-                            state <= OUTPUT;
+                            state <= residual_r ? IN1_PREP : OUTPUT;
                         end else begin
                             col_idx <= col_idx + 1'b1;
                             if (read_data_last) state <= IN_PREP;
@@ -277,7 +341,48 @@ module transformer_rowwise_ddr #(
                     end
                 end
 
-                OUTPUT: if (engine_output_valid && engine_output_ready) begin
+                IN1_PREP: begin
+                    read_len_r <= request_size(cols_r - col_idx, residual_addr_r);
+                    state <= IN1_REQ;
+                end
+                IN1_REQ: if (read_req_valid && read_req_ready) begin
+                    response_bytes_left <= read_len_r;
+                    state <= IN1_RECV;
+                end
+                IN1_RECV: if (read_data_valid && read_data_ready) begin
+                    if (read_data_last != (response_bytes_left == 1)) begin
+                        error <= 1'b1; state <= FAIL;
+                    end else begin
+                        response_bytes_left <= response_bytes_left - 1'b1;
+                        residual_addr_r <= residual_addr_r + 1'b1;
+                        if (col_idx + 1'b1 == cols_r) begin
+                            col_idx <= 0;
+                            state <= IN1_FEED_PREP;
+                        end else begin
+                            col_idx <= col_idx + 1'b1;
+                            if (read_data_last) state <= IN1_PREP;
+                        end
+                    end
+                end
+                IN1_FEED_PREP: state <= IN1_FEED_SUM;
+                IN1_FEED_SUM: begin
+                    residual_sum_r <= residual_sum(residual_lhs_r, residual_rhs_r);
+                    state <= IN1_FEED;
+                end
+                IN1_FEED: if (engine_input_ready) begin
+                    if (col_idx + 1'b1 == cols_r) begin
+                        col_idx <= 0; state <= OUTPUT;
+                    end else begin
+                        residual_sum_r <= residual_sum(residual_lhs_r, residual_rhs_r);
+                        col_idx <= col_idx + 1'b1;
+                    end
+                end
+
+                OUTPUT: begin
+                    if (engine_param_valid && engine_param_ready &&
+                        param_feed_idx + 1'b1 < cols_r)
+                        param_feed_idx <= param_feed_idx + 1'b1;
+                    if (engine_output_valid && engine_output_ready) begin
                     if (tiled_r) begin
                         case (row_idx[2:0])
                             3'd0: output_tile_mem[col_idx][7:0] <= engine_output_data;
@@ -306,6 +411,7 @@ module transformer_rowwise_ddr #(
                     end else begin
                         col_idx <= col_idx + 1'b1;
                         byte_output_addr <= byte_output_addr + (tiled_r ? 8 : 1);
+                    end
                     end
                 end
                 FLUSH_READ: begin

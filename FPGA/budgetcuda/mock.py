@@ -253,6 +253,12 @@ class MockBackend:
                         )
                     value = ((value - input_zero_point) * multiplier) >> right_shift
                     value = max(-128, min(127, value + output_zero_point))
+                    if layer[22] & 2:
+                        if value <= -24:
+                            value = 0
+                        elif value < 24:
+                            product = value * (value + 24)
+                            value = int((product + 24 if product >= 0 else product - 24) / 48)
                     if output_entry[2] == Layout.ROW_MAJOR:
                         dst_index = row * out_c + column
                     elif output_entry[2] == Layout.TRANSFORMER_DYNAMIC_B_TILED_INT8 and not (layer[22] & 1):
@@ -416,6 +422,8 @@ class MockBackend:
 
     def _execute_graph_residual(self, table, layer) -> None:
         _, lhs, rhs, _, output, *_, flags, _ = layer
+        if flags & (1 << 31):
+            return
         a, b, dst = self._get_buffer(table[lhs][0]), self._get_buffer(table[rhs][0]), self._get_buffer(table[output][0])
         if len(a) != len(b) or len(a) != len(dst):
             raise ValueError("Residual add requires equal INT8 buffer sizes")
@@ -450,6 +458,13 @@ class MockBackend:
             dst[:] = b"\0" * len(dst)
         for row in range(rows):
             values = [self._signed8(src[row * features + i]) for i in range(features)]
+            if layer[13] == 1:
+                residual = self._get_buffer(table[layer[2]][0])
+                values = [
+                    (value >> layer[10]) +
+                    (self._signed8(residual[row * features + i]) >> layer[11])
+                    for i, value in enumerate(values)
+                ]
             total, squares = sum(values), sum(x * x for x in values)
             denominator = max(1, __import__("math").isqrt(features * squares - total * total + epsilon))
             for i, x in enumerate(values):

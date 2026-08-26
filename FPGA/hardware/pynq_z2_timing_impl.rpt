@@ -1,13 +1,13 @@
 Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2024 Advanced Micro Devices, Inc. All Rights Reserved.
 ---------------------------------------------------------------------------------------------------------------------------------------------
 | Tool Version : Vivado v.2024.2 (win64) Build 5239630 Fri Nov 08 22:35:27 MST 2024
-| Date         : Tue Aug 25 17:49:30 2026
+| Date         : Tue Aug 25 23:05:04 2026
 | Host         : Server_0 running 64-bit major release  (build 9200)
 | Command      : report_timing_summary -file C:/python_projects/capstone_project/FPGA/hardware/pynq_z2_timing_impl.rpt
 | Design       : bcuda_ps_pl_wrapper
 | Device       : 7z020-clg400
 | Speed File   : -1  PRODUCTION 1.12 2019-11-22
-| Design State : Physopt postRoute
+| Design State : Routed
 ---------------------------------------------------------------------------------------------------------------------------------------------
 
 Timing Summary Report
@@ -41,7 +41,11 @@ Timing Summary Report
 | ------------------
 ------------------------------------------------------------------------------------------------
 
-No report available as report_methodology has not been run prior. Run report_methodology on the current design for the summary of methodology violations.
+Rule      Severity  Description                                Violations  
+--------  --------  -----------------------------------------  ----------  
+ULMTCS-2  Warning   Control Sets use limits require reduction  1           
+
+Note: This report is based on the most recent report_methodology run and may not be up-to-date. Run report_methodology on the current design for the latest report.
 
 
 
@@ -138,7 +142,7 @@ Table of Contents
 
     WNS(ns)      TNS(ns)  TNS Failing Endpoints  TNS Total Endpoints      WHS(ns)      THS(ns)  THS Failing Endpoints  THS Total Endpoints     WPWS(ns)     TPWS(ns)  TPWS Failing Endpoints  TPWS Total Endpoints  
     -------      -------  ---------------------  -------------------      -------      -------  ---------------------  -------------------     --------     --------  ----------------------  --------------------  
-      0.022        0.000                      0                55684        0.029        0.000                      0                55684        3.750        0.000                       0                 15508  
+      0.006        0.000                      0                92082        0.033        0.000                      0                92082        3.750        0.000                       0                 32837  
 
 
 All user specified timing constraints are met.
@@ -161,7 +165,7 @@ clk_fpga_0  {0.000 5.000}      10.000          100.000
 
 Clock             WNS(ns)      TNS(ns)  TNS Failing Endpoints  TNS Total Endpoints      WHS(ns)      THS(ns)  THS Failing Endpoints  THS Total Endpoints     WPWS(ns)     TPWS(ns)  TPWS Failing Endpoints  TPWS Total Endpoints  
 -----             -------      -------  ---------------------  -------------------      -------      -------  ---------------------  -------------------     --------     --------  ----------------------  --------------------  
-clk_fpga_0          0.022        0.000                      0                55684        0.029        0.000                      0                55684        3.750        0.000                       0                 15508  
+clk_fpga_0          0.006        0.000                      0                92082        0.033        0.000                      0                92082        3.750        0.000                       0                 32837  
 
 
 ------------------------------------------------------------------------------------------------
@@ -192,28 +196,28 @@ Path Group    From Clock    To Clock          WNS(ns)      TNS(ns)  TNS Failing 
 From Clock:  clk_fpga_0
   To Clock:  clk_fpga_0
 
-Setup :            0  Failing Endpoints,  Worst Slack        0.022ns,  Total Violation        0.000ns
-Hold  :            0  Failing Endpoints,  Worst Slack        0.029ns,  Total Violation        0.000ns
+Setup :            0  Failing Endpoints,  Worst Slack        0.006ns,  Total Violation        0.000ns
+Hold  :            0  Failing Endpoints,  Worst Slack        0.033ns,  Total Violation        0.000ns
 PW    :            0  Failing Endpoints,  Worst Slack        3.750ns,  Total Violation        0.000ns
 ---------------------------------------------------------------------------------------------------
 
 
 Max Delay Paths
 --------------------------------------------------------------------------------------
-Slack (MET) :             0.022ns  (required time - arrival time)
-  Source:                 bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/scheduler/write_core_select_reg_rep__14/C
+Slack (MET) :             0.006ns  (required time - arrival time)
+  Source:                 bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/residual_r_reg/C
                             (rising edge-triggered cell FDRE clocked by clk_fpga_0  {rise@0.000ns fall@5.000ns period=10.000ns})
-  Destination:            bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/scheduler/fused_writer/scaled_r[63]_i_16_psdsp_1/D
+  Destination:            bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares_reg[45]/D
                             (rising edge-triggered cell FDRE clocked by clk_fpga_0  {rise@0.000ns fall@5.000ns period=10.000ns})
   Path Group:             clk_fpga_0
   Path Type:              Setup (Max at Slow Process Corner)
   Requirement:            10.000ns  (clk_fpga_0 rise@10.000ns - clk_fpga_0 rise@0.000ns)
-  Data Path Delay:        9.146ns  (logic 2.782ns (30.419%)  route 6.364ns (69.582%))
-  Logic Levels:           12  (CARRY4=8 LUT3=1 LUT6=2 MUXF7=1)
-  Clock Path Skew:        -0.128ns (DCD - SCD + CPR)
-    Destination Clock Delay (DCD):    2.864ns = ( 12.864 - 10.000 ) 
-    Source Clock Delay      (SCD):    3.244ns
-    Clock Pessimism Removal (CPR):    0.252ns
+  Data Path Delay:        9.587ns  (logic 4.729ns (49.327%)  route 4.858ns (50.673%))
+  Logic Levels:           17  (CARRY4=12 LUT2=2 LUT3=2 LUT6=1)
+  Clock Path Skew:        0.016ns (DCD - SCD + CPR)
+    Destination Clock Delay (DCD):    2.895ns = ( 12.895 - 10.000 ) 
+    Source Clock Delay      (SCD):    3.008ns
+    Clock Pessimism Removal (CPR):    0.129ns
   Clock Uncertainty:      0.454ns  ((TSJ^2 + TIJ^2)^1/2 + DJ) / 2 + PE + UU
     Total System Jitter     (TSJ):    0.071ns
     Total Input Jitter      (TIJ):    0.300ns
@@ -227,66 +231,76 @@ Slack (MET) :             0.022ns  (required time - arrival time)
                                                       0.000     0.000 r  
     PS7_X0Y0             PS7                          0.000     0.000 r  bcuda_ps_pl_i/processing_system7_0/inst/PS7_i/FCLKCLK[0]
                          net (fo=1, routed)           1.193     1.193    bcuda_ps_pl_i/processing_system7_0/inst/FCLK_CLK_unbuffered[0]
-    BUFGCTRL_X0Y17       BUFG (Prop_bufg_I_O)         0.101     1.294 r  bcuda_ps_pl_i/processing_system7_0/inst/buffer_fclk_clk_0.FCLK_CLK_0_BUFG_replica/O
-                         net (fo=3, routed)           0.146     1.440    bcuda_ps_pl_i/processing_system7_0/inst/FCLK_CLK0_repN
-    BUFGCTRL_X0Y16       BUFG (Prop_bufg_I_O)         0.101     1.541 r  bcuda_ps_pl_i/processing_system7_0/inst/buffer_fclk_clk_0.FCLK_CLK_0_BUFG/O
-                         net (fo=15520, routed)       1.703     3.244    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/scheduler/aclk
-    SLICE_X67Y69         FDRE                                         r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/scheduler/write_core_select_reg_rep__14/C
+    BUFGCTRL_X0Y16       BUFG (Prop_bufg_I_O)         0.101     1.294 r  bcuda_ps_pl_i/processing_system7_0/inst/buffer_fclk_clk_0.FCLK_CLK_0_BUFG/O
+                         net (fo=32852, routed)       1.714     3.008    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/aclk
+    SLICE_X67Y92         FDRE                                         r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/residual_r_reg/C
   -------------------------------------------------------------------    -------------------
-    SLICE_X67Y69         FDRE (Prop_fdre_C_Q)         0.419     3.663 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/scheduler/write_core_select_reg_rep__14/Q
-                         net (fo=128, routed)         1.842     5.505    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/scheduler/core1/array/gen_rows[4].gen_cols[2].pe/product_r0__0_i_231
-    SLICE_X90Y72         LUT3 (Prop_lut3_I1_O)        0.299     5.804 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/scheduler/core1/array/gen_rows[4].gen_cols[2].pe/product_r0__0_i_654/O
-                         net (fo=1, routed)           1.841     7.644    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/scheduler/core1/array/gen_rows[4].gen_cols[3].pe/product_r0__0_i_110_0
-    SLICE_X67Y50         LUT6 (Prop_lut6_I1_O)        0.124     7.768 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/scheduler/core1/array/gen_rows[4].gen_cols[3].pe/product_r0__0_i_231/O
-                         net (fo=1, routed)           0.000     7.768    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/scheduler/core1/array/gen_rows[4].gen_cols[3].pe/product_r0__0_i_231_n_0
-    SLICE_X67Y50         MUXF7 (Prop_muxf7_I0_O)      0.212     7.980 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/scheduler/core1/array/gen_rows[4].gen_cols[3].pe/product_r0__0_i_110/O
-                         net (fo=1, routed)           1.117     9.097    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/scheduler/core1/array/gen_rows[6].gen_cols[3].pe/product_r0__0_35
-    SLICE_X54Y43         LUT6 (Prop_lut6_I1_O)        0.299     9.396 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/scheduler/core1/array/gen_rows[6].gen_cols[3].pe/product_r0__0_i_29/O
-                         net (fo=2, routed)           0.696    10.092    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/scheduler/core1/array/gen_rows[6].gen_cols[3].pe/feed_row_r_reg[2]_5[3]
-    SLICE_X50Y43         CARRY4 (Prop_carry4_DI[3]_CO[3])
-                                                      0.396    10.488 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/scheduler/core1/array/gen_rows[6].gen_cols[3].pe/product_r0__0_i_4/CO[3]
-                         net (fo=1, routed)           0.000    10.488    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/scheduler/core1/array/gen_rows[6].gen_cols[3].pe/product_r0__0_i_4_n_0
-    SLICE_X50Y44         CARRY4 (Prop_carry4_CI_CO[3])
-                                                      0.117    10.605 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/scheduler/core1/array/gen_rows[6].gen_cols[3].pe/product_r0__0_i_3/CO[3]
-                         net (fo=1, routed)           0.000    10.605    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/scheduler/core1/array/gen_rows[6].gen_cols[3].pe/product_r0__0_i_3_n_0
-    SLICE_X50Y45         CARRY4 (Prop_carry4_CI_CO[3])
-                                                      0.117    10.722 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/scheduler/core1/array/gen_rows[6].gen_cols[3].pe/product_r0__0_i_2/CO[3]
-                         net (fo=1, routed)           0.000    10.722    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/scheduler/core1/array/gen_rows[6].gen_cols[3].pe/product_r0__0_i_2_n_0
-    SLICE_X50Y46         CARRY4 (Prop_carry4_CI_CO[3])
-                                                      0.117    10.839 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/scheduler/core1/array/gen_rows[6].gen_cols[3].pe/product_r0__0_i_1/CO[3]
-                         net (fo=1, routed)           0.000    10.839    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/scheduler/core1/array/gen_rows[6].gen_cols[3].pe/product_r0__0_i_1_n_0
-    SLICE_X50Y47         CARRY4 (Prop_carry4_CI_CO[3])
-                                                      0.117    10.956 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/scheduler/core1/array/gen_rows[6].gen_cols[3].pe/product_r0_i_5/CO[3]
-                         net (fo=1, routed)           0.000    10.956    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/scheduler/core1/array/gen_rows[6].gen_cols[3].pe/product_r0_i_5_n_0
-    SLICE_X50Y48         CARRY4 (Prop_carry4_CI_CO[3])
-                                                      0.117    11.073 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/scheduler/core1/array/gen_rows[6].gen_cols[3].pe/product_r0_i_4/CO[3]
-                         net (fo=1, routed)           0.000    11.073    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/scheduler/core1/array/gen_rows[6].gen_cols[3].pe/product_r0_i_4_n_0
-    SLICE_X50Y49         CARRY4 (Prop_carry4_CI_CO[3])
-                                                      0.117    11.190 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/scheduler/core1/array/gen_rows[6].gen_cols[3].pe/product_r0_i_3/CO[3]
-                         net (fo=1, routed)           0.001    11.191    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/scheduler/core1/array/gen_rows[6].gen_cols[3].pe/product_r0_i_3_n_0
-    SLICE_X50Y50         CARRY4 (Prop_carry4_CI_O[3])
-                                                      0.331    11.522 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/scheduler/core1/array/gen_rows[6].gen_cols[3].pe/product_r0_i_2/O[3]
-                         net (fo=2, routed)           0.868    12.390    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/scheduler/fused_writer/sum_r0[31]
-    SLICE_X51Y64         FDRE                                         r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/scheduler/fused_writer/scaled_r[63]_i_16_psdsp_1/D
+    SLICE_X67Y92         FDRE (Prop_fdre_C_Q)         0.456     3.464 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/residual_r_reg/Q
+                         net (fo=92, routed)          0.798     4.262    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/maximum_reg[7]_2
+    SLICE_X66Y91         LUT3 (Prop_lut3_I1_O)        0.124     4.386 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/samples_reg_0_127_1_1_i_1/O
+                         net (fo=54, routed)          1.289     5.675    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/engine_input_data[1]
+    SLICE_X85Y91         LUT6 (Prop_lut6_I0_O)        0.124     5.799 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares[11]_i_39/O
+                         net (fo=2, routed)           0.529     6.329    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares[11]_i_39_n_0
+    SLICE_X84Y90         CARRY4 (Prop_carry4_DI[1]_O[3])
+                                                      0.596     6.925 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares_reg[11]_i_19/O[3]
+                         net (fo=3, routed)           0.565     7.489    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares_reg[11]_i_19_n_4
+    SLICE_X85Y92         LUT3 (Prop_lut3_I0_O)        0.306     7.795 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares[11]_i_10/O
+                         net (fo=1, routed)           0.338     8.133    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares[11]_i_10_n_0
+    SLICE_X87Y92         CARRY4 (Prop_carry4_DI[1]_CO[3])
+                                                      0.507     8.640 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares_reg[11]_i_7/CO[3]
+                         net (fo=1, routed)           0.000     8.640    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares_reg[11]_i_7_n_0
+    SLICE_X87Y93         CARRY4 (Prop_carry4_CI_O[1])
+                                                      0.334     8.974 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares_reg[15]_i_7/O[1]
+                         net (fo=1, routed)           0.784     9.758    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/input_square[13]
+    SLICE_X87Y104        LUT2 (Prop_lut2_I1_O)        0.303    10.061 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares[15]_i_5/O
+                         net (fo=1, routed)           0.000    10.061    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares[15]_i_5_n_0
+    SLICE_X87Y104        CARRY4 (Prop_carry4_S[1]_CO[3])
+                                                      0.550    10.611 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares_reg[15]_i_2/CO[3]
+                         net (fo=1, routed)           0.000    10.611    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares_reg[15]_i_2_n_0
+    SLICE_X87Y105        CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.114    10.725 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares_reg[19]_i_2/CO[3]
+                         net (fo=1, routed)           0.000    10.725    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares_reg[19]_i_2_n_0
+    SLICE_X87Y106        CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.114    10.839 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares_reg[23]_i_2/CO[3]
+                         net (fo=1, routed)           0.000    10.839    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares_reg[23]_i_2_n_0
+    SLICE_X87Y107        CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.114    10.953 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares_reg[27]_i_2/CO[3]
+                         net (fo=1, routed)           0.000    10.953    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares_reg[27]_i_2_n_0
+    SLICE_X87Y108        CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.114    11.067 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares_reg[31]_i_2/CO[3]
+                         net (fo=1, routed)           0.000    11.067    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares_reg[31]_i_2_n_0
+    SLICE_X87Y109        CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.114    11.181 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares_reg[35]_i_2/CO[3]
+                         net (fo=1, routed)           0.000    11.181    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares_reg[35]_i_2_n_0
+    SLICE_X87Y110        CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.114    11.295 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares_reg[39]_i_2/CO[3]
+                         net (fo=1, routed)           0.000    11.295    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares_reg[39]_i_2_n_0
+    SLICE_X87Y111        CARRY4 (Prop_carry4_CI_CO[3])
+                                                      0.114    11.409 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares_reg[43]_i_2/CO[3]
+                         net (fo=1, routed)           0.000    11.409    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares_reg[43]_i_2_n_0
+    SLICE_X87Y112        CARRY4 (Prop_carry4_CI_O[1])
+                                                      0.334    11.743 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares_reg[47]_i_2/O[1]
+                         net (fo=1, routed)           0.555    12.298    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares0[45]
+    SLICE_X88Y112        LUT2 (Prop_lut2_I1_O)        0.297    12.595 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares[45]_i_1/O
+                         net (fo=2, routed)           0.000    12.595    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares[45]_i_1_n_0
+    SLICE_X88Y112        FDRE                                         r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares_reg[45]/D
   -------------------------------------------------------------------    -------------------
 
                          (clock clk_fpga_0 rise edge)
                                                      10.000    10.000 r  
     PS7_X0Y0             PS7                          0.000    10.000 r  bcuda_ps_pl_i/processing_system7_0/inst/PS7_i/FCLKCLK[0]
                          net (fo=1, routed)           1.088    11.088    bcuda_ps_pl_i/processing_system7_0/inst/FCLK_CLK_unbuffered[0]
-    BUFGCTRL_X0Y17       BUFG (Prop_bufg_I_O)         0.091    11.179 r  bcuda_ps_pl_i/processing_system7_0/inst/buffer_fclk_clk_0.FCLK_CLK_0_BUFG_replica/O
-                         net (fo=3, routed)           0.133    11.312    bcuda_ps_pl_i/processing_system7_0/inst/FCLK_CLK0_repN
-    BUFGCTRL_X0Y16       BUFG (Prop_bufg_I_O)         0.091    11.403 r  bcuda_ps_pl_i/processing_system7_0/inst/buffer_fclk_clk_0.FCLK_CLK_0_BUFG/O
-                         net (fo=15520, routed)       1.461    12.864    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/scheduler/fused_writer/aclk
-    SLICE_X51Y64         FDRE                                         r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/scheduler/fused_writer/scaled_r[63]_i_16_psdsp_1/C
-                         clock pessimism              0.252    13.116    
-                         clock uncertainty           -0.454    12.662    
-    SLICE_X51Y64         FDRE (Setup_fdre_C_D)       -0.250    12.412    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/scheduler/fused_writer/scaled_r[63]_i_16_psdsp_1
+    BUFGCTRL_X0Y16       BUFG (Prop_bufg_I_O)         0.091    11.179 r  bcuda_ps_pl_i/processing_system7_0/inst/buffer_fclk_clk_0.FCLK_CLK_0_BUFG/O
+                         net (fo=32852, routed)       1.716    12.895    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/aclk
+    SLICE_X88Y112        FDRE                                         r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares_reg[45]/C
+                         clock pessimism              0.129    13.024    
+                         clock uncertainty           -0.454    12.570    
+    SLICE_X88Y112        FDRE (Setup_fdre_C_D)        0.031    12.601    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/engine/sum_squares_reg[45]
   -------------------------------------------------------------------
-                         required time                         12.412    
-                         arrival time                         -12.390    
+                         required time                         12.601    
+                         arrival time                         -12.595    
   -------------------------------------------------------------------
-                         slack                                  0.022    
+                         slack                                  0.006    
 
 
 
@@ -294,20 +308,20 @@ Slack (MET) :             0.022ns  (required time - arrival time)
 
 Min Delay Paths
 --------------------------------------------------------------------------------------
-Slack (MET) :             0.029ns  (arrival time - required time)
-  Source:                 bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/debug_status/counters/op_started_at_reg[35]/C
+Slack (MET) :             0.033ns  (arrival time - required time)
+  Source:                 bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/memory/read_data_r_reg[2]_rep__29/C
                             (rising edge-triggered cell FDRE clocked by clk_fpga_0  {rise@0.000ns fall@5.000ns period=10.000ns})
-  Destination:            bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/debug_status/counters/last_op_cycles_reg[44]/D
+  Destination:            bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/residual_lhs_mem_reg[951][2]/D
                             (rising edge-triggered cell FDRE clocked by clk_fpga_0  {rise@0.000ns fall@5.000ns period=10.000ns})
   Path Group:             clk_fpga_0
   Path Type:              Hold (Min at Fast Process Corner)
   Requirement:            0.000ns  (clk_fpga_0 rise@0.000ns - clk_fpga_0 rise@0.000ns)
-  Data Path Delay:        0.509ns  (logic 0.428ns (84.120%)  route 0.081ns (15.880%))
-  Logic Levels:           5  (CARRY4=4 LUT2=1)
-  Clock Path Skew:        0.349ns (DCD - SCD - CPR)
-    Destination Clock Delay (DCD):    1.339ns
-    Source Clock Delay      (SCD):    0.949ns
-    Clock Pessimism Removal (CPR):    0.041ns
+  Data Path Delay:        0.316ns  (logic 0.148ns (46.785%)  route 0.168ns (53.215%))
+  Logic Levels:           0  
+  Clock Path Skew:        0.267ns (DCD - SCD - CPR)
+    Destination Clock Delay (DCD):    1.196ns
+    Source Clock Delay      (SCD):    0.894ns
+    Clock Pessimism Removal (CPR):    0.035ns
 
     Location             Delay type                Incr(ns)  Path(ns)    Netlist Resource(s)
   -------------------------------------------------------------------    -------------------
@@ -315,47 +329,29 @@ Slack (MET) :             0.029ns  (arrival time - required time)
                                                       0.000     0.000 r  
     PS7_X0Y0             PS7                          0.000     0.000 r  bcuda_ps_pl_i/processing_system7_0/inst/PS7_i/FCLKCLK[0]
                          net (fo=1, routed)           0.310     0.310    bcuda_ps_pl_i/processing_system7_0/inst/FCLK_CLK_unbuffered[0]
-    BUFGCTRL_X0Y17       BUFG (Prop_bufg_I_O)         0.026     0.336 r  bcuda_ps_pl_i/processing_system7_0/inst/buffer_fclk_clk_0.FCLK_CLK_0_BUFG_replica/O
-                         net (fo=3, routed)           0.030     0.366    bcuda_ps_pl_i/processing_system7_0/inst/FCLK_CLK0_repN
-    BUFGCTRL_X0Y16       BUFG (Prop_bufg_I_O)         0.026     0.392 r  bcuda_ps_pl_i/processing_system7_0/inst/buffer_fclk_clk_0.FCLK_CLK_0_BUFG/O
-                         net (fo=15520, routed)       0.557     0.949    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/debug_status/counters/aclk
-    SLICE_X39Y97         FDRE                                         r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/debug_status/counters/op_started_at_reg[35]/C
+    BUFGCTRL_X0Y16       BUFG (Prop_bufg_I_O)         0.026     0.336 r  bcuda_ps_pl_i/processing_system7_0/inst/buffer_fclk_clk_0.FCLK_CLK_0_BUFG/O
+                         net (fo=32852, routed)       0.558     0.894    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/memory/aclk
+    SLICE_X50Y46         FDRE                                         r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/memory/read_data_r_reg[2]_rep__29/C
   -------------------------------------------------------------------    -------------------
-    SLICE_X39Y97         FDRE (Prop_fdre_C_Q)         0.141     1.090 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/debug_status/counters/op_started_at_reg[35]/Q
-                         net (fo=1, routed)           0.080     1.170    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/debug_status/counters/op_started_at_reg_n_0_[35]
-    SLICE_X38Y97         LUT2 (Prop_lut2_I1_O)        0.045     1.215 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/debug_status/counters/last_op_cycles0_carry__7_i_1/O
-                         net (fo=1, routed)           0.000     1.215    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/debug_status/counters/last_op_cycles0_carry__7_i_1_n_0
-    SLICE_X38Y97         CARRY4 (Prop_carry4_S[3]_CO[3])
-                                                      0.109     1.324 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/debug_status/counters/last_op_cycles0_carry__7/CO[3]
-                         net (fo=1, routed)           0.000     1.324    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/debug_status/counters/last_op_cycles0_carry__7_n_0
-    SLICE_X38Y98         CARRY4 (Prop_carry4_CI_CO[3])
-                                                      0.040     1.364 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/debug_status/counters/last_op_cycles0_carry__8/CO[3]
-                         net (fo=1, routed)           0.000     1.364    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/debug_status/counters/last_op_cycles0_carry__8_n_0
-    SLICE_X38Y99         CARRY4 (Prop_carry4_CI_CO[3])
-                                                      0.040     1.404 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/debug_status/counters/last_op_cycles0_carry__9/CO[3]
-                         net (fo=1, routed)           0.001     1.404    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/debug_status/counters/last_op_cycles0_carry__9_n_0
-    SLICE_X38Y100        CARRY4 (Prop_carry4_CI_O[0])
-                                                      0.053     1.457 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/debug_status/counters/last_op_cycles0_carry__10/O[0]
-                         net (fo=4, routed)           0.000     1.457    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/debug_status/counters/last_op_cycles0[44]
-    SLICE_X38Y100        FDRE                                         r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/debug_status/counters/last_op_cycles_reg[44]/D
+    SLICE_X50Y46         FDRE (Prop_fdre_C_Q)         0.148     1.042 r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/memory/read_data_r_reg[2]_rep__29/Q
+                         net (fo=64, routed)          0.168     1.210    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/residual_lhs_mem_reg[961][7]_0[2]
+    SLICE_X49Y48         FDRE                                         r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/residual_lhs_mem_reg[951][2]/D
   -------------------------------------------------------------------    -------------------
 
                          (clock clk_fpga_0 rise edge)
                                                       0.000     0.000 r  
     PS7_X0Y0             PS7                          0.000     0.000 r  bcuda_ps_pl_i/processing_system7_0/inst/PS7_i/FCLKCLK[0]
                          net (fo=1, routed)           0.337     0.337    bcuda_ps_pl_i/processing_system7_0/inst/FCLK_CLK_unbuffered[0]
-    BUFGCTRL_X0Y17       BUFG (Prop_bufg_I_O)         0.029     0.366 r  bcuda_ps_pl_i/processing_system7_0/inst/buffer_fclk_clk_0.FCLK_CLK_0_BUFG_replica/O
-                         net (fo=3, routed)           0.033     0.399    bcuda_ps_pl_i/processing_system7_0/inst/FCLK_CLK0_repN
-    BUFGCTRL_X0Y16       BUFG (Prop_bufg_I_O)         0.029     0.428 r  bcuda_ps_pl_i/processing_system7_0/inst/buffer_fclk_clk_0.FCLK_CLK_0_BUFG/O
-                         net (fo=15520, routed)       0.911     1.339    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/debug_status/counters/aclk
-    SLICE_X38Y100        FDRE                                         r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/debug_status/counters/last_op_cycles_reg[44]/C
-                         clock pessimism             -0.041     1.298    
-    SLICE_X38Y100        FDRE (Hold_fdre_C_D)         0.130     1.428    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/debug_status/counters/last_op_cycles_reg[44]
+    BUFGCTRL_X0Y16       BUFG (Prop_bufg_I_O)         0.029     0.366 r  bcuda_ps_pl_i/processing_system7_0/inst/buffer_fclk_clk_0.FCLK_CLK_0_BUFG/O
+                         net (fo=32852, routed)       0.830     1.196    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/aclk
+    SLICE_X49Y48         FDRE                                         r  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/residual_lhs_mem_reg[951][2]/C
+                         clock pessimism             -0.035     1.161    
+    SLICE_X49Y48         FDRE (Hold_fdre_C_D)         0.016     1.177    bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/rowwise/residual_lhs_mem_reg[951][2]
   -------------------------------------------------------------------
-                         required time                         -1.428    
-                         arrival time                           1.457    
+                         required time                         -1.177    
+                         arrival time                           1.210    
   -------------------------------------------------------------------
-                         slack                                  0.029    
+                         slack                                  0.033    
 
 
 
@@ -369,9 +365,9 @@ Period(ns):         10.000
 Sources:            { bcuda_ps_pl_i/processing_system7_0/inst/PS7_i/FCLKCLK[0] }
 
 Check Type        Corner  Lib Pin      Reference Pin  Required(ns)  Actual(ns)  Slack(ns)  Location      Pin
-Min Period        n/a     DSP48E1/CLK  n/a            3.884         10.000      6.116      DSP48_X3Y47   bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/heatvit_pruner/package_product_reg/CLK
-Low Pulse Width   Slow    RAMD32/CLK   n/a            1.250         5.000       3.750      SLICE_X92Y96  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/heatvit_pruner/package_sum0_reg_0_15_0_0/DP/CLK
-High Pulse Width  Slow    RAMD32/CLK   n/a            1.250         5.000       3.750      SLICE_X92Y96  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/heatvit_pruner/package_sum0_reg_0_15_0_0/DP/CLK
+Min Period        n/a     DSP48E1/CLK  n/a            3.884         10.000      6.116      DSP48_X2Y43   bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/heatvit_pruner/package_product_reg/CLK
+Low Pulse Width   Slow    RAMD32/CLK   n/a            1.250         5.000       3.750      SLICE_X42Y39  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/heatvit_pruner/package_sum0_reg_0_15_0_0/DP/CLK
+High Pulse Width  Slow    RAMD32/CLK   n/a            1.250         5.000       3.750      SLICE_X42Y39  bcuda_ps_pl_i/bcuda_accelerator_0/inst/accelerator/heatvit_pruner/package_sum0_reg_0_15_0_0/DP/CLK
 
 
 

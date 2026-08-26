@@ -96,6 +96,8 @@ enum {
     BCUDA_PL_CONTROL_TRANSFORMER_OUTPUT_LAYOUT_ALT = 0x00200000u,
     BCUDA_PL_CONTROL_TRANSFORMER_OUTPUT_DYNAMIC_B = 0x00400000u,
     BCUDA_PL_CONTROL_HEATVIT_TOKEN_PRUNE = 0x00800000u,
+    BCUDA_PL_CONTROL_TRANSFORMER_FUSED_GELU = 0x01000000u,
+    BCUDA_PL_CONTROL_TRANSFORMER_FUSED_RESIDUAL_LAYERNORM = 0x02000000u,
     BCUDA_PL_STATUS_BUSY = 0x00000001u,
     BCUDA_PL_STATUS_DONE = 0x00000002u,
     BCUDA_PL_STATUS_ERROR = 0x00000004u,
@@ -153,6 +155,7 @@ int bcuda_axi_dma_submit_transformer_requantize_pack(BcudaAxiDma *dma, const Bcu
 int bcuda_axi_dma_submit_transformer_b_pack(BcudaAxiDma *dma, BcudaBuffer *input, BcudaBuffer *packed_output, uint32_t reduction, uint32_t outputs, uint32_t transpose, uint32_t source_row_major);
 int bcuda_axi_dma_submit_transformer_elementwise(BcudaAxiDma *dma, BcudaBuffer *input0, BcudaBuffer *input1, BcudaBuffer *output, uint32_t rows, uint32_t columns, uint32_t residual, uint32_t lhs_shift, uint32_t rhs_shift);
 int bcuda_axi_dma_submit_transformer_rowwise(BcudaAxiDma *dma, BcudaBuffer *input, BcudaBuffer *gamma, BcudaBuffer *beta, BcudaBuffer *output, uint32_t rows, uint32_t columns, uint32_t softmax, uint32_t epsilon_term);
+int bcuda_axi_dma_submit_transformer_rowwise_fused(BcudaAxiDma *dma, BcudaBuffer *input, BcudaBuffer *residual, BcudaBuffer *gamma, BcudaBuffer *beta, BcudaBuffer *output, uint32_t rows, uint32_t columns, uint32_t softmax, uint32_t epsilon_term, uint32_t lhs_shift, uint32_t rhs_shift);
 int bcuda_axi_dma_submit_heatvit_token_prune(BcudaAxiDma *dma, BcudaBuffer *input, BcudaBuffer *weight, BcudaBuffer *output, uint32_t input_tokens, uint32_t output_tokens, uint32_t features, uint32_t weight_int4);
 int bcuda_axi_dma_submit_requantize(BcudaAxiDma *dma, const BcudaRequantDesc *desc, BcudaBuffer *input, BcudaBuffer *output);
 int bcuda_axi_dma_submit_conv2d(BcudaAxiDma *dma, const BcudaLayerDesc *layer, BcudaBuffer *input, BcudaBuffer *weight, BcudaBuffer *bias, BcudaBuffer *output);

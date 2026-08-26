@@ -1,4 +1,5 @@
 module tb_transformer_gemm_scheduler;
+    logic fused_gelu=0;
     logic clk=0, rst_n=0, pipeline_enable=1, start=0, weight_int4=0, fused_requant=0;
     logic [1:0] fused_output_mode=0;
     logic [31:0] a_base=32'h100,b_base=32'h400,c_base=32'h800,c_stride=8;

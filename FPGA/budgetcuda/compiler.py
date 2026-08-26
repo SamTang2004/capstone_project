@@ -277,6 +277,24 @@ def compose_model_packages(name: str, packages: Iterable[ModelPackage]) -> Model
                 scale=optional(layer.scale),
             ))
         previous_output = mapping[package.output_index]
+    # Defer adjacent residual arithmetic into LayerNorm's existing input pass.
+    # The residual layer remains as a no-op diagnostic slot so report names and
+    # model compatibility stay stable.
+    for index in range(len(layers) - 1):
+        residual, layernorm = layers[index:index + 2]
+        residual_output_is_live = any(
+            residual.output in (consumer.input0, consumer.input1, consumer.input2)
+            for consumer in layers[index + 2:]
+        )
+        if (residual.op_type == OpType.RESIDUAL_ADD and
+                layernorm.op_type == OpType.LAYERNORM and
+                layernorm.input0 == residual.output and
+                not residual_output_is_live):
+            layers[index] = replace(
+                residual, flags=residual.flags | (1 << 31))
+            layers[index + 1] = replace(
+                layernorm, input0=residual.input0, input1=residual.input1,
+                h=residual.flags & 7, w=(residual.flags >> 4) & 7, out_h=1)
     return ModelPackage(
         buffers, layers, first_input, previous_output,
         flags=packages[-1].flags,
@@ -430,6 +448,7 @@ class GraphBuilder:
         self, input_idx: int, weight_idx: int, output_idx: int, scale_idx: int,
         *, m: int, n: int, k: int, bias_idx: int = 0,
         dynamic_b_transpose: bool = False,
+        fused_gelu: bool = False,
     ) -> None:
         """Fuse tiled GEMM, optional INT32 bias, requantize, and A packing."""
         activation = self.buffers[input_idx]
@@ -463,7 +482,8 @@ class GraphBuilder:
         self.layers.append(Layer(
             OpType.GEMM, input0=input_idx, weight=weight_idx, output=output_idx,
             bias=bias_idx, scale=scale_idx, n=m, out_c=n, c=k,
-            flags=1 if output.layout == Layout.TRANSFORMER_DYNAMIC_B_TILED_INT8 and dynamic_b_transpose else 0,
+            flags=(1 if output.layout == Layout.TRANSFORMER_DYNAMIC_B_TILED_INT8 and dynamic_b_transpose else 0) |
+                  (2 if fused_gelu else 0),
         ))
 
     def activation_b_pack(self, input_idx: int, output_idx: int, *, reduction: int, outputs: int, transpose: bool = False) -> None:

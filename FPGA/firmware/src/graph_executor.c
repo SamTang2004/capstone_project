@@ -661,24 +661,35 @@ static int bcuda_execute_token_concat_layer(const BcudaBuffer *model_buffer, con
             (uint64_t)layer->n * widths[part] > inputs[part]->size_bytes) return BC_STATUS_SHAPE_MISMATCH;
     }
     uint8_t *dst = (uint8_t *)output->virtual_address;
-    for (uint32_t row = 0; row < layer->n; ++row) {
-        uint32_t cursor = 0;
-        for (uint32_t part = 0; part < 3; ++part) {
-            if (widths[part] == 0) continue;
-            if (!tiled_output) {
+    if (tiled_output) {
+        memset(dst, 0, (size_t)required_output);
+        for (uint32_t row_base = 0; row_base < layer->n; row_base += 8u) {
+            uint32_t cursor = 0;
+            for (uint32_t part = 0; part < 3; ++part) {
+                if (widths[part] == 0) continue;
+                for (uint32_t column = 0; column < widths[part]; ++column) {
+                    uint64_t packed = 0;
+                    for (uint32_t lane = 0; lane < 8u && row_base + lane < layer->n; ++lane) {
+                        const uint8_t *src = (const uint8_t *)inputs[part]->virtual_address;
+                        packed |= (uint64_t)src[(uint64_t)(row_base + lane) * widths[part] + column]
+                            << (lane * 8u);
+                    }
+                    uint64_t destination =
+                        ((uint64_t)(row_base / 8u) * total + cursor + column) * 8u;
+                    memcpy(dst + destination, &packed, sizeof(packed));
+                }
+                cursor += widths[part];
+            }
+        }
+    } else {
+        for (uint32_t row = 0; row < layer->n; ++row) {
+            uint32_t cursor = 0;
+            for (uint32_t part = 0; part < 3; ++part) {
+                if (widths[part] == 0) continue;
                 memcpy(dst + (uint64_t)row * total + cursor,
                        (const uint8_t *)inputs[part]->virtual_address + (uint64_t)row * widths[part], widths[part]);
-            } else {
-                const uint8_t *src = (const uint8_t *)inputs[part]->virtual_address +
-                    (uint64_t)row * widths[part];
-                for (uint32_t column = 0; column < widths[part]; ++column) {
-                    uint64_t output_column = cursor + column;
-                    uint64_t destination = ((uint64_t)(row / 8u) * total + output_column) * 8u +
-                        (row & 7u);
-                    dst[destination] = src[column];
-                }
+                cursor += widths[part];
             }
-            cursor += widths[part];
         }
     }
     return BC_STATUS_OK;
@@ -712,9 +723,16 @@ static int bcuda_execute_token_embedding_layer(const BcudaBuffer *model_buffer, 
     const int8_t *lut = (const int8_t *)scale->virtual_address;
     int8_t *dst = (int8_t *)output->virtual_address;
     memcpy(dst, pos, layer->c);
-    for (uint64_t i = 0; i < patch_elements; ++i) {
-        int8_t scaled = lut[(uint8_t)src[i]];
-        dst[layer->c + i] = bcuda_saturate_int8((int32_t)scaled + pos[layer->c + i]);
+    for (uint64_t i = 0; i < patch_elements; i += 8u) {
+        uint64_t packed = 0;
+        uint32_t lanes = patch_elements - i < 8u ? (uint32_t)(patch_elements - i) : 8u;
+        for (uint32_t lane = 0; lane < lanes; ++lane) {
+            int8_t scaled = lut[(uint8_t)src[i + lane]];
+            uint8_t value = (uint8_t)bcuda_saturate_int8(
+                (int32_t)scaled + pos[layer->c + i + lane]);
+            packed |= (uint64_t)value << (lane * 8u);
+        }
+        memcpy(dst + layer->c + i, &packed, lanes);
     }
     return BC_STATUS_OK;
 }
@@ -834,6 +852,8 @@ static uint32_t bcuda_integer_sqrt(uint64_t value) {
 }
 
 static int bcuda_execute_residual_layer(BcudaGraphRuntime *runtime, const BcudaBuffer *model_buffer, const BcudaModelDesc *model, const BcudaLayerDesc *layer) {
+    if ((layer->flags & BCUDA_RESIDUAL_DEFERRED_TO_LAYERNORM) != 0u)
+        return BC_STATUS_OK;
     BcudaBuffer *lhs = 0, *rhs = 0, *output = 0;
     int status = bcuda_graph_table_buffer(model_buffer, model, layer->input0, &lhs);
     if (status == BC_STATUS_OK) status = bcuda_graph_table_buffer(model_buffer, model, layer->input1, &rhs);
@@ -875,27 +895,31 @@ static int bcuda_execute_gelu_layer(BcudaGraphRuntime *runtime, const BcudaBuffe
 }
 
 static int bcuda_execute_layernorm_layer(BcudaGraphRuntime *runtime, const BcudaBuffer *model_buffer, const BcudaModelDesc *model, const BcudaLayerDesc *layer) {
-    BcudaBuffer *input = 0, *output = 0, *gamma = 0, *beta = 0;
+    BcudaBuffer *input = 0, *residual = 0, *output = 0, *gamma = 0, *beta = 0;
+    uint32_t fused_residual = layer->out_h == 1u;
     int status = bcuda_graph_table_buffer(model_buffer, model, layer->input0, &input);
     if (status == BC_STATUS_OK) status = bcuda_graph_table_buffer(model_buffer, model, layer->output, &output);
     if (status == BC_STATUS_OK) status = bcuda_graph_table_buffer(model_buffer, model, layer->scale, &gamma);
     if (status == BC_STATUS_OK) status = bcuda_graph_table_buffer(model_buffer, model, layer->bias, &beta);
+    if (status == BC_STATUS_OK && fused_residual)
+        status = bcuda_graph_table_buffer(model_buffer, model, layer->input1, &residual);
     if (status != BC_STATUS_OK) return status;
     uint64_t count = (uint64_t)layer->n * layer->c;
     int tiled_output = output->layout == BC_LAYOUT_TRANSFORMER_ACTIVATION_TILED_INT8;
     uint64_t output_bytes = tiled_output ? (((uint64_t)layer->n + 7u) / 8u) * layer->c * 8u : count;
-    if (layer->n == 0 || layer->c == 0 || input->dtype != BC_DTYPE_INT8 || input->layout != BC_LAYOUT_ROW_MAJOR || output->dtype != BC_DTYPE_INT8 || (output->layout != BC_LAYOUT_ROW_MAJOR && !tiled_output) || gamma->dtype != BC_DTYPE_INT16 || beta->dtype != BC_DTYPE_INT16 || input->size_bytes < count || output->size_bytes < output_bytes || gamma->size_bytes < 2ull * layer->c || beta->size_bytes < 2ull * layer->c) return BC_STATUS_SHAPE_MISMATCH;
+    if (layer->n == 0 || layer->c == 0 || input->dtype != BC_DTYPE_INT8 || input->layout != BC_LAYOUT_ROW_MAJOR || output->dtype != BC_DTYPE_INT8 || (output->layout != BC_LAYOUT_ROW_MAJOR && !tiled_output) || gamma->dtype != BC_DTYPE_INT16 || beta->dtype != BC_DTYPE_INT16 || input->size_bytes < count || output->size_bytes < output_bytes || gamma->size_bytes < 2ull * layer->c || beta->size_bytes < 2ull * layer->c || (fused_residual && (residual == 0 || residual->dtype != BC_DTYPE_INT8 || residual->layout != BC_LAYOUT_ROW_MAJOR || residual->size_bytes < count || layer->h > 7u || layer->w > 7u))) return BC_STATUS_SHAPE_MISMATCH;
     int8_t *src = (int8_t *)input->virtual_address, *dst = (int8_t *)output->virtual_address;
     int16_t *g = (int16_t *)gamma->virtual_address, *b = (int16_t *)beta->virtual_address;
-    if(runtime!=0&&runtime->dma!=0&&runtime->dma->register_base!=0){status=bcuda_axi_dma_submit_transformer_rowwise(runtime->dma,input,gamma,beta,output,layer->n,layer->c,0u,layer->flags);return status==BC_STATUS_OK?bcuda_axi_dma_poll_done(runtime->dma):status;}
+    if(runtime!=0&&runtime->dma!=0&&runtime->dma->register_base!=0){status=bcuda_axi_dma_submit_transformer_rowwise_fused(runtime->dma,input,residual,gamma,beta,output,layer->n,layer->c,0u,layer->flags,layer->h,layer->w);return status==BC_STATUS_OK?bcuda_axi_dma_poll_done(runtime->dma):status;}
     if (tiled_output) memset(dst, 0, (size_t)output_bytes);
     for (uint32_t row = 0; row < layer->n; ++row) {
         int64_t sum = 0; uint64_t squares = 0;
-        for (uint32_t i = 0; i < layer->c; ++i) { int32_t x = src[(uint64_t)row * layer->c + i]; sum += x; squares += (uint64_t)(x * x); }
+        for (uint32_t i = 0; i < layer->c; ++i) { int32_t x = src[(uint64_t)row * layer->c + i]; if(fused_residual)x=bcuda_saturate_int8((x>>layer->h)+(((int8_t*)residual->virtual_address)[(uint64_t)row*layer->c+i]>>layer->w)); sum += x; squares += (uint64_t)(x * x); }
         uint64_t variance = (uint64_t)layer->c * squares - (uint64_t)(sum * sum) + layer->flags;
         uint32_t denominator = bcuda_integer_sqrt(variance); if (denominator == 0) denominator = 1;
         for (uint32_t i = 0; i < layer->c; ++i) {
-            int64_t centered = (int64_t)src[(uint64_t)row * layer->c + i] * layer->c - sum;
+            int64_t x = src[(uint64_t)row * layer->c + i]; if(fused_residual)x=bcuda_saturate_int8((int32_t)((x>>layer->h)+(((int8_t*)residual->virtual_address)[(uint64_t)row*layer->c+i]>>layer->w)));
+            int64_t centered = x * layer->c - sum;
             int64_t norm_q14 = (centered << 14) / denominator;
             int64_t scaled_q8 = ((norm_q14 * g[i]) >> 14) + b[i];
             int64_t rounded = scaled_q8 + (scaled_q8 >= 0 ? 128 : -128);

@@ -297,7 +297,9 @@ int bcuda_axi_dma_submit_transformer_gemm_requant(
     control = BCUDA_PL_CONTROL_START | BCUDA_PL_CONTROL_TRANSFORMER_FUSED_REQUANT |
         (weight_int4 ? BCUDA_PL_CONTROL_TRANSFORMER_WEIGHT_INT4 : 0u) |
         (output_mode == 1u ? BCUDA_PL_CONTROL_TRANSFORMER_OUTPUT_LAYOUT_ALT : 0u) |
-        (output_mode == 2u ? BCUDA_PL_CONTROL_TRANSFORMER_OUTPUT_DYNAMIC_B : 0u);
+        (output_mode == 2u ? BCUDA_PL_CONTROL_TRANSFORMER_OUTPUT_DYNAMIC_B : 0u) |
+        ((desc->flags & BCUDA_GEMM_FUSED_GELU) != 0u ?
+            BCUDA_PL_CONTROL_TRANSFORMER_FUSED_GELU : 0u);
     dma->last_source_address = packed_A->physical_address;
     dma->last_transfer_bytes = (uint32_t)(a_required + b_required + c_required +
         (bias == 0 ? 0 : desc->N * sizeof(int32_t)));
@@ -427,19 +429,25 @@ int bcuda_axi_dma_submit_transformer_elementwise(BcudaAxiDma *dma, BcudaBuffer *
     return BC_STATUS_OK;
 }
 
-int bcuda_axi_dma_submit_transformer_rowwise(BcudaAxiDma *dma, BcudaBuffer *input, BcudaBuffer *gamma, BcudaBuffer *beta, BcudaBuffer *output, uint32_t rows, uint32_t columns, uint32_t softmax, uint32_t epsilon_term) {
+int bcuda_axi_dma_submit_transformer_rowwise_fused(BcudaAxiDma *dma, BcudaBuffer *input, BcudaBuffer *residual, BcudaBuffer *gamma, BcudaBuffer *beta, BcudaBuffer *output, uint32_t rows, uint32_t columns, uint32_t softmax, uint32_t epsilon_term, uint32_t lhs_shift, uint32_t rhs_shift) {
     uint64_t input_bytes=(uint64_t)rows*columns,output_bytes;
     if(dma==0||input==0||output==0)return BC_STATUS_GENERAL_ERROR;
     if(input->dtype!=BC_DTYPE_INT8||output->dtype!=BC_DTYPE_INT8)return BC_STATUS_UNSUPPORTED_DTYPE;
-    if(rows==0||columns==0||rows>0xffffu||columns>0xffffu||(softmax&&columns>256u))return BC_STATUS_SHAPE_MISMATCH;
+    if(rows==0||columns==0||rows>0xffffu||columns>0xffffu||(softmax&&columns>256u)||
+       (residual!=0&&(softmax||residual->dtype!=BC_DTYPE_INT8||residual->layout!=BC_LAYOUT_ROW_MAJOR||
+        residual->size_bytes<input_bytes||lhs_shift>7u||rhs_shift>7u)))return BC_STATUS_SHAPE_MISMATCH;
     uint32_t tiled_output=output->layout==BC_LAYOUT_TRANSFORMER_ACTIVATION_TILED_INT8;
     output_bytes=tiled_output?((uint64_t)(rows+7u)/8u)*columns*8u:input_bytes;
     if(input->layout!=BC_LAYOUT_ROW_MAJOR||(output->layout!=BC_LAYOUT_ROW_MAJOR&&!tiled_output)||input_bytes>input->size_bytes||output_bytes>output->size_bytes)return BC_STATUS_SHAPE_MISMATCH;
     if(!softmax&&(gamma==0||beta==0||gamma->dtype!=BC_DTYPE_INT16||beta->dtype!=BC_DTYPE_INT16||gamma->size_bytes<(uint64_t)columns*2u||beta->size_bytes<(uint64_t)columns*2u))return BC_STATUS_SHAPE_MISMATCH;
-    dma->last_source_address=input->physical_address;dma->last_transfer_bytes=(uint32_t)(input_bytes+output_bytes+(softmax?0u:columns*4u));dma->last_control_word=BCUDA_PL_CONTROL_START|(softmax?BCUDA_PL_CONTROL_TRANSFORMER_SOFTMAX:BCUDA_PL_CONTROL_TRANSFORMER_LAYERNORM)|(softmax&&tiled_output?BCUDA_PL_CONTROL_TRANSFORMER_OUTPUT_LAYOUT_ALT:0u);dma->last_m_tiles=rows;dma->last_n_tiles=columns;
-    if(dma->register_base!=0){if(input->physical_address>0xffffffffu||output->physical_address>0xffffffffu||(!softmax&&(gamma->physical_address>0xffffffffu||beta->physical_address>0xffffffffu)))return BC_STATUS_SHAPE_MISMATCH;
-      bcuda_pl_write(dma,BCUDA_PL_REG_CONTROL,0);bcuda_pl_write(dma,BCUDA_PL_REG_A_BASE,(uint32_t)input->physical_address);bcuda_pl_write(dma,BCUDA_PL_REG_B_BASE,softmax?0:(uint32_t)gamma->physical_address);bcuda_pl_write(dma,BCUDA_PL_REG_B_STRIDE,softmax?0:(uint32_t)beta->physical_address);bcuda_pl_write(dma,BCUDA_PL_REG_C_BASE,(uint32_t)output->physical_address);bcuda_pl_write(dma,BCUDA_PL_REG_M,rows);bcuda_pl_write(dma,BCUDA_PL_REG_N,columns);bcuda_pl_write(dma,BCUDA_PL_REG_RQ_MULTIPLIER,epsilon_term);bcuda_pl_write(dma,BCUDA_PL_REG_CONTROL,dma->last_control_word);}
+    dma->last_source_address=input->physical_address;dma->last_transfer_bytes=(uint32_t)(input_bytes+output_bytes+(softmax?0u:columns*4u)+(residual?input_bytes:0u));dma->last_control_word=BCUDA_PL_CONTROL_START|(softmax?BCUDA_PL_CONTROL_TRANSFORMER_SOFTMAX:BCUDA_PL_CONTROL_TRANSFORMER_LAYERNORM)|(softmax&&tiled_output?BCUDA_PL_CONTROL_TRANSFORMER_OUTPUT_LAYOUT_ALT:0u)|(residual?BCUDA_PL_CONTROL_TRANSFORMER_FUSED_RESIDUAL_LAYERNORM:0u);dma->last_m_tiles=rows;dma->last_n_tiles=columns;
+    if(dma->register_base!=0){if(input->physical_address>0xffffffffu||output->physical_address>0xffffffffu||(!softmax&&(gamma->physical_address>0xffffffffu||beta->physical_address>0xffffffffu))||(residual&&residual->physical_address>0xffffffffu))return BC_STATUS_SHAPE_MISMATCH;
+      bcuda_pl_write(dma,BCUDA_PL_REG_CONTROL,0);bcuda_pl_write(dma,BCUDA_PL_REG_A_BASE,(uint32_t)input->physical_address);bcuda_pl_write(dma,BCUDA_PL_REG_A_STRIDE,residual?(uint32_t)residual->physical_address:0u);bcuda_pl_write(dma,BCUDA_PL_REG_B_BASE,softmax?0:(uint32_t)gamma->physical_address);bcuda_pl_write(dma,BCUDA_PL_REG_B_STRIDE,softmax?0:(uint32_t)beta->physical_address);bcuda_pl_write(dma,BCUDA_PL_REG_C_BASE,(uint32_t)output->physical_address);bcuda_pl_write(dma,BCUDA_PL_REG_M,rows);bcuda_pl_write(dma,BCUDA_PL_REG_N,columns);bcuda_pl_write(dma,BCUDA_PL_REG_RQ_MULTIPLIER,epsilon_term);bcuda_pl_write(dma,BCUDA_PL_REG_RQ_RIGHT_SHIFT,lhs_shift);bcuda_pl_write(dma,BCUDA_PL_REG_RQ_OUTPUT_ZERO_POINT,rhs_shift);bcuda_pl_write(dma,BCUDA_PL_REG_CONTROL,dma->last_control_word);}
     return BC_STATUS_OK;
+}
+
+int bcuda_axi_dma_submit_transformer_rowwise(BcudaAxiDma *dma, BcudaBuffer *input, BcudaBuffer *gamma, BcudaBuffer *beta, BcudaBuffer *output, uint32_t rows, uint32_t columns, uint32_t softmax, uint32_t epsilon_term) {
+    return bcuda_axi_dma_submit_transformer_rowwise_fused(dma,input,0,gamma,beta,output,rows,columns,softmax,epsilon_term,0u,0u);
 }
 
 int bcuda_axi_dma_submit_heatvit_token_prune(BcudaAxiDma *dma, BcudaBuffer *input, BcudaBuffer *weight, BcudaBuffer *output, uint32_t input_tokens, uint32_t output_tokens, uint32_t features, uint32_t weight_int4) {
