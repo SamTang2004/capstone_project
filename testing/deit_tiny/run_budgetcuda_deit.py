@@ -22,6 +22,14 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=9000)
     parser.add_argument("--timeout", type=float, default=120.0)
     parser.add_argument("--repeat", type=int, default=1)
+    parser.add_argument(
+        "--production-repeat", type=int, default=0,
+        help="Also measure this many steady-state runs without diagnostics",
+    )
+    parser.add_argument(
+        "--compact", action="store_true",
+        help="Omit detailed per-module and GEMM records from stdout",
+    )
     parser.add_argument("--clock-hz", type=int, default=100_000_000)
     parser.add_argument(
         "--heatvit", action=argparse.BooleanOptionalAction, default=None,
@@ -34,6 +42,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.repeat <= 0:
         parser.error("--repeat must be positive")
+    if args.production_repeat < 0:
+        parser.error("--production-repeat cannot be negative")
     diagnostics = DiagnosticsSettings(clock_hz=args.clock_hz)
     with DeiTManifestRunner(Device(args.address, args.port, args.timeout), args.manifest) as runner:
         load_started = perf_counter()
@@ -52,6 +62,9 @@ def main() -> None:
         resident_descriptor_bytes = runner.resident_descriptor_bytes
         cycle_reports = [runner.cycle_report(result.diagnostics) for result in results]
         cycle_report = cycle_reports[-1]
+        production_results = [runner.run_image(
+            args.image, diagnostics=False, heatvit=args.heatvit,
+        ) for _ in range(args.production_repeat)]
     result = results[-1]
     summary = {
         "model_load_seconds": load_seconds,
@@ -67,11 +80,18 @@ def main() -> None:
         "stages": dict(result.stage_seconds),
         "repeat_seconds": [item.elapsed_seconds for item in results],
         "cycle_totals": cycle_report["totals"],
-        "module_cycle_breakdown": cycle_report["module_cycle_breakdown"],
-        "stage_cycle_breakdown": cycle_report["stage_cycle_breakdown"],
-        "gemm_detail": cycle_report.get("gemm_detail", {}),
         "repeat_cycle_totals": [report["totals"] for report in cycle_reports],
+        "production_repeat_seconds": [
+            item.elapsed_seconds for item in production_results
+        ],
+        "production_stage_seconds": [
+            dict(item.stage_seconds) for item in production_results
+        ],
     }
+    if not args.compact:
+        summary["module_cycle_breakdown"] = cycle_report["module_cycle_breakdown"]
+        summary["stage_cycle_breakdown"] = cycle_report["stage_cycle_breakdown"]
+        summary["gemm_detail"] = cycle_report.get("gemm_detail", {})
     if args.cycle_report is not None:
         args.cycle_report.parent.mkdir(parents=True, exist_ok=True)
         args.cycle_report.write_text(json.dumps(cycle_report, indent=2), encoding="utf-8")

@@ -121,6 +121,7 @@ class DeiTManifestRunner:
             self._full_model.close()
             self._full_model = None
         self._resident.close()
+        self.device.close()
 
     def _cache_package(self, name: str, build):
         if self._closed:

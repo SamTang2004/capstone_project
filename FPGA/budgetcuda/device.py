@@ -97,6 +97,9 @@ class Device:
     def free(self, tensor: Tensor):
         return self.protocol.free(tensor.buffer_id)
 
+    def close(self):
+        self.protocol.close()
+
     def load_model(self, package, external_tensors=None):
         from .compiler import upload_model
 

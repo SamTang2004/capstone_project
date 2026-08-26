@@ -88,6 +88,45 @@ class SocketTransportTest(unittest.TestCase):
             transport.transact(bytes(request))
         worker.join(timeout=1)
 
+    def test_transport_reuses_one_tcp_connection(self):
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        port = listener.getsockname()[1]
+        accepts = []
+
+        def serve_two():
+            try:
+                connection, _ = listener.accept()
+                accepts.append(1)
+                with connection:
+                    for buffer_id in (7, 8):
+                        header = connection.recv(HEADER_STRUCT.size)
+                        _, _, command, request_id, header_bytes, payload_bytes, _, _ = HEADER_STRUCT.unpack(header)
+                        remaining = header_bytes + payload_bytes - len(header)
+                        while remaining:
+                            data = connection.recv(remaining)
+                            if not data:
+                                return
+                            remaining -= len(data)
+                        response = build_ok_response(
+                            Command.ALLOC, request_id,
+                            ALLOC_RESPONSE_TAIL_STRUCT.pack(buffer_id, 0, 64))
+                        connection.sendall(response)
+            finally:
+                listener.close()
+
+        worker = threading.Thread(target=serve_two)
+        worker.start()
+        device = Device(address="127.0.0.1", port=port)
+        first = device.alloc((64,), "int8")
+        second = device.alloc((64,), "int8")
+        device.close()
+        worker.join(timeout=1)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(accepts, [1])
+        self.assertEqual((first.buffer_id, second.buffer_id), (7, 8))
+
 
 if __name__ == "__main__":
     unittest.main()

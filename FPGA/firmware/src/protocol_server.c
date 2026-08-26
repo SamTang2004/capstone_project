@@ -6,6 +6,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <unistd.h>
 
 #include "bcuda_command.h"
@@ -110,7 +111,15 @@ int bcuda_protocol_server_run(uint16_t port, BcudaGraphRuntime *runtime) {
     memset(&address, 0, sizeof(address)); address.sin_family = AF_INET; address.sin_addr.s_addr = htonl(INADDR_ANY); address.sin_port = htons(port);
     if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) != 0 || listen(server_fd, 8) != 0) { close(server_fd); return -1; }
     signal(SIGPIPE, SIG_IGN);
-    for (;;) { int client_fd = accept(server_fd, 0, 0); if (client_fd >= 0) { bcuda_protocol_server_handle_client(client_fd, runtime); close(client_fd); } else if (errno != EINTR) break; }
+    for (;;) {
+        int client_fd = accept(server_fd, 0, 0);
+        if (client_fd >= 0) {
+            int no_delay = 1;
+            setsockopt(client_fd, IPPROTO_TCP, TCP_NODELAY, &no_delay, sizeof(no_delay));
+            while (bcuda_protocol_server_handle_client(client_fd, runtime) == 0) {}
+            close(client_fd);
+        } else if (errno != EINTR) break;
+    }
     close(server_fd);
     return -1;
 }

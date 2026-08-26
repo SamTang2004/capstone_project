@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import os
+import select
 import socket
+import threading
 from dataclasses import dataclass
 
 from .dtypes import BCUDA_MAGIC, BCUDA_VERSION, Command, OpType, Status, normalize_usage
@@ -66,21 +68,49 @@ class ProtocolResponse:
 
 
 class SocketTransport:
-    """One-request TCP transport for the board-resident BudgetCUDA runtime."""
+    """Persistent ordered TCP transport for the board-resident runtime."""
 
     def __init__(self, address: str | None = None, port: int | None = None, timeout: float | None = None):
         self.endpoint = BoardEndpoint.from_environment(address, port, timeout)
         self.address = self.endpoint.address
         self.port = self.endpoint.port
         self.timeout = self.endpoint.timeout
+        self._socket: socket.socket | None = None
+        self._lock = threading.Lock()
+
+    def _close_unlocked(self) -> None:
+        if self._socket is not None:
+            try:
+                self._socket.close()
+            finally:
+                self._socket = None
+
+    def close(self) -> None:
+        with self._lock:
+            self._close_unlocked()
+
+    def _connection(self) -> socket.socket:
+        # Detect a peer that closed an otherwise idle connection before
+        # sending another command.  This preserves compatibility with older
+        # one-request servers without replaying a command after transmission.
+        if self._socket is not None:
+            readable, _, _ = select.select([self._socket], [], [], 0)
+            if readable and self._socket.recv(1, socket.MSG_PEEK) == b"":
+                self._close_unlocked()
+        if self._socket is None:
+            self._socket = socket.create_connection(
+                (self.address, self.port), timeout=self.timeout)
+            self._socket.settimeout(self.timeout)
+            self._socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        return self._socket
 
     def transact(self, request: bytes) -> bytes:
         if len(request) < 8:
             raise ProtocolError("Request is too short to contain a BudgetCUDA command")
         expected_command = int.from_bytes(request[6:8], "little")
-        try:
-            with socket.create_connection((self.address, self.port), timeout=self.timeout) as sock:
-                sock.settimeout(self.timeout)
+        with self._lock:
+            try:
+                sock = self._connection()
                 sock.sendall(request)
                 header = self._recv_exact(sock, RESPONSE_HEADER_STRUCT.size)
                 response_header = unpack_response_header(header)
@@ -88,8 +118,9 @@ class SocketTransport:
                 trailing_bytes = response_header.header_bytes - RESPONSE_HEADER_STRUCT.size + response_header.payload_bytes
                 tail_and_payload = self._recv_exact(sock, trailing_bytes)
                 return header + tail_and_payload
-        except (OSError, socket.timeout) as exc:
-            raise ProtocolError(f"Cannot reach BudgetCUDA board at {self.address}:{self.port}: {exc}") from exc
+            except (OSError, ProtocolError) as exc:
+                self._close_unlocked()
+                raise ProtocolError(f"Cannot reach BudgetCUDA board at {self.address}:{self.port}: {exc}") from exc
 
     @staticmethod
     def _validate_envelope(response_header, expected_command: int) -> None:
@@ -127,6 +158,11 @@ class ProtocolClient:
     def next_request_id(self) -> int:
         self._request_id += 1
         return self._request_id
+
+    def close(self) -> None:
+        close = getattr(self.transport, "close", None)
+        if close is not None:
+            close()
 
     def alloc(self, size_bytes, tensor_desc, usage, alignment=64):
         req_id = self.next_request_id()
