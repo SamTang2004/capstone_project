@@ -21,6 +21,13 @@ from .stories_quantization import (StoriesFakeQuantReference,
 from .stories_module_goldens import (StoriesW4A8ModuleSimulator,
                                      export_w4a8_module_goldens,
                                      validate_w4a8_module_goldens)
+from .work_stealing_model import (SchedulerCosts, TileTask,
+                                  WorkloadOperation,
+                                  build_stories_w4_workload,
+                                  evaluate_scheduler_overhead,
+                                  schedule_central_queue, schedule_static,
+                                  schedule_work_stealing,
+                                  write_scheduler_report)
 
 __all__ = [
     "BoardEndpoint", "DEFAULT_PROTOCOL_PORT", "DEFAULT_PYNQ_IP", "Device",
@@ -42,4 +49,8 @@ __all__ = [
     "write_quantization_report",
     "StoriesW4A8ModuleSimulator", "export_w4a8_module_goldens",
     "validate_w4a8_module_goldens",
+    "SchedulerCosts", "TileTask", "WorkloadOperation",
+    "build_stories_w4_workload", "evaluate_scheduler_overhead",
+    "schedule_central_queue", "schedule_static", "schedule_work_stealing",
+    "write_scheduler_report",
 ]

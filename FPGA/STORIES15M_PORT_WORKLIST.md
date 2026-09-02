@@ -244,6 +244,14 @@ integer pipeline and functional dequantized-matmul reference agree on top-1
 token 29892, although their maximum logit difference is 0.373634 after six
 layers; firmware/RTL should target the integer module contract.
 
+A scheduler validation model now uses the real QAT W4 codes and all 43 GEMM
+dependency barriers. Its first recommendation is whole-K, 8-output tile tasks
+with one-cycle local dequeues and steal-on-empty behavior. This needs 6,232
+tasks/97.4 KiB of descriptors per token, remains within 3.2% of the modeled
+sparse ideal, and improves the deliberately pathological two-worker mapping by
+13.7%. K-chunk subdivision is deferred because descriptor and partial-result
+overhead dominate. See `WORK_STEALING_VALIDATION.md`.
+
 ## Definition of the first successful port
 
 The port is complete at the initial W8 milestone only when the PYNQ-Z2 loads

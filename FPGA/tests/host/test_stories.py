@@ -30,6 +30,14 @@ from budgetcuda.stories_module_goldens import (  # noqa: E402
     validate_w4a8_module_goldens,
 )
 from budgetcuda.packing import pack_transformer_weights  # noqa: E402
+from budgetcuda.work_stealing_model import (  # noqa: E402
+    SchedulerCosts,
+    TileTask,
+    WorkloadOperation,
+    build_stories_w4_workload,
+    schedule_static,
+    schedule_work_stealing,
+)
 
 
 def _checkpoint_arrays(config, *, shared=True):
@@ -276,3 +284,43 @@ def test_module_simulator_matches_w4a8_reference_and_exports_archives(tmp_path):
     validation = validate_w4a8_module_goldens(manifest)
     assert validation["modules"] == len(modules)
     assert validation["tensors"] > validation["modules"]
+
+
+def test_workload_uses_real_w4_codes_and_respects_chunk_size(tmp_path):
+    checkpoint_path = tmp_path / "random.bin"
+    _write_random_checkpoint(checkpoint_path)
+    checkpoint = Llama2CCheckpoint(checkpoint_path)
+    whole = build_stories_w4_workload(
+        checkpoint, significant_code=1, k_chunk_steps=None,
+    )
+    chunked = build_stories_w4_workload(
+        checkpoint, significant_code=1, k_chunk_steps=2,
+    )
+    assert len(whole) == checkpoint.config.n_layers * 7 + 1
+    assert sum(len(operation.tasks) for operation in chunked) >= sum(
+        len(operation.tasks) for operation in whole
+    )
+    assert all(task.k_steps <= 2 for operation in chunked for task in operation.tasks)
+
+
+def test_work_stealing_recovers_pathological_static_imbalance():
+    tasks = tuple(
+        TileTask("op", index, 0, 16, cycles)
+        for index, cycles in enumerate([1, 32, 1, 32, 1, 32, 1, 32])
+    )
+    operation = WorkloadOperation("op", 16, 64, 128, 132, tasks)
+    costs = SchedulerCosts(
+        task_dispatch_cycles=0, steal_probe_cycles=0,
+        steal_transfer_cycles=0, partial_commit_cycles=0,
+        operation_barrier_cycles=0, steal_batch=1,
+    )
+    static = schedule_static(
+        [operation], workers=2, costs=costs, scenario="pathological",
+    )
+    stealing = schedule_work_stealing(
+        [operation], workers=2, costs=costs, scenario="pathological",
+    )
+    assert static.makespan_cycles == 128
+    assert stealing.makespan_cycles < static.makespan_cycles
+    assert stealing.steal_count > 0
+    assert stealing.compute_cycles == static.compute_cycles == 132

@@ -163,3 +163,23 @@ At position 4 their top-1 token agrees (`29892`), but their maximum absolute
 logit difference is `0.373634` after dynamic requantization through six
 layers. They are deliberately recorded as separate contracts; the integer
 module golden is the appropriate target for firmware and RTL.
+
+## Sparse scheduler overhead model
+
+The work-stealing validation model derives tile costs from the actual QAT W4
+codes, preserves all 43 GEMM dependency barriers, and compares static
+round-robin, a serialized central queue, and distributed work stealing.
+
+```powershell
+python testing/tiny_stories/run_work_stealing_model.py `
+  testing/tiny_stories/artifacts/w4a8_qat_500step/stories15M_w4a8_qat_float.bin `
+  --workers 2 --significant-code 4 --chunks whole,64,32,16 `
+  --output testing/tiny_stories/results/work_stealing_overhead_w4_code4
+```
+
+The first result favors complete-K output-tile tasks: 6,232 tasks and 97.4 KiB
+of 16-byte descriptors. With a one-cycle local pop and eight-cycle steal,
+work stealing is neutral on the naturally balanced order (`1.002x`) and
+recovers `1.137x` over static scheduling in the pathological distribution.
+See `FPGA/WORK_STEALING_VALIDATION.md` for assumptions and the proposed local
+queue architecture.
