@@ -233,8 +233,16 @@ research rather than replacing the W8A8 bring-up target.
 The 500-step checkpoint now also has a validated W4A8 functional golden for
 `Once upon a time`: 12 decode steps, 1,260 traced tensors, full vocabulary
 logits, and all K/V cache prefixes. This is the dequantized fake-quant golden;
-an integer golden with packed INT4 weights and fixed-point scale encodings must
-follow the final deployment scale contract.
+the module set below adds packed INT4 weights and INT32 accumulators, while
+fixed-point scale encodings must follow the final deployment scale contract.
+
+The first integer-observable module set is also available for prompt position
+4. It contains 99 independently hashed module archives and 1,089 tensors
+covering all six layers. W4A8 linear archives include accelerator-packed
+operands, INT32 accumulators, scales, and requantized outputs. The explicit
+integer pipeline and functional dequantized-matmul reference agree on top-1
+token 29892, although their maximum logit difference is 0.373634 after six
+layers; firmware/RTL should target the integer module contract.
 
 ## Definition of the first successful port
 

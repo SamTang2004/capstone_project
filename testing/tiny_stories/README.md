@@ -123,6 +123,43 @@ steps and 1,260 tensors: full 32K logits, operator-boundary dequantized
 fake-quant activations, per-layer tensors, and K/V cache prefixes. Its JSON
 records both the QAT checkpoint and original source-checkpoint SHA-256 values,
 the complete quantization policy, token flow, shapes, and per-tensor hashes.
-The current golden proves the host fake-quant contract. Packed INT4 codes,
-fixed-point scale encodings, and exact accumulator/requantizer integers belong
-in the later integer-reference golden once that deployment contract is frozen.
+The current full-model golden proves the host fake-quant contract. The module
+set below adds packed INT4 codes and exact INT32 accumulators; fixed-point scale
+encodings and bit-exact hardware requantizer parameters still require the final
+deployment scale contract.
+
+## Per-module W4A8 integer goldens
+
+`stories_module_goldens.py` provides independent Python simulators for
+embedding gather, W4A8 linear/GEMM, RMSNorm, RoPE, K/V update, causal
+attention, Softmax/probability quantization, residual add, SiLU, SwiGLU, final
+normalization, and vocabulary projection. W4A8 GEMM archives include logical
+INT4/INT8 operands, the exact accelerator tiled byte layouts, INT32
+accumulators, per-output scales, pre-requant values, and output INT8 codes.
+
+Generate all modules for every layer at the final prompt position:
+
+```powershell
+python testing/tiny_stories/export_module_goldens.py `
+  testing/tiny_stories/artifacts/w4a8_qat_500step/stories15M_w4a8_qat_float.bin `
+  --tokenizer testing/tiny_stories/artifacts/tokenizer.bin `
+  --prompt "Once upon a time" --capture-position 4 `
+  --output-directory `
+    testing/tiny_stories/results/modules_w4a8_qat_once_upon_a_time_pos004
+
+python testing/tiny_stories/validate_module_goldens.py `
+  testing/tiny_stories/results/modules_w4a8_qat_once_upon_a_time_pos004/manifest.json
+```
+
+This produces 99 module archives containing 1,089 independently hashed
+tensors. Earlier prompt positions are executed first to populate the real K/V
+prefix. Each archive is written to a temporary file and atomically renamed;
+the manifest is written last, so an interrupted export cannot present a
+partial set as complete.
+
+The integer simulator uses explicit INT32 GEMM accumulation, whereas the
+earlier functional fake-quant reference multiplies dequantized FP32 operands.
+At position 4 their top-1 token agrees (`29892`), but their maximum absolute
+logit difference is `0.373634` after dynamic requantization through six
+layers. They are deliberately recorded as separate contracts; the integer
+module golden is the appropriate target for firmware and RTL.
