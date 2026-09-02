@@ -267,6 +267,14 @@ stages are balanced at 298,199/300,817 cycles. K=64 remains the throughput
 option, while K=16 is reserved for finer pruning experiments. All modeled
 survivors retain their tags; accuracy still requires real activation traces.
 
+Real inference screening has now established the first accuracy boundary.
+Exact W4 zero-skip removes 14.0% of tile-K work with no additional loss.
+Keeping the largest 90% of A8 values removes 22.3% with only 0.66% PPL growth
+over dense W4A8; keeping 75% removes 35.4% with 4.60% PPL growth. The earlier
+`abs(W4 code) >= 4` policy is fatal (PPL 1283.6 at full A8 retention) and must
+remain a scheduler stress test. Hardware thresholds must be programmable; see
+`SPARSITY_ACCURACY_VALIDATION.md`.
+
 ## Definition of the first successful port
 
 The port is complete at the initial W8 milestone only when the PYNQ-Z2 loads

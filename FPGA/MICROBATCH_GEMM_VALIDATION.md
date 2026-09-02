@@ -30,7 +30,11 @@ bound is `screen + matrix`; the ideal producer-consumer bound is
 `max(screen, matrix)`.
 
 This is an architecture-throughput experiment. The synthetic activation masks
-and W4 threshold are not an accuracy-approved pruning rule.
+and W4 threshold are not an accuracy-approved pruning rule. Subsequent real
+inference evaluation found that threshold 4 is catastrophic: with all A8
+activations retained it raises perplexity from dense W4A8's 2.7103 to 1283.6.
+All threshold-4 results below are therefore scheduler stress tests, not a
+deployable operating point. See `SPARSITY_ACCURACY_VALIDATION.md`.
 
 ## Eight-lane predicate, four-lane survivor compactor
 
@@ -82,6 +86,8 @@ improve the ideal pipelined bound once the matrix stage dominates.
    using the row's immutable composite tag.
 7. Start RTL with K=32 and at least two predicate lanes. Keep K=64 as the
    throughput configuration and K=16 as the finer-grained accuracy experiment.
+8. Make thresholds programmable. Use W4 nonzero detection for exact zero-skip;
+   begin approximate experiments at W4 >= 1 with 90% A8 retention.
 
 ## Still missing
 

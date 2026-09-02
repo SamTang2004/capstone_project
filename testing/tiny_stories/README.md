@@ -223,3 +223,26 @@ K=32 takes 421,032 cycles but issues 10.4% fewer wasted row-steps, so it is the
 recommended first RTL granularity. The model reports zero missing, duplicated,
 or misrouted tags. See `FPGA/MICROBATCH_GEMM_VALIDATION.md`; its activation
 masks are synthetic and do not establish an accuracy-safe sparsity rule.
+
+## Sparsity accuracy
+
+Run the screening policy inside real W4A8 inference and compare it with both
+the original FP32 teacher and dense W4A8 QAT:
+
+```powershell
+python testing/tiny_stories/run_sparsity_accuracy.py `
+  testing/tiny_stories/artifacts/w4a8_qat_500step/stories15M_w4a8_qat_float.bin `
+  testing/tiny_stories/artifacts/tokenizer.bin `
+  --baseline-checkpoint testing/tiny_stories/artifacts/stories15M.bin `
+  --corpus testing/tiny_stories/artifacts/TinyStories-valid.txt `
+  --stories 32 --tokens-per-story 64 `
+  --policies 1:1,1:0.9,1:0.75,2:1,3:1,4:1,4:0.5 `
+  --output testing/tiny_stories/results/sparsity_accuracy_official_valid_32x64
+```
+
+Exact W4 zero-skip discards 14.0% of tile-K work with bit-identical dense W4A8
+logits. Retaining the largest 90% of real A8 activations discards 22.3%, adds
+only 0.66% PPL, and lowers FP32 top-1 from 86.3% to 86.0%. The scheduler's
+threshold-4 stress policy is fatal: even at 100% activation retention, PPL is
+1283.6 and FP32 top-1 agreement is 3.5%. See
+`FPGA/SPARSITY_ACCURACY_VALIDATION.md`.

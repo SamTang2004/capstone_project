@@ -37,6 +37,10 @@ from budgetcuda.microbatch_gemm_model import (  # noqa: E402
     evaluate_screen_and_pack,
     pack_survivors_as_gemm,
 )
+from budgetcuda.stories_sparsity_accuracy import (  # noqa: E402
+    SparsityAccuracySpec,
+    StoriesScreenedW4A8Reference,
+)
 from budgetcuda.work_stealing_model import (  # noqa: E402
     SchedulerCosts,
     TaskTag,
@@ -411,3 +415,21 @@ def test_micro_screen_width_reduces_overhead_without_changing_survivors(tmp_path
     assert narrow["bundle_count"] == wide["bundle_count"]
     assert narrow["predicate_cycles"] > wide["predicate_cycles"]
     assert wide["tag_mismatches"] == 0
+
+
+def test_screened_w4a8_drops_tile_k_and_preserves_full_lane_compute(tmp_path):
+    checkpoint_path = tmp_path / "random.bin"
+    _write_random_checkpoint(checkpoint_path)
+    checkpoint = Llama2CCheckpoint(checkpoint_path)
+    reference = StoriesScreenedW4A8Reference(
+        checkpoint, SparsityAccuracySpec(4, 1.0, output_tile=8),
+    )
+    weight = np.zeros((8, 4), dtype=np.float32)
+    weight[:, 0] = np.linspace(1.0, 2.0, 8, dtype=np.float32)
+    weight[:, 1:] = weight[:, :1] * np.float32(1.0 / 7.0)
+    value = np.ones(4, dtype=np.float32)
+    output = reference._matmul(weight, value)
+    np.testing.assert_allclose(output, weight[:, 0])
+    assert reference.total_tile_k == 4
+    assert reference.screened_tile_k == 3
+    assert reference.measured_drop_fraction == 0.75

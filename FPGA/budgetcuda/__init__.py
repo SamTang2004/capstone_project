@@ -38,6 +38,10 @@ from .microbatch_gemm_model import (GemmBundle, MicroCandidate,
                                     evaluate_screen_and_pack,
                                     pack_survivors_as_gemm,
                                     write_microbatch_report)
+from .stories_sparsity_accuracy import (SparsityAccuracySpec,
+                                         StoriesScreenedW4A8Reference,
+                                         evaluate_sparsity_accuracy,
+                                         write_sparsity_accuracy_report)
 
 __all__ = [
     "BoardEndpoint", "DEFAULT_PROTOCOL_PORT", "DEFAULT_PYNQ_IP", "Device",
@@ -68,4 +72,6 @@ __all__ = [
     "build_micro_candidates", "evaluate_microbatch_sweep",
     "evaluate_screen_and_pack", "pack_survivors_as_gemm",
     "write_microbatch_report",
+    "SparsityAccuracySpec", "StoriesScreenedW4A8Reference",
+    "evaluate_sparsity_accuracy", "write_sparsity_accuracy_report",
 ]
