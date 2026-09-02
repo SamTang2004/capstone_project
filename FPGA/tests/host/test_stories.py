@@ -32,8 +32,10 @@ from budgetcuda.stories_module_goldens import (  # noqa: E402
 from budgetcuda.packing import pack_transformer_weights  # noqa: E402
 from budgetcuda.work_stealing_model import (  # noqa: E402
     SchedulerCosts,
+    TaskTag,
     TileTask,
     WorkloadOperation,
+    build_tagged_batch_workload,
     build_stories_w4_workload,
     schedule_static,
     schedule_work_stealing,
@@ -324,3 +326,33 @@ def test_work_stealing_recovers_pathological_static_imbalance():
     assert stealing.makespan_cycles < static.makespan_cycles
     assert stealing.steal_count > 0
     assert stealing.compute_cycles == static.compute_cycles == 132
+
+
+def test_batch_tags_survive_stealing_and_route_completion_by_batch():
+    base_tasks = tuple(
+        TileTask("op", index, 0, 32, 32)
+        for index in range(8)
+    )
+    base = [WorkloadOperation("op", 32, 64, 256, 256, base_tasks)]
+    tagged = build_tagged_batch_workload(base, [0.125, 1.0], generation=3)
+    assert {task.tag for task in tagged[0].tasks} == {
+        TaskTag(0, 0, 3), TaskTag(1, 0, 3),
+    }
+    costs = SchedulerCosts(
+        task_dispatch_cycles=0, tag_lookup_cycles=1,
+        steal_probe_cycles=0, steal_transfer_cycles=0,
+        partial_commit_cycles=0, operation_barrier_cycles=0,
+        steal_batch=2,
+    )
+    static = schedule_static(
+        tagged, workers=2, costs=costs, scenario="batch_owned",
+    )
+    stealing = schedule_work_stealing(
+        tagged, workers=2, costs=costs, scenario="batch_owned",
+    )
+    assert stealing.makespan_cycles < static.makespan_cycles
+    assert stealing.steal_count > 0
+    assert stealing.tag_mismatches == 0
+    assert stealing.completed_tasks_by_batch == {0: 8, 1: 8}
+    assert stealing.tag_lookup_cycles == 16
+    assert stealing.tag_bits >= 4

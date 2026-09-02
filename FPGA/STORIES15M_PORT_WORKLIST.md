@@ -252,6 +252,13 @@ sparse ideal, and improves the deliberately pathological two-worker mapping by
 13.7%. K-chunk subdivision is deferred because descriptor and partial-result
 overhead dominate. See `WORK_STEALING_VALIDATION.md`.
 
+The batch-tag extension now carries `(batch_id, operation_id, generation)`
+through actual steal/completion events. Two batches require an eight-bit tag,
+adding 12.2 KiB across 12,464 tasks. At one-cycle lookup, 5%/100% batch skew is
+1.785x faster than static with zero routing errors; the modeled tag-lookup
+crossover is 39/40 cycles per task. Equal loads trigger no steals and lose
+about 1.1%, so the first hardware policy should steal only when locally idle.
+
 ## Definition of the first successful port
 
 The port is complete at the initial W8 milestone only when the PYNQ-Z2 loads

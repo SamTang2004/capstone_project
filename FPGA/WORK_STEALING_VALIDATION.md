@@ -104,3 +104,39 @@ The model and CLI are in `budgetcuda.work_stealing_model` and
 `testing/tiny_stories/run_work_stealing_model.py`. The generated JSON retains
 all policy samples so later RTL measurements can replace assumptions without
 changing the comparison framework.
+
+## Tagged multi-batch extension
+
+The second validation model combines two batches in each of the same 43 GEMM
+dependency waves. Every task carries an immutable composite tag:
+
+`(batch_id, operation_id, generation)`
+
+The descriptor still carries output tile and K-range fields. Initial queue
+ownership is `batch_id % worker_count`; a stolen task retains its complete tag,
+and the completion ledger is built from tasks actually executed by workers.
+A multiset check detects lost or duplicated tasks after stealing.
+
+For two batches, 43 operations, and one generation, the minimum tag is eight
+bits: one batch bit, six operation bits, and one generation bit. This adds one
+byte per descriptor, or 12.2 KiB across 12,464 whole-tile tasks.
+
+At one cycle of tag lookup per task and an eight-cycle steal handshake:
+
+| Batch active-work factors | Makespan | Speedup vs static | Utilization | Steals | Tag errors | Tag-cost break-even |
+|---|---:|---:|---:|---:|---:|---:|
+| 1.00 / 1.00 | 550,991 | 0.989x | 97.0% | 0 | 0 | none |
+| 0.50 / 1.00 | 422,181 | 1.290x | 95.0% | 515 | 0 | 16 cycles/task |
+| 0.25 / 1.00 | 356,556 | 1.528x | 93.0% | 710 | 0 | 24 cycles/task |
+| 0.05 / 1.00 | 305,165 | 1.785x | 91.9% | 848 | 0 | 39 cycles/task |
+
+The equal-load case correctly performs no steals; its roughly 1.1% loss is
+pure tag lookup cost. Therefore tag propagation should be a one-cycle pipeline
+stage or ride alongside the descriptor with no separate lookup, and stealing
+should remain strictly idle-triggered. The extreme 5%/100% case crosses below
+static performance between 39 and 40 tag-lookup cycles per task.
+
+This is deliberately conservative about dependencies: batches share a global
+barrier between GEMM operations. It does not yet model independent batch graph
+progress, descriptor-generation/enqueue latency, sparse-index DDR traffic, or
+completion backpressure. Those effects belong in the next event-driven model.

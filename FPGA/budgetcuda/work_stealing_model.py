@@ -12,8 +12,8 @@ from __future__ import annotations
 import json
 import math
 import random
-from collections import deque
-from dataclasses import dataclass, replace
+from collections import Counter, deque
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Iterable, Sequence
 
@@ -24,12 +24,24 @@ from .stories_module_goldens import quantize_weight_per_output
 
 
 @dataclass(frozen=True)
+class TaskTag:
+    batch_id: int = 0
+    operation_id: int = 0
+    generation: int = 0
+
+    def __post_init__(self) -> None:
+        if self.batch_id < 0 or self.operation_id < 0 or self.generation < 0:
+            raise ValueError("task tag fields must be non-negative")
+
+
+@dataclass(frozen=True)
 class TileTask:
     operation: str
     output_tile: int
     k_start: int
     k_steps: int
     active_steps: int
+    tag: TaskTag = TaskTag()
 
     @property
     def compute_cycles(self) -> int:
@@ -55,12 +67,14 @@ class SchedulerCosts:
     operation_barrier_cycles: int = 2
     descriptor_bytes: int = 16
     steal_batch: int = 4
+    tag_lookup_cycles: int = 0
 
     def __post_init__(self) -> None:
         numeric = (
             self.task_dispatch_cycles, self.steal_probe_cycles,
             self.steal_transfer_cycles, self.partial_commit_cycles,
             self.operation_barrier_cycles, self.descriptor_bytes,
+            self.tag_lookup_cycles,
         )
         if any(value < 0 for value in numeric) or self.steal_batch <= 0:
             raise ValueError("scheduler costs must be non-negative and steal_batch positive")
@@ -79,6 +93,11 @@ class ScheduleMetrics:
     stolen_tasks: int = 0
     descriptor_bytes: int = 0
     worker_count: int = 0
+    tag_lookup_cycles: int = 0
+    tag_bits: int = 0
+    tag_metadata_bytes: int = 0
+    tag_mismatches: int = 0
+    completed_tasks_by_batch: dict[int, int] = field(default_factory=dict)
 
     @property
     def utilization(self) -> float:
@@ -103,6 +122,13 @@ class ScheduleMetrics:
             "stolen_tasks": self.stolen_tasks,
             "descriptor_bytes": self.descriptor_bytes,
             "worker_count": self.worker_count,
+            "tag_lookup_cycles": self.tag_lookup_cycles,
+            "tag_bits": self.tag_bits,
+            "tag_metadata_bytes": self.tag_metadata_bytes,
+            "tag_mismatches": self.tag_mismatches,
+            "completed_tasks_by_batch": {
+                str(key): value for key, value in sorted(self.completed_tasks_by_batch.items())
+            },
             "utilization": self.utilization,
             "aggregate_overhead_fraction": self.aggregate_overhead_fraction,
         }
@@ -156,11 +182,56 @@ def build_stories_w4_workload(
     return tuple(operations)
 
 
+def build_tagged_batch_workload(
+    operations: Sequence[WorkloadOperation],
+    batch_active_factors: Sequence[float],
+    *,
+    generation: int = 0,
+) -> tuple[WorkloadOperation, ...]:
+    """Replicate each operation across batches and attach immutable task tags.
+
+    Factors scale active compute while retaining descriptors, modeling batches
+    whose significance masks contain very different amounts of useful work.
+    Each returned operation is one conservative global dependency wave.
+    """
+
+    if not batch_active_factors or any(
+        not math.isfinite(float(factor)) or factor < 0 for factor in batch_active_factors
+    ):
+        raise ValueError("batch_active_factors must be finite non-negative values")
+    tagged = []
+    for operation_id, operation in enumerate(operations):
+        tasks = []
+        for batch_id, factor in enumerate(batch_active_factors):
+            for task in operation.tasks:
+                active = int(round(task.active_steps * float(factor)))
+                if factor > 0 and task.active_steps > 0:
+                    active = max(1, active)
+                if active == 0:
+                    continue
+                tasks.append(replace(
+                    task,
+                    active_steps=active,
+                    tag=TaskTag(batch_id, operation_id, generation),
+                ))
+        tagged.append(WorkloadOperation(
+            operation.name,
+            operation.reduction,
+            operation.outputs * len(batch_active_factors),
+            operation.dense_cycles_single_core * len(batch_active_factors),
+            sum(task.active_steps for task in tasks),
+            tuple(tasks),
+        ))
+    return tuple(tagged)
+
+
 def _ordered_tasks(
     tasks: Sequence[TileTask], scenario: str, workers: int, seed: int,
 ) -> list[TileTask]:
     tasks = list(tasks)
     if scenario == "actual":
+        return tasks
+    if scenario == "batch_owned":
         return tasks
     if scenario == "shuffled":
         random.Random(seed).shuffle(tasks)
@@ -181,7 +252,31 @@ def _ordered_tasks(
                 if index < len(bucket):
                     result.append(bucket[index])
         return result
-    raise ValueError("scenario must be actual, shuffled, or pathological")
+    raise ValueError("scenario must be actual, shuffled, pathological, or batch_owned")
+
+
+def _assigned_worker(task: TileTask, index: int, scenario: str, workers: int) -> int:
+    if scenario == "batch_owned":
+        return task.tag.batch_id % workers
+    return index % workers
+
+
+def _tag_width(tasks: Sequence[TileTask]) -> int:
+    if not tasks:
+        return 0
+    maxima = (
+        max(task.tag.batch_id for task in tasks),
+        max(task.tag.operation_id for task in tasks),
+        max(task.tag.generation for task in tasks),
+    )
+    return sum(max(1, int(value).bit_length()) for value in maxima)
+
+
+def _completion_counts(tasks: Sequence[TileTask]) -> dict[int, int]:
+    counts: dict[int, int] = {}
+    for task in tasks:
+        counts[task.tag.batch_id] = counts.get(task.tag.batch_id, 0) + 1
+    return counts
 
 
 def _merge_metrics(total: ScheduleMetrics, current: ScheduleMetrics) -> None:
@@ -189,8 +284,12 @@ def _merge_metrics(total: ScheduleMetrics, current: ScheduleMetrics) -> None:
         "makespan_cycles", "compute_cycles", "scheduler_cycles", "commit_cycles",
         "barrier_cycles", "task_count", "steal_count", "stolen_tasks",
         "descriptor_bytes",
+        "tag_lookup_cycles", "tag_metadata_bytes", "tag_mismatches",
     ):
         setattr(total, name, getattr(total, name) + getattr(current, name))
+    total.tag_bits = max(total.tag_bits, current.tag_bits)
+    for batch, count in current.completed_tasks_by_batch.items():
+        total.completed_tasks_by_batch[batch] = total.completed_tasks_by_batch.get(batch, 0) + count
 
 
 def schedule_static(
@@ -208,19 +307,26 @@ def schedule_static(
         loads = [0] * workers
         tasks = _ordered_tasks(operation.tasks, scenario, workers, seed + operation_index)
         for index, task in enumerate(tasks):
-            loads[index % workers] += (
-                costs.task_dispatch_cycles + task.compute_cycles + costs.partial_commit_cycles
+            worker = _assigned_worker(task, index, scenario, workers)
+            loads[worker] += (
+                costs.task_dispatch_cycles + costs.tag_lookup_cycles
+                + task.compute_cycles + costs.partial_commit_cycles
             )
+        tag_bits = _tag_width(tasks)
         current = ScheduleMetrics(
             "static_round_robin",
             makespan_cycles=max(loads, default=0) + costs.operation_barrier_cycles,
             compute_cycles=sum(task.compute_cycles for task in tasks),
-            scheduler_cycles=len(tasks) * costs.task_dispatch_cycles,
+            scheduler_cycles=len(tasks) * (costs.task_dispatch_cycles + costs.tag_lookup_cycles),
             commit_cycles=len(tasks) * costs.partial_commit_cycles,
             barrier_cycles=costs.operation_barrier_cycles,
             task_count=len(tasks),
             descriptor_bytes=len(tasks) * costs.descriptor_bytes,
             worker_count=workers,
+            tag_lookup_cycles=len(tasks) * costs.tag_lookup_cycles,
+            tag_bits=tag_bits,
+            tag_metadata_bytes=len(tasks) * math.ceil(tag_bits / 8),
+            completed_tasks_by_batch=_completion_counts(tasks),
         )
         _merge_metrics(total, current)
     return total
@@ -242,19 +348,23 @@ def schedule_central_queue(
         for task in tasks:
             worker = min(range(workers), key=lambda index: available[index])
             dispatch_start = max(available[worker], dispatcher_available)
-            dispatch_done = dispatch_start + costs.task_dispatch_cycles
+            dispatch_done = dispatch_start + costs.task_dispatch_cycles + costs.tag_lookup_cycles
             dispatcher_available = dispatch_done
             available[worker] = dispatch_done + task.compute_cycles + costs.partial_commit_cycles
         current = ScheduleMetrics(
             "central_queue",
             makespan_cycles=max(available, default=0) + costs.operation_barrier_cycles,
             compute_cycles=sum(task.compute_cycles for task in tasks),
-            scheduler_cycles=len(tasks) * costs.task_dispatch_cycles,
+            scheduler_cycles=len(tasks) * (costs.task_dispatch_cycles + costs.tag_lookup_cycles),
             commit_cycles=len(tasks) * costs.partial_commit_cycles,
             barrier_cycles=costs.operation_barrier_cycles,
             task_count=len(tasks),
             descriptor_bytes=len(tasks) * costs.descriptor_bytes,
             worker_count=workers,
+            tag_lookup_cycles=len(tasks) * costs.tag_lookup_cycles,
+            tag_bits=_tag_width(tasks),
+            tag_metadata_bytes=len(tasks) * math.ceil(_tag_width(tasks) / 8),
+            completed_tasks_by_batch=_completion_counts(tasks),
         )
         _merge_metrics(total, current)
     return total
@@ -273,7 +383,7 @@ def schedule_work_stealing(
         tasks = _ordered_tasks(operation.tasks, scenario, workers, seed + operation_index)
         queues = [deque() for _ in range(workers)]
         for index, task in enumerate(tasks):
-            queues[index % workers].append(task)
+            queues[_assigned_worker(task, index, scenario, workers)].append(task)
         remaining_work = [
             sum(task.compute_cycles for task in queue) for queue in queues
         ]
@@ -281,6 +391,7 @@ def schedule_work_stealing(
         scheduler_cycles = 0
         steal_count = 0
         stolen_tasks = 0
+        completed: list[TileTask] = []
         while any(queues):
             worker = min(range(workers), key=lambda index: available[index])
             if not queues[worker]:
@@ -315,9 +426,12 @@ def schedule_work_stealing(
             task = queues[worker].popleft()
             remaining_work[worker] -= task.compute_cycles
             available[worker] += (
-                costs.task_dispatch_cycles + task.compute_cycles + costs.partial_commit_cycles
+                costs.task_dispatch_cycles + costs.tag_lookup_cycles
+                + task.compute_cycles + costs.partial_commit_cycles
             )
-            scheduler_cycles += costs.task_dispatch_cycles
+            scheduler_cycles += costs.task_dispatch_cycles + costs.tag_lookup_cycles
+            completed.append(task)
+        completion_mismatch = int(Counter(completed) != Counter(tasks))
         current = ScheduleMetrics(
             "work_stealing",
             makespan_cycles=max(available, default=0) + costs.operation_barrier_cycles,
@@ -330,6 +444,11 @@ def schedule_work_stealing(
             stolen_tasks=stolen_tasks,
             descriptor_bytes=len(tasks) * costs.descriptor_bytes,
             worker_count=workers,
+            tag_lookup_cycles=len(tasks) * costs.tag_lookup_cycles,
+            tag_bits=_tag_width(tasks),
+            tag_metadata_bytes=len(tasks) * math.ceil(_tag_width(tasks) / 8),
+            tag_mismatches=completion_mismatch,
+            completed_tasks_by_batch=_completion_counts(completed),
         )
         _merge_metrics(total, current)
     return total
@@ -497,6 +616,148 @@ def evaluate_scheduler_overhead(
         },
         "results": results,
     }
+
+
+def evaluate_tagged_batch_overhead(
+    checkpoint: Llama2CCheckpoint,
+    *,
+    workers: int = 2,
+    batch_active_factors: Sequence[float] = (0.05, 1.0),
+    significant_code: int = 4,
+    k_chunk_steps: int | None = None,
+    tag_lookup_values: Sequence[int] = tuple(range(0, 17)),
+    task_dispatch_cycles: int = 1,
+    steal_probe_cycles: int = 4,
+    steal_transfer_cycles: int = 4,
+    partial_commit_cycles: int = 1,
+    operation_barrier_cycles: int = 2,
+    descriptor_bytes: int = 16,
+    steal_batch: int = 4,
+) -> dict:
+    """Measure the tag-lookup budget for batch-owned work stealing."""
+
+    if workers <= 0:
+        raise ValueError("workers must be positive")
+    if not tag_lookup_values or any(value < 0 for value in tag_lookup_values):
+        raise ValueError("tag_lookup_values must be non-negative")
+    base = build_stories_w4_workload(
+        checkpoint, significant_code=significant_code,
+        k_chunk_steps=k_chunk_steps,
+    )
+    operations = build_tagged_batch_workload(base, batch_active_factors)
+    baseline_costs = SchedulerCosts(
+        task_dispatch_cycles=task_dispatch_cycles,
+        steal_probe_cycles=steal_probe_cycles,
+        steal_transfer_cycles=steal_transfer_cycles,
+        partial_commit_cycles=partial_commit_cycles,
+        operation_barrier_cycles=operation_barrier_cycles,
+        descriptor_bytes=descriptor_bytes,
+        steal_batch=steal_batch,
+        tag_lookup_cycles=0,
+    )
+    static = schedule_static(
+        operations, workers=workers, costs=baseline_costs, scenario="batch_owned",
+    )
+    samples = []
+    break_even = None
+    expected_counts = _completion_counts([
+        task for operation in operations for task in operation.tasks
+    ])
+    for tag_cycles in tag_lookup_values:
+        costs = replace(baseline_costs, tag_lookup_cycles=int(tag_cycles))
+        stealing = schedule_work_stealing(
+            operations, workers=workers, costs=costs, scenario="batch_owned",
+        )
+        if stealing.completed_tasks_by_batch != expected_counts:
+            stealing.tag_mismatches += 1
+        if stealing.tag_mismatches == 0 and stealing.makespan_cycles < static.makespan_cycles:
+            break_even = int(tag_cycles)
+        samples.append({
+            "tag_lookup_cycles": int(tag_cycles),
+            "work_stealing": stealing.as_dict(),
+            "speedup_vs_untagged_static": (
+                static.makespan_cycles / stealing.makespan_cycles
+                if stealing.makespan_cycles else math.inf
+            ),
+        })
+    recommended = next(
+        (sample for sample in samples if sample["tag_lookup_cycles"] == 1),
+        samples[0],
+    )
+    task_count = sum(len(operation.tasks) for operation in operations)
+    tag_bits = max((sample["work_stealing"]["tag_bits"] for sample in samples), default=0)
+    return {
+        "format": "budgetcuda-tagged-batch-work-stealing-model",
+        "version": 1,
+        "checkpoint_sha256": checkpoint.sha256,
+        "assumptions": {
+            "workers": workers,
+            "batch_count": len(batch_active_factors),
+            "batch_active_factors": [float(value) for value in batch_active_factors],
+            "significant_w4_code_threshold": significant_code,
+            "k_chunk_steps": k_chunk_steps,
+            "task_dispatch_cycles": task_dispatch_cycles,
+            "steal_probe_cycles": steal_probe_cycles,
+            "steal_transfer_cycles": steal_transfer_cycles,
+            "partial_commit_cycles": partial_commit_cycles,
+            "operation_barrier_cycles": operation_barrier_cycles,
+            "steal_batch": steal_batch,
+            "dependency_model": "global barrier per GEMM operation across batches",
+            "initial_ownership": "batch_id modulo worker_count",
+        },
+        "operation_count": len(operations),
+        "task_count": task_count,
+        "tag_bits": tag_bits,
+        "tag_bytes_per_task": math.ceil(tag_bits / 8),
+        "tag_metadata_bytes": task_count * math.ceil(tag_bits / 8),
+        "expected_completed_tasks_by_batch": {
+            str(key): value for key, value in sorted(expected_counts.items())
+        },
+        "static_untagged_lookup": static.as_dict(),
+        "recommended_tag_lookup_1_cycle": recommended,
+        "max_sampled_break_even_tag_lookup_cycles": break_even,
+        "samples": samples,
+    }
+
+
+def write_tagged_batch_report(
+    report: dict, output_prefix: str | Path,
+) -> tuple[Path, Path]:
+    prefix = Path(output_prefix)
+    prefix.parent.mkdir(parents=True, exist_ok=True)
+    json_path = prefix.with_suffix(".json")
+    markdown_path = prefix.with_suffix(".md")
+    json_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    assumptions = report["assumptions"]
+    lines = [
+        "# Tagged-batch sparse work-stealing model",
+        "",
+        f"Batches: `{assumptions['batch_count']}` with active factors "
+        f"`{assumptions['batch_active_factors']}`  ",
+        f"Tasks: `{report['task_count']}` across `{report['operation_count']}` GEMM barriers  ",
+        f"Tag: `{report['tag_bits']} bits` (`{report['tag_bytes_per_task']} bytes/task`, "
+        f"`{report['tag_metadata_bytes'] / 1024:.1f} KiB` total descriptor traffic)",
+        "",
+        "| Tag lookup cycles/task | Makespan | Speedup vs static | Utilization | Steals | Stolen tasks | Tag mismatch |",
+        "|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for sample in report["samples"]:
+        metrics = sample["work_stealing"]
+        lines.append(
+            f"| {sample['tag_lookup_cycles']} | {metrics['makespan_cycles']} | "
+            f"{sample['speedup_vs_untagged_static']:.3f}x | {metrics['utilization']:.3f} | "
+            f"{metrics['steal_count']} | {metrics['stolen_tasks']} | {metrics['tag_mismatches']} |"
+        )
+    lines.extend([
+        "",
+        f"Largest sampled winning tag lookup cost: "
+        f"`{report['max_sampled_break_even_tag_lookup_cycles']}` cycles/task.",
+        "",
+        "This first model uses a conservative global barrier between GEMM operations. "
+        "It validates tag preservation and batch-skew balancing, not independent per-batch graph progress.",
+    ])
+    markdown_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return json_path, markdown_path
 
 
 def write_scheduler_report(report: dict, output_prefix: str | Path) -> tuple[Path, Path]:

@@ -21,12 +21,15 @@ from .stories_quantization import (StoriesFakeQuantReference,
 from .stories_module_goldens import (StoriesW4A8ModuleSimulator,
                                      export_w4a8_module_goldens,
                                      validate_w4a8_module_goldens)
-from .work_stealing_model import (SchedulerCosts, TileTask,
+from .work_stealing_model import (SchedulerCosts, TaskTag, TileTask,
                                   WorkloadOperation,
+                                  build_tagged_batch_workload,
                                   build_stories_w4_workload,
                                   evaluate_scheduler_overhead,
+                                  evaluate_tagged_batch_overhead,
                                   schedule_central_queue, schedule_static,
                                   schedule_work_stealing,
+                                  write_tagged_batch_report,
                                   write_scheduler_report)
 
 __all__ = [
@@ -49,8 +52,9 @@ __all__ = [
     "write_quantization_report",
     "StoriesW4A8ModuleSimulator", "export_w4a8_module_goldens",
     "validate_w4a8_module_goldens",
-    "SchedulerCosts", "TileTask", "WorkloadOperation",
-    "build_stories_w4_workload", "evaluate_scheduler_overhead",
+    "SchedulerCosts", "TaskTag", "TileTask", "WorkloadOperation",
+    "build_stories_w4_workload", "build_tagged_batch_workload",
+    "evaluate_scheduler_overhead", "evaluate_tagged_batch_overhead",
     "schedule_central_queue", "schedule_static", "schedule_work_stealing",
-    "write_scheduler_report",
+    "write_scheduler_report", "write_tagged_batch_report",
 ]

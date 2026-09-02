@@ -183,3 +183,20 @@ work stealing is neutral on the naturally balanced order (`1.002x`) and
 recovers `1.137x` over static scheduling in the pathological distribution.
 See `FPGA/WORK_STEALING_VALIDATION.md` for assumptions and the proposed local
 queue architecture.
+
+The tagged-batch extension assigns each task a `(batch_id, operation_id,
+generation)` tag and verifies the actual completion stream after stealing:
+
+```powershell
+python testing/tiny_stories/run_tagged_scheduler_model.py `
+  testing/tiny_stories/artifacts/w4a8_qat_500step/stories15M_w4a8_qat_float.bin `
+  --workers 2 --batch-active-factors 0.05,1.0 --significant-code 4 `
+  --output testing/tiny_stories/results/tagged_batch_scheduler_w4_code4
+```
+
+For 12,464 whole-tile tasks, the two-batch tag is eight bits and contributes
+12.2 KiB of metadata. With a one-cycle tag lookup, the 5%/100% skew case is
+1.785x faster than static assignment with zero lost, duplicated, or misrouted
+completions. It remains faster through 39 tag-lookup cycles per task and loses
+at 40. Equal 100%/100% batches perform no steals and pay only the approximately
+1.1% tag overhead, supporting idle-triggered rather than proactive stealing.
