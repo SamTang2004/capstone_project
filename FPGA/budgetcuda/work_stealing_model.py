@@ -23,7 +23,7 @@ from .stories import Llama2CCheckpoint
 from .stories_module_goldens import quantize_weight_per_output
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, order=True)
 class TaskTag:
     batch_id: int = 0
     operation_id: int = 0

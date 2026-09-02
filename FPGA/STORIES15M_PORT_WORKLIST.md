@@ -259,6 +259,14 @@ adding 12.2 KiB across 12,464 tasks. At one-cycle lookup, 5%/100% batch skew is
 crossover is 39/40 cycles per task. Equal loads trigger no steals and lose
 about 1.1%, so the first hardware policy should steal only when locally idle.
 
+The micro-computation extension now charges significance screening before
+discard, compacts surviving tagged GEMVs, and packs compatible work as rows of
+an eight-row GEMM. The first hardware point is K=32 with a four-lane survivor
+compactor and at least two predicate lanes: its modeled screen and matrix
+stages are balanced at 298,199/300,817 cycles. K=64 remains the throughput
+option, while K=16 is reserved for finer pruning experiments. All modeled
+survivors retain their tags; accuracy still requires real activation traces.
+
 ## Definition of the first successful port
 
 The port is complete at the initial W8 milestone only when the PYNQ-Z2 loads

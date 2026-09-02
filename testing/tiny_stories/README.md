@@ -200,3 +200,26 @@ For 12,464 whole-tile tasks, the two-batch tag is eight bits and contributes
 completions. It remains faster through 39 tag-lookup cycles per task and loses
 at 40. Equal 100%/100% batches perform no steals and pay only the approximately
 1.1% tag overhead, supporting idle-triggered rather than proactive stealing.
+
+## Micro-computation screening and GEMV packing
+
+The next model charges every significance decision before it can discard a
+candidate. Survivors keep their `(batch_id, operation_id, generation)` tags and
+compatible GEMVs are packed into the rows of an eight-row GEMM:
+
+```powershell
+python testing/tiny_stories/run_microbatch_gemm_model.py `
+  testing/tiny_stories/artifacts/w4a8_qat_500step/stories15M_w4a8_qat_float.bin `
+  --batch-activation-factors 0.05,0.1,0.25,0.5,1,1,1,1 `
+  --activation-density 0.5 --significant-code 4 `
+  --chunks 16,32,64 --predicate-lanes 2,4,8,16 `
+  --enqueue-lanes 4 --matrix-multipliers 2 --gemm-rows 8 `
+  --output testing/tiny_stories/results/microbatch_gemm_w4_code4_enqueue4
+```
+
+With eight predicate lanes and a four-lane survivor compactor, K=64 has the
+best conservative bound at 355,475 cycles (`2.762x` over dense batched GEMM).
+K=32 takes 421,032 cycles but issues 10.4% fewer wasted row-steps, so it is the
+recommended first RTL granularity. The model reports zero missing, duplicated,
+or misrouted tags. See `FPGA/MICROBATCH_GEMM_VALIDATION.md`; its activation
+masks are synthetic and do not establish an accuracy-safe sparsity rule.

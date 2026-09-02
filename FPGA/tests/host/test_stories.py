@@ -30,6 +30,13 @@ from budgetcuda.stories_module_goldens import (  # noqa: E402
     validate_w4a8_module_goldens,
 )
 from budgetcuda.packing import pack_transformer_weights  # noqa: E402
+from budgetcuda.microbatch_gemm_model import (  # noqa: E402
+    MicroCandidate,
+    ScreeningCosts,
+    build_micro_candidates,
+    evaluate_screen_and_pack,
+    pack_survivors_as_gemm,
+)
 from budgetcuda.work_stealing_model import (  # noqa: E402
     SchedulerCosts,
     TaskTag,
@@ -356,3 +363,51 @@ def test_batch_tags_survive_stealing_and_route_completion_by_batch():
     assert stealing.completed_tasks_by_batch == {0: 8, 1: 8}
     assert stealing.tag_lookup_cycles == 16
     assert stealing.tag_bits >= 4
+
+
+def test_micro_candidates_drop_insignificant_work_and_pack_gemv_rows():
+    candidates = [
+        MicroCandidate(TaskTag(0, 2, 0), "op", 3, 16, 4, 0b0011),
+        MicroCandidate(TaskTag(1, 2, 0), "op", 3, 16, 4, 0),
+        MicroCandidate(TaskTag(2, 2, 0), "op", 3, 16, 4, 0b1100),
+    ]
+    bundles = pack_survivors_as_gemm(candidates, gemm_rows=8)
+    assert len(bundles) == 1
+    assert bundles[0].valid_rows == 2
+    assert bundles[0].compute_steps == 4
+    assert [tag.batch_id for tag in bundles[0].tags] == [0, 2]
+
+    metrics = evaluate_screen_and_pack(
+        candidates,
+        costs=ScreeningCosts(
+            predicate_lanes=2, enqueue_lanes=2, matrix_multipliers=1,
+        ),
+    )
+    assert metrics["candidate_count"] == 3
+    assert metrics["survivor_count"] == 2
+    assert metrics["dropped_count"] == 1
+    assert metrics["tag_mismatches"] == 0
+
+
+def test_micro_screen_width_reduces_overhead_without_changing_survivors(tmp_path):
+    checkpoint_path = tmp_path / "random.bin"
+    _write_random_checkpoint(checkpoint_path)
+    checkpoint = Llama2CCheckpoint(checkpoint_path)
+    candidates = build_micro_candidates(
+        checkpoint,
+        batch_activation_factors=[0.25, 1.0],
+        activation_density=0.5,
+        significant_code=1,
+        k_chunk_steps=2,
+        seed=9,
+    )
+    narrow = evaluate_screen_and_pack(
+        candidates, costs=ScreeningCosts(predicate_lanes=1),
+    )
+    wide = evaluate_screen_and_pack(
+        candidates, costs=ScreeningCosts(predicate_lanes=8),
+    )
+    assert narrow["survivor_count"] == wide["survivor_count"]
+    assert narrow["bundle_count"] == wide["bundle_count"]
+    assert narrow["predicate_cycles"] > wide["predicate_cycles"]
+    assert wide["tag_mismatches"] == 0

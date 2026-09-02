@@ -31,6 +31,13 @@ from .work_stealing_model import (SchedulerCosts, TaskTag, TileTask,
                                   schedule_work_stealing,
                                   write_tagged_batch_report,
                                   write_scheduler_report)
+from .microbatch_gemm_model import (GemmBundle, MicroCandidate,
+                                    ScreeningCosts,
+                                    build_micro_candidates,
+                                    evaluate_microbatch_sweep,
+                                    evaluate_screen_and_pack,
+                                    pack_survivors_as_gemm,
+                                    write_microbatch_report)
 
 __all__ = [
     "BoardEndpoint", "DEFAULT_PROTOCOL_PORT", "DEFAULT_PYNQ_IP", "Device",
@@ -57,4 +64,8 @@ __all__ = [
     "evaluate_scheduler_overhead", "evaluate_tagged_batch_overhead",
     "schedule_central_queue", "schedule_static", "schedule_work_stealing",
     "write_scheduler_report", "write_tagged_batch_report",
+    "GemmBundle", "MicroCandidate", "ScreeningCosts",
+    "build_micro_candidates", "evaluate_microbatch_sweep",
+    "evaluate_screen_and_pack", "pack_survivors_as_gemm",
+    "write_microbatch_report",
 ]
