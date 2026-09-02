@@ -18,6 +18,9 @@ from .stories_quantization import (StoriesFakeQuantReference,
                                    evaluate_quantization_sweep,
                                    export_quantized_stories_golden,
                                    write_quantization_report)
+from .stories_module_goldens import (StoriesW4A8ModuleSimulator,
+                                     export_w4a8_module_goldens,
+                                     validate_w4a8_module_goldens)
 
 __all__ = [
     "BoardEndpoint", "DEFAULT_PROTOCOL_PORT", "DEFAULT_PYNQ_IP", "Device",
@@ -37,4 +40,6 @@ __all__ = [
     "StoriesFakeQuantReference", "StoriesQuantizationSpec",
     "evaluate_quantization_sweep", "export_quantized_stories_golden",
     "write_quantization_report",
+    "StoriesW4A8ModuleSimulator", "export_w4a8_module_goldens",
+    "validate_w4a8_module_goldens",
 ]

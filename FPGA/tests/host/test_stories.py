@@ -17,11 +17,19 @@ from budgetcuda.stories import (  # noqa: E402
     validate_stories_golden,
 )
 from budgetcuda.stories_quantization import (  # noqa: E402
+    StoriesFakeQuantReference,
     StoriesQuantizationSpec,
     evaluate_quantization_sweep,
     export_quantized_stories_golden,
     write_quantization_report,
 )
+from budgetcuda.stories_module_goldens import (  # noqa: E402
+    StoriesW4A8ModuleSimulator,
+    export_w4a8_module_goldens,
+    pack_int4_tiled,
+    validate_w4a8_module_goldens,
+)
+from budgetcuda.packing import pack_transformer_weights  # noqa: E402
 
 
 def _checkpoint_arrays(config, *, shared=True):
@@ -230,3 +238,41 @@ def test_wxay_golden_records_policy_and_validates_payload(tmp_path):
     validation = validate_stories_golden(json_path)
     assert validation["steps"] == 2
     assert validation["tensors"] > 0
+
+
+def test_module_golden_int4_packing_matches_accelerator_layout():
+    codes = np.asarray([
+        [-8, -1, 0],
+        [1, 2, 3],
+        [4, 5, 6],
+        [7, -7, -6],
+    ], dtype=np.int8)
+    actual = pack_int4_tiled(codes)
+    expected = pack_transformer_weights(codes.T.tolist(), 3, 4, int4=True)
+    assert actual.tobytes() == expected
+
+
+def test_module_simulator_matches_w4a8_reference_and_exports_archives(tmp_path):
+    checkpoint_path = tmp_path / "random.bin"
+    _write_random_checkpoint(checkpoint_path)
+    checkpoint = Llama2CCheckpoint(checkpoint_path)
+    tokens = [1, 2, 3]
+    simulator = StoriesW4A8ModuleSimulator(checkpoint)
+    logits, modules = simulator.run_tokens(tokens, capture_position=2)
+    reference = StoriesFakeQuantReference(
+        checkpoint, StoriesQuantizationSpec(4, 8, "per_output"),
+    ).run_tokens(tokens, capture=False)
+    for actual, expected in zip(logits, reference):
+        np.testing.assert_allclose(actual, expected.logits, rtol=2e-5, atol=2e-5)
+    assert "layer_00/q_projection" in modules
+    assert modules["layer_00/q_projection"]["accumulator_int32"].dtype == np.int32
+    assert modules["layer_00/q_projection"]["weight_packed_tiled_int4"].dtype == np.uint8
+
+    manifest = export_w4a8_module_goldens(
+        checkpoint, tmp_path / "modules", tokens, capture_position=2,
+    )
+    metadata = json.loads(manifest.read_text(encoding="utf-8"))
+    assert metadata["module_count"] == len(modules)
+    validation = validate_w4a8_module_goldens(manifest)
+    assert validation["modules"] == len(modules)
+    assert validation["tensors"] > validation["modules"]
