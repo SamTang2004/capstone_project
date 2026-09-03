@@ -60,3 +60,6 @@ extreme load-balance stress test.
 The evaluator is `budgetcuda.stories_sparsity_accuracy`; the CLI is
 `testing/tiny_stories/run_sparsity_accuracy.py`. Generated JSON records both
 FP32-relative and incremental dense-W4A8-relative logit metrics.
+
+For comparison with published activation sparsity, pruning, dynamic batching,
+and block-sparse routing systems, see `SPARSITY_RESEARCH_COMPARISON.md`.
