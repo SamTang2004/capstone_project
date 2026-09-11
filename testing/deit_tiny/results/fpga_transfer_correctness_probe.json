@@ -1,0 +1,64 @@
+{
+  "mode": "serialized_back_to_back_resident_graphs",
+  "cross_image_hardware_overlap": false,
+  "clock_hz": 100000000,
+  "iterations": 2,
+  "warmup_iterations": 0,
+  "model_load_seconds": 16.892387900001268,
+  "isolated_diagnostic": {
+    "class_index": 0,
+    "class_name": "apple_fresh",
+    "logits": [
+      127,
+      127,
+      127,
+      127,
+      127,
+      127
+    ],
+    "host_seconds": 0.4310443000013038,
+    "device_graph_seconds": 0.3488285999992513,
+    "window_cycles": 32612231,
+    "busy_cycles": 27403239,
+    "operations": 1804512720,
+    "busy_percent_within_graph": 84.02748956365481,
+    "busy_percent_of_host_wall": 63.57406651686872,
+    "effective_gops": 5.542606748240936,
+    "arithmetic_peak_utilization_percent": 21.650807610316154
+  },
+  "warmup_host_seconds": [],
+  "continuous": {
+    "first_class_index": 0,
+    "first_class_name": "apple_fresh",
+    "first_logits": [
+      127,
+      127,
+      127,
+      127,
+      127,
+      127
+    ],
+    "last_logits": [
+      127,
+      127,
+      127,
+      127,
+      127,
+      127
+    ],
+    "wall_seconds": 0.7011908999993466,
+    "images_per_second": 2.8522902964112395,
+    "device_graph_limited_images_per_second": 3.0613905233722694,
+    "mean_host_seconds": 0.3504197499996735,
+    "p50_host_seconds": 0.3504197499996735,
+    "p95_host_seconds": 0.350728855000034,
+    "mean_device_graph_seconds": 0.3266489500001626,
+    "p50_device_graph_seconds": 0.3266489500001626,
+    "p95_device_graph_seconds": 0.32667896499951893,
+    "estimated_accelerator_busy_percent_of_wall": 78.16199268993805,
+    "effective_gops_over_wall": 5.146994121006652,
+    "arithmetic_peak_utilization_percent_over_wall": 20.105445785182233,
+    "estimated_busy_cycles": 54806478,
+    "estimation_note": "Uses the isolated run's deterministic busy cycles per graph over the production stream wall time; production runs disable diagnostic readback."
+  }
+}

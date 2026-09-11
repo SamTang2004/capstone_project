@@ -5,6 +5,9 @@ PYNQ-Z2 release. It covers the shortest path to inference, full deployment of a
 matched bitstream and daemon, benchmark reporting, and recovery after a board
 or service failure.
 
+For a clean host and board installation with no existing BudgetCUDA deployment,
+start with `FPGA/DEPLOYMENT_FROM_GROUND_ZERO.md`.
+
 The validated implementation is the W4A8 DeiT-Tiny accelerator with optional
 balanced HeatViT token pruning. At 100 MHz, the reference run averages
 416.63 ms for the resident device graph and 440.27 ms host-to-host.
@@ -129,6 +132,26 @@ The validated performance anchors are:
 Diagnostics add counter initialization and readback, so use
 `production_repeat_seconds` and `production_stage_seconds` for steady-state
 application latency. Use the saved cycle report for module attribution.
+
+To compare isolated latency against sustained resident-model throughput, run:
+
+```powershell
+& .\.venv\Scripts\python.exe testing\deit_tiny\run_continuous_benchmark.py `
+  'testing\deit_tiny\data\cache_256\FreshApple\FreshApple (1).jpg' `
+  --manifest testing\deit_tiny\artifacts\heatvit_w4a8_balanced\manifest.json `
+  --address 192.168.2.99 `
+  --clock-hz 100000000 `
+  --warmup 2 `
+  --iterations 20 `
+  --heatvit `
+  --output testing\deit_tiny\results\fpga_continuous_benchmark.json
+```
+
+The current protocol serializes complete graphs. This benchmark continuously
+submits resident-model executions and measures sustained images/second, but it
+does not claim cross-image FPGA overlap. Its wall-clock occupancy estimate uses
+the exact busy-cycle count from the isolated diagnostic graph and the elapsed
+time of the diagnostics-disabled production stream.
 
 ### 2.4 Select the pruning mode
 
@@ -405,7 +428,8 @@ unit waits for PYNQ boot initialization before loading the final overlay. Check
 networking is not yet available, use the FTDI UART helper at 115200 baud:
 
 ```powershell
-& .\.venv\Scripts\python.exe FPGA\tests\hardware\pynq_ftdi_uart.py
+& .\.venv\Scripts\python.exe testing\deit_tiny\scan_ftdi_uart.py `
+  --serial 1234-tulB --seconds 10 --prompt
 ```
 
 ### Board freezes or disconnects during testing
