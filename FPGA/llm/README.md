@@ -38,8 +38,11 @@ operand-starvation watchdog yet; reset is required to cancel an incomplete tile.
 (default 128 bits, four entries). Depth must be positive. It supports a push
 on a full queue when simultaneously popping, explicit non-power-of-two wrap,
 and stable output under backpressure. There is no empty-queue bypass. Reset
-cancels queued descriptors. It is not yet connected to AXI or the tile core,
-and is not a work-stealing deque.
+cancels queued descriptors. It is not a work-stealing deque.
+`llm_axi_queued_top.sv` now connects a 512-bit
+instance to the reused AXI-Lite slave and original DDR/GEMM top through an
+internal register-replay FSM. See `AXI_QUEUE_ABI.md` for the separate LLM map,
+enqueue/ACK/fault rules, tests and current limitations.
 
 Run `FPGA/llm/sim/run.ps1` from PowerShell. It uses Vivado 2024.2 XSim with
 the real DSP48E1 simulation model, not a mock accelerator. Build artifacts stay
@@ -66,12 +69,12 @@ metadata reset or stopped systemd unit a physical bitstream unload.
 
 ## Still required before a deployable overlay
 
-1. Reuse the existing AXI-Lite handshake implementation; add a versioned LLM
-   command/completion register adapter without changing legacy register meanings.
-   New host driver must check the identity before any launch.
-2. Connect the queue/dispatch path to the retained GEMM scheduler and existing
-   HP0 memory subsystem. Preserve cache lifetime, burst coalescing, prefetch and
-   write-drain completion rules. Time compute and transport separately.
+1. Add the host driver for the now-implemented versioned AXI queue adapter;
+   it must check identity and enqueue acceptance before launch. The old AXI
+   module/backend remain unchanged; only the distinct LLM-facing map uses tags.
+2. Integrate `llm_axi_queued_top` with the existing HP0 AXI3 bridge and board
+   design. Queue-to-DDR-command integration now passes RTL simulation; PS/HP0
+   and board checks remain. Time replay, compute and transport separately.
 3. Separate PYNQ block design/build output `llm_pynq_z2.bit/.hwh`, timing and
    resource reports; never overwrite the DeiT artifacts as a build side effect.
 4. Exact board goldens for GEMV/GEMM and model-sized tiling. Then add a tagged
