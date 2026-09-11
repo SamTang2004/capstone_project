@@ -3,8 +3,6 @@
 /testing/deit_tiny/data/
 /testing/deit_tiny/artifacts/
 /testing/deit_small/artifacts/
-/testing/tiny_stories/artifacts/
-/testing/tiny_stories/results/
 /.venv*/
 __pycache__/
 *.py[cod]
@@ -29,4 +27,3 @@ FPGA/train_model/hls_fruit_cnn/
 FPGA/hardware/NA/
 NA/
 FPGA/firmware_*_deploy.tar.gz
-ASIC/OpenROAD-flow-scripts/

@@ -1,10 +1,5 @@
 module bcuda_transformer_ddr_top #(
-    parameter bit ENABLE_LEGACY_STANDALONE =
-`ifdef BCUDA_ASIC
-        1'b0
-`else
-        1'b1
-`endif
+    parameter bit ENABLE_LEGACY_STANDALONE = 1'b1
 ) (
     input logic aclk, aresetn,
     input logic [7:0] s_axi_awaddr, input logic s_axi_awvalid, output logic s_axi_awready,
