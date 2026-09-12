@@ -1,5 +1,7 @@
 # Independent LLM overlay — milestone 0
 
+Latest verified status and next steps: [PROGRESS.md](PROGRESS.md).
+
 This is an additive design root on `LLM_research`. The branch was checkpointed
 at `d8c6abe` (branch `codex/checkpoint-llm-before-deit-20260911`), then restored
 to the exact DeiT `a0f1720` tree by commit `f07f154` without rewriting history.
