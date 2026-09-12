@@ -36,7 +36,12 @@ Expected outputs after success:
 
 - `llm_pynq_z2.bit`, `llm_pynq_z2.hwh`, `llm_pynq_z2.xsa`
 - `utilization_synth.rpt`, `utilization_impl.rpt`, `timing_impl.rpt`, `drc.rpt`
-- console marker `LLM_RELEASE_PASS` with WNS/WHS and clock frequency
+- console marker `LLM_RELEASE_PASS` with WNS/WHS (clock is recorded in HWH)
+
+Latest validated result: `GEMM_BUILD_RESULT.md`. Export-only recovery from the
+existing routed `build/gemm_board` project is available through
+`resume_export.tcl`; it repeats the timing gate before run-managed bitstream
+generation. The full build uses the same `export_release.tcl` helper.
 
 Bitstream generation is not a physical functional test. The board still
 requires identity/readback, golden results, and clock verification before

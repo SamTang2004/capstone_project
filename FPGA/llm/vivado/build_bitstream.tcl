@@ -22,15 +22,4 @@ open_run impl_1
 report_utilization -file [file join $output_dir utilization_impl.rpt]
 report_timing_summary -delay_type min_max -report_unconstrained -file [file join $output_dir timing_impl.rpt]
 report_drc -file [file join $output_dir drc.rpt]
-set setup_paths [get_timing_paths -delay_type max -max_paths 1]
-set hold_paths [get_timing_paths -delay_type min -max_paths 1]
-if {![llength $setup_paths] || ![llength $hold_paths]} {error "Missing timing paths"}
-set wns [get_property SLACK $setup_paths]
-set whs [get_property SLACK $hold_paths]
-if {$wns < 0 || $whs < 0} {error "Timing failed: WNS=$wns WHS=$whs; no release bitstream"}
-write_bitstream -force [file join $output_dir llm_pynq_z2.bit]
-set hwh [file join $project_dir budgetcuda_board.gen sources_1 bd bcuda_ps_pl hw_handoff bcuda_ps_pl.hwh]
-if {![file exists $hwh]} {error "Missing HWH: $hwh"}
-file copy -force $hwh [file join $output_dir llm_pynq_z2.hwh]
-write_hw_platform -fixed -include_bit -force [file join $output_dir llm_pynq_z2.xsa]
-puts "LLM_RELEASE_PASS WNS=$wns WHS=$whs FCLK_MHZ=$pl_clock_mhz OUTPUT=$output_dir"
+source [file join $entry_dir export_release.tcl]

@@ -1,5 +1,8 @@
 # First real Vivado board implementation — 2026-09-11
 
+Historical failed full-backend run. The later GEMM-only build passes timing
+and exports BIT/HWH/XSA; see `GEMM_BUILD_RESULT.md`. This evidence is retained.
+
 **Result: implemented/routed, but not timing-qualified; no release bitstream.**
 
 Source checkpoint: `5ff949a` on `LLM_research`. Vivado 2024.2 built the real

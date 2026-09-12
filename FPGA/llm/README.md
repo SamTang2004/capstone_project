@@ -82,8 +82,10 @@ metadata reset or stopped systemd unit a physical bitstream unload.
 5. LLM-specific operations and state (RMSNorm, RoPE, causal attention, KV cache,
    SiLU gate) remain host/ARM initially and must match existing QAT goldens.
 
-Milestone 0 is **not** a deployable bitstream, work-stealing scheduler, or full
-LLM hardware implementation. The old overlay mismatch investigation is parked,
+The GEMM-only bitstream now passes routed timing and exports BIT/HWH/XSA;
+see `vivado/GEMM_BUILD_RESULT.md`. It still requires physical board validation
+and is not a work-stealing scheduler or full LLM hardware implementation.
+The old overlay mismatch investigation is parked,
 not resolved, and is no longer a prerequisite for building this new design.
 
 ## GEMM-only pruning (2026-09-11)
