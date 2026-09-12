@@ -1,0 +1,12 @@
+../../hardware/rtl/axi_lite_control.sv
+../../hardware/rtl/pe_int8_mac.sv
+../../hardware/rtl/weight_vector_decode.sv
+../../hardware/rtl/matrix_array_8x8.sv
+../../hardware/rtl/gemm_8x8_tile_core.sv
+../../hardware/rtl/transformer_gemm_scheduler.sv
+../../hardware/rtl/transformer_debug_counters.sv
+../../hardware/rtl/transformer_control_status.sv
+../../hardware/rtl/memory_io_driver.sv
+../rtl/llm_command_queue.sv
+../rtl/llm_gemm_ddr_top.sv
+../rtl/llm_axi_queued_top.sv

@@ -1,10 +1,10 @@
 # Queued GEMM AXI adapter — ABI 1
 
-`llm_axi_queued_top` wraps an **unchanged** `bcuda_transformer_ddr_top` and
+`llm_axi_queued_top` wraps `llm_gemm_ddr_top`, a GEMM-only backend, and
 reuses `axi_lite_control` for its host-facing interface. Its external AXI-Lite
-and memory-command ports match the original top, allowing later reuse of the
-existing HP0 AXI3 bridge. No bridge, cache, prefetch or scheduler source was
-modified. This top is not yet substituted into the board block design.
+and memory-command ports retain the original interface. The board design uses
+the existing HP0 AXI3 bridge. Bus/cache sources are unchanged; the shared
+scheduler has a default-on fused-writer parameter, disabled only for LLM.
 
 The adapter captures all sixteen 32-bit staging registers atomically into a
 four-entry FIFO on the rising edge of CONTROL.START. It keeps one active task
@@ -69,7 +69,7 @@ FIFO is a FIFO, not a deque, and cannot yet steal or reorder tasks.
 
 ## Validation
 
-`sim/run_integration.ps1` compiles the original DDR/GEMM top, memory driver,
+`sim/run_integration.ps1` compiles the GEMM-only DDR top from the board source manifest, memory driver,
 AXI slave and DSP48E1 simulation model plus the new adapter. A byte-addressed
 DDR responder injects command/read/write stalls. This covers the memory-command
 boundary, **not** the PS or AXI3 bridge electrical/board behavior.
@@ -82,8 +82,23 @@ The integration test passes:
 - full FIFO rejection without execution of the rejected output buffer;
 - immutable queued snapshots/tags and completion held until ACK;
 - unsupported-op rejection, backend invalid-K error, fault-blocked dispatch;
-- explicit reset clearing queued and fault state.
+- explicit reset clearing queued and fault state;
+- W8/W4 logical 17x13x9 multitile goldens (physical K=10 with zero padding), dual cores, row padding,
+  W4 cache hit/miss paths and next-N-tile prefetch.
 
 Tile and standalone FIFO regressions also run through `sim/run.ps1`. All
 results are RTL simulation only. Synthesis, timing closure, board build and
 physical golden validation remain required before deployment.
+
+## Packed-layout limitation discovered during pruning
+
+The retained W4 cache/prefetch path assumes each N tile starts on an 8-byte
+boundary. A packed tile occupies `K*4` bytes. With odd K and multiple N tiles,
+the second tile is only 4-byte aligned; the memory driver returns a partial
+qword that the existing scheduler rejects (observed backend status 0x4).
+This is not numerical quantization loss. For the current host contract, use
+8-byte-aligned A/B bases and pad odd W4 K to even K with zeros in **both** A
+and B; program the padded K and repack every tile using that physical K.
+The new 17x13 test checks every result against unpadded K=9 arithmetic while
+executing padded K=10. General unaligned W4 reconstruction is not implemented.
+A backend error still requires reset under the fault contract above.

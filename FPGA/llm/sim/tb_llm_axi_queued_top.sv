@@ -120,6 +120,44 @@ module tb_llm_axi_queued_top;
         axi_read('h04,status);
         if(status & 32'h1fa)$fatal(1,"queue not drained %h",status);
         expect_i32('ha00,0);
+        // Cross both M-pair and N-tile boundaries; logical K=9 is zero-padded to aligned physical K=10.
+        // Layout is [tile][K][8 lanes], output has deliberate row padding.
+        for(int mode=0;mode<2;mode++)begin
+            for(int tile=0;tile<3;tile++)for(int k=0;k<10;k++)for(int lane=0;lane<8;lane++)
+                mem['h100+tile*80+k*8+lane]=(tile*8+lane<17 && k<9)?((tile*8+lane+k*3)%17-8):0;
+            for(int tile=0;tile<2;tile++)for(int k=0;k<10;k++)begin
+                for(int lane=0;lane<8;lane++)
+                    mem['h400+tile*80+k*8+lane]=(tile*8+lane<13 && k<9)?((k*5+tile*8+lane)%16-8):0;
+                for(int pair=0;pair<4;pair++)begin
+                    mem['h500+tile*40+k*4+pair]=
+                        (mem['h400+tile*80+k*8+pair*2]&8'h0f) |
+                        ((mem['h400+tile*80+k*8+pair*2+1]&8'h0f)<<4);
+                end
+            end
+            for(int i='hb00;i<'hf40;i++)mem[i]=8'h5a;
+            axi_write('h00,0);axi_write('h08,'h100);axi_write('h0c,mode?'h500:'h400);
+            axi_write('h10,'hb00);axi_write('h1c,64);
+            axi_write('h20,17);axi_write('h24,13);axi_write('h28,10);
+            axi_write('h2c,200+mode);axi_write('h30,300+mode);axi_write('h00,mode?'h801:1);
+            status=0;while(!status[3])axi_read('h04,status);
+            axi_read('h44,value);if(value!=200+mode)$fatal(1,"multitile batch");
+            axi_read('h48,value);if(value!=300+mode)$fatal(1,"multitile task");
+            axi_read('h4c,value);if(value[2] || !value[1])$fatal(1,"multitile mode=%0d status %h",mode,value);
+            for(int row=0;row<17;row++)begin
+                for(int col=0;col<13;col++)begin
+                    integer golden;
+                    golden=0;
+                    for(int k=0;k<9;k++)golden+=((row+k*3)%17-8)*((k*5+col)%16-8);
+                    expect_i32('hb00+row*64+col*4,golden);
+                end
+                for(int pad=52;pad<64;pad++)if(mem['hb00+row*64+pad]!==8'h5a)$fatal(1,"row padding overwritten");
+            end
+            if(mode && (dut.backend.gemm_w4_cache_hit_tiles==0 || dut.backend.gemm_w4_cache_miss_tiles==0))
+                $fatal(1,"W4 cache hit/miss paths not exercised");
+            ack=1-ack;axi_write('h80,ack);
+        end
+        // Restore a valid shape before the later invalid-K test.
+        axi_write('h1c,12);axi_write('h20,3);axi_write('h24,3);
         // Unsupported opcode returns a tagged error without touching backend.
         axi_write('h00,0);axi_write('h30,123);axi_write('h00,'h40001);
         status=0;while(!status[3])axi_read('h04,status);

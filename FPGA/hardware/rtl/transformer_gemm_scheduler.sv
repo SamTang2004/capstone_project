@@ -2,7 +2,9 @@ module transformer_gemm_scheduler #(
     parameter int MAX_K = 1024,
     parameter int MAX_N = 768,
     parameter int MAX_W4_CACHE_VECTORS = 18432,
-    parameter int K_WIDTH = $clog2(MAX_K + 1)
+    parameter int K_WIDTH = $clog2(MAX_K + 1),
+    // Default preserves the DeiT implementation. LLM plain GEMM omits it.
+    parameter bit ENABLE_FUSED_WRITER = 1'b1
 ) (
     input  logic clk, rst_n, pipeline_enable,
     input  logic start, weight_int4, fused_requant, fused_gelu,
@@ -274,6 +276,7 @@ module transformer_gemm_scheduler #(
     );
 
     assign fused_writer_start = state == FUSED_START && pipeline_enable;
+    generate if (ENABLE_FUSED_WRITER) begin : gen_fused_writer
     gemm_requantize_writer fused_writer (
         .clk, .rst_n, .pipeline_enable, .start(fused_writer_start),
         .gelu_enable(fused_gelu_r),
@@ -292,6 +295,18 @@ module transformer_gemm_scheduler #(
         .write_req_addr(fused_write_req_addr), .write_req_data(fused_write_req_data),
         .write_req_strb(fused_write_req_strb), .write_req_last(fused_write_req_last)
     );
+
+    end else begin : gen_no_fused_writer
+        assign fused_writer_busy = 1'b0;
+        assign fused_writer_done = 1'b0;
+        assign fused_writer_capture_done = 1'b0;
+        assign fused_writer_error = 1'b0;
+        assign fused_write_req_valid = 1'b0;
+        assign fused_write_req_addr = '0;
+        assign fused_write_req_data = '0;
+        assign fused_write_req_strb = '0;
+        assign fused_write_req_last = 1'b0;
+    end endgenerate
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin

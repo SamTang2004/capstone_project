@@ -9,8 +9,9 @@ Ignored model/golden/build files remain on disk, not in the Git checkpoint.
 Preserve the DeiT AXI-Lite controller, HP0 AXI3 bridge, DDR memory driver,
 request pipelines, prefetch/cache machinery and GEMM scheduler. Do not rebuild
 the bus or discard bandwidth optimizations. The new queues and tagged dispatch
-will be integrated at command/completion boundaries. Existing hardware/RTL and
-Vivado source files remain byte-for-byte equal to the DeiT baseline for now.
+will be integrated at command/completion boundaries. Existing AXI/DDR
+bus sources remain byte-for-byte equal to the DeiT baseline. The shared GEMM
+scheduler adds a default-on fused-writer generate parameter; LLM disables it.
 
 ## Implemented
 
@@ -40,7 +41,7 @@ on a full queue when simultaneously popping, explicit non-power-of-two wrap,
 and stable output under backpressure. There is no empty-queue bypass. Reset
 cancels queued descriptors. It is not a work-stealing deque.
 `llm_axi_queued_top.sv` now connects a 512-bit
-instance to the reused AXI-Lite slave and original DDR/GEMM top through an
+instance to the reused AXI-Lite slave and GEMM-only DDR top through an
 internal register-replay FSM. See `AXI_QUEUE_ABI.md` for the separate LLM map,
 enqueue/ACK/fault rules, tests and current limitations.
 
@@ -70,10 +71,9 @@ metadata reset or stopped systemd unit a physical bitstream unload.
 ## Still required before a deployable overlay
 
 1. Add the host driver for the now-implemented versioned AXI queue adapter;
-   it must check identity and enqueue acceptance before launch. The old AXI
-   module/backend remain unchanged; only the distinct LLM-facing map uses tags.
-2. Integrate `llm_axi_queued_top` with the existing HP0 AXI3 bridge and board
-   design. Queue-to-DDR-command integration now passes RTL simulation; PS/HP0
+   it must check identity and enqueue acceptance before launch. The AXI slave remains unchanged; the distinct LLM-facing map uses tags.
+2. Validate the integrated `llm_axi_queued_top` and existing HP0 AXI3 bridge on
+   the board. Queue-to-DDR-command integration now passes RTL simulation; PS/HP0
    and board checks remain. Time replay, compute and transport separately.
 3. Separate PYNQ block design/build output `llm_pynq_z2.bit/.hwh`, timing and
    resource reports; never overwrite the DeiT artifacts as a build side effect.
@@ -85,3 +85,18 @@ metadata reset or stopped systemd unit a physical bitstream unload.
 Milestone 0 is **not** a deployable bitstream, work-stealing scheduler, or full
 LLM hardware implementation. The old overlay mismatch investigation is parked,
 not resolved, and is no longer a prerequisite for building this new design.
+
+## GEMM-only pruning (2026-09-11)
+
+`llm_gemm_ddr_top.sv` replaces the multi-operator DeiT backend. LayerNorm,
+Softmax, HeatViT pruning, elementwise residual/GELU, standalone requant and
+packing engines, fused requant/GELU writer and their operator arbitration are
+absent from the LLM elaboration. Their reference sources remain under the
+shared hardware directory, excluded by `vivado/rtl_sources.txt`. Both XSim
+integration and Vivado consume that explicit manifest. AXI, HP0 bridge, DDR
+cache, request skid stages, dual GEMM cores and W4 weight prefetch/cache remain.
+The shared scheduler's new parameter defaults to enabled for existing callers;
+only LLM sets it to zero. Unsupported operations are rejected, not emulated.
+
+This is a plain INT32-output W4A8/W8A8 GEMM engine, not complete LLM inference.
+Non-GEMM LLM operations must remain on the host until separately designed.

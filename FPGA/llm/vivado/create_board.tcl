@@ -11,15 +11,21 @@ if {![file exists [file join $board_repo "TUL" "pynq-z2" "A.0" "preset.xml"]]} {
     error "Missing vendored PYNQ-Z2 board files. Restore hardware/board_files/XilinxBoardStore."
 }
 
-source [file join $script_dir "final_bitstream_sources.tcl"]
-set project_dir [file join $llm_dir "build" "board"]
+set manifest [open [file join $llm_dir vivado rtl_sources.txt] r]
+set llm_rtl_files {}
+foreach relative_path [split [read $manifest] "\n"] {
+    if {[string trim $relative_path] ne ""} {
+        lappend llm_rtl_files [file normalize [file join $llm_dir vivado [string trim $relative_path]]]
+    }
+}
+close $manifest
+set project_dir [file join $llm_dir "build" "gemm_board"]
 set_param board.repoPaths [list $board_repo]
 create_project budgetcuda_board $project_dir -part xc7z020clg400-1 -force
 set_property target_language Verilog [current_project]
 set_property board_part tul.com.tw:pynq-z2:part0:1.0 [current_project]
-add_files -norecurse $final_rtl_files
-add_files -norecurse $board_wrapper_rtl_files
-add_files -norecurse [list [file join $llm_dir rtl llm_command_queue.sv] [file join $llm_dir rtl llm_axi_queued_top.sv] [file join $llm_dir rtl llm_axi_queued_ip.v]]
+add_files -norecurse $llm_rtl_files
+add_files -norecurse [list [file join $hw_dir rtl memory_io_axi3_bridge.sv] [file join $hw_dir rtl memory_io_axi3_bridge_ip.v] [file join $llm_dir rtl llm_axi_queued_ip.v]]
 add_files -fileset constrs_1 -norecurse [file join $script_dir "pynq_z2_timing_margin.xdc"]
 set_property file_type SystemVerilog [get_files *.sv]
 update_compile_order -fileset sources_1
