@@ -69,7 +69,7 @@ module llm_axi_queued_top (
     assign araddr = 8'h04;
     assign arvalid = state == POLL_ADDR;
     assign rready = state == POLL_DATA;
-    bcuda_transformer_ddr_top backend (
+    bcuda_transformer_ddr_top #(.ENABLE_LEGACY_STANDALONE(1'b0)) backend (
         .aclk,.aresetn,.s_axi_awaddr(awaddr),.s_axi_awvalid(awvalid),.s_axi_awready(awready),
         .s_axi_wdata(wdata),.s_axi_wstrb(4'hf),.s_axi_wvalid(wvalid),.s_axi_wready(wready),
         .s_axi_bresp(bresp),.s_axi_bvalid(bvalid),.s_axi_bready(bready),
