@@ -1,0 +1,5 @@
+set root [file normalize [file join [file dirname [info script]] ..]]
+set folder [file join $root build dsp_pipeline_baseline]
+open_checkpoint [file join $folder routed.dcp]
+report_timing -from [get_cells -hier -filter {REF_NAME == DSP48E1}] -max_paths 8 -file [file join $folder timing_from_dsp.rpt]
+report_timing -to [get_cells -hier -filter {REF_NAME == DSP48E1}] -max_paths 8 -file [file join $folder timing_to_dsp.rpt]

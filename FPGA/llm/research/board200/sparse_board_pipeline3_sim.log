@@ -1,0 +1,81 @@
+INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/python_projects/capstone_project/FPGA/llm/rtl/llm_bitmap_finder64.sv" into library work
+INFO: [VRFC 10-311] analyzing module llm_bitmap_finder64
+INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/python_projects/capstone_project/FPGA/llm/rtl/llm_dot_product_lane.sv" into library work
+INFO: [VRFC 10-311] analyzing module llm_dot_product_lane
+INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/python_projects/capstone_project/FPGA/llm/rtl/llm_dot_core8.sv" into library work
+INFO: [VRFC 10-311] analyzing module llm_dot_core8
+INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/python_projects/capstone_project/FPGA/llm/rtl/llm_activation_block_map.sv" into library work
+INFO: [VRFC 10-311] analyzing module llm_activation_block_map
+INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/python_projects/capstone_project/FPGA/llm/rtl/llm_tiled_activation8.sv" into library work
+INFO: [VRFC 10-311] analyzing module llm_tiled_activation8
+INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/python_projects/capstone_project/FPGA/llm/rtl/llm_sparse_board_memory.sv" into library work
+INFO: [VRFC 10-311] analyzing module llm_sparse_board_memory
+INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/python_projects/capstone_project/FPGA/llm/sim/tb_sparse_board_memory.sv" into library work
+INFO: [VRFC 10-311] analyzing module tb_sparse_board_memory
+INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/Xilinx/Vivado/2024.2/data/verilog/src/glbl.v" into library work
+INFO: [VRFC 10-311] analyzing module glbl
+Vivado Simulator v2024.2.0
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved.
+Copyright 2022-2024 Advanced Micro Devices, Inc. All Rights Reserved.
+Running: C:/Xilinx/Vivado/2024.2/bin/unwrapped/win64.o/xelab.exe tb_sparse_board_memory glbl -L unisims_ver --timescale 1ns/1ps -s sparse_board 
+Multi-threading is on. Using 10 slave threads.
+Starting static elaboration
+Pass Through NonSizing Optimizer
+Completed static elaboration
+Starting simulation data flow analysis
+Completed simulation data flow analysis
+Time Resolution for simulation is 1ps
+Compiling module work.llm_activation_block_map
+Compiling module work.llm_bitmap_finder64
+Compiling module unisims_ver.DSP48E1(ACASCREG=2,ADREG=0,AREG=...
+Compiling module work.llm_dot_product_lane
+Compiling module work.llm_dot_core8(FIXED_LANE_SLOTS=1...
+Compiling module work.llm_tiled_activation8
+Compiling module work.llm_sparse_board_memory
+Compiling module work.tb_sparse_board_memory
+Compiling module work.glbl
+Built simulation snapshot sparse_board
+
+****** xsim v2024.2 (64-bit)
+  **** SW Build 5239630 on Fri Nov 08 22:35:27 MST 2024
+  **** IP Build 5239520 on Sun Nov 10 16:12:51 MST 2024
+  **** SharedData Build 5239561 on Fri Nov 08 14:39:27 MST 2024
+  **** Start of session at: Fri Sep 18 17:31:36 2026
+    ** Copyright 1986-2022 Xilinx, Inc. All Rights Reserved.
+    ** Copyright 2022-2024 Advanced Micro Devices, Inc. All Rights Reserved.
+
+source xsim.dir/sparse_board/xsim_script.tcl
+# xsim {sparse_board} -autoloadwcfg -runall
+Time resolution is 1 ps
+run -all
+BOARD_BENCH K=65 rows=9 density=500 shift=0 skip=0 reuse=0 cycles=152 prep=16
+BOARD_BENCH K=4096 rows=64 density=1000 shift=0 skip=0 reuse=0 cycles=38624 prep=519
+BOARD_BENCH K=4096 rows=64 density=1 shift=0 skip=0 reuse=0 cycles=6808 prep=519
+BOARD_BENCH K=65 rows=9 density=500 shift=0 skip=1 reuse=0 cycles=144 prep=16
+BOARD_BENCH K=4096 rows=64 density=1000 shift=0 skip=1 reuse=0 cycles=38624 prep=519
+BOARD_BENCH K=4096 rows=64 density=1 shift=0 skip=1 reuse=0 cycles=680 prep=519
+BOARD_BENCH K=65 rows=9 density=500 shift=0 skip=0 reuse=1 cycles=122 prep=16
+BOARD_BENCH K=4096 rows=64 density=1000 shift=0 skip=0 reuse=1 cycles=33591 prep=519
+BOARD_BENCH K=4096 rows=64 density=1 shift=0 skip=0 reuse=1 cycles=977 prep=519
+BOARD_BENCH K=65 rows=9 density=500 shift=0 skip=1 reuse=1 cycles=118 prep=16
+BOARD_BENCH K=4096 rows=64 density=1000 shift=0 skip=1 reuse=1 cycles=33591 prep=519
+BOARD_BENCH K=4096 rows=64 density=1 shift=0 skip=1 reuse=1 cycles=211 prep=519
+BOARD_BENCH K=4096 rows=64 density=100 shift=0 skip=1 reuse=1 cycles=3989 prep=519
+BOARD_BENCH K=4096 rows=64 density=10 shift=0 skip=1 reuse=1 cycles=951 prep=519
+BOARD_BENCH K=0 rows=9 density=0 shift=0 skip=1 reuse=1 cycles=32 prep=8
+BOARD_BENCH K=3 rows=1 density=1000 shift=0 skip=1 reuse=1 cycles=35 prep=8
+BOARD_BENCH K=129 rows=17 density=1000 shift=2 skip=1 reuse=1 cycles=467 prep=24
+BOARD_BENCH K=129 rows=17 density=1000 shift=8 skip=1 reuse=1 cycles=46 prep=24
+BOARD_BENCH K=129 rows=17 density=1000 shift=15 skip=1 reuse=1 cycles=46 prep=24
+BOARD_BENCH K=65 rows=9 density=1000 shift=0 skip=1 reuse=1 cycles=186 prep=16
+BOARD_BENCH K=65 rows=9 density=1000 shift=0 skip=1 reuse=1 cycles=186 prep=16
+BOARD_BENCH K=65 rows=9 density=1000 shift=0 skip=1 reuse=1 cycles=186 prep=16
+BOARD_BENCH K=65 rows=9 density=1000 shift=0 skip=1 reuse=1 cycles=186 prep=16
+BOARD_BENCH K=65 rows=9 density=1000 shift=0 skip=1 reuse=1 cycles=186 prep=16
+BOARD_BENCH K=4096 rows=64 density=1000 shift=0 skip=1 reuse=1 cycles=74781 prep=519
+PASS: sparse board memory commands=25
+$finish called at time : 1609475 ns : File "C:/python_projects/capstone_project/FPGA/llm/sim/tb_sparse_board_memory.sv" Line 88
+run: Time (s): cpu = 00:00:00 ; elapsed = 00:00:52 . Memory (MB): peak = 195.984 ; gain = 0.000
+exit
+INFO: xsimkernel Simulation Memory Usage: 33476 KB (Peak: 33476 KB), Simulation CPU Usage: 52734 ms
+INFO: [Common 17-206] Exiting xsim at Fri Sep 18 17:32:30 2026...

@@ -1,0 +1,35 @@
+INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/python_projects/capstone_project/FPGA/llm/rtl/llm_sparse_board_control.sv" into library work
+INFO: [VRFC 10-311] analyzing module llm_sparse_board_control
+INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/python_projects/capstone_project/FPGA/llm/sim/tb_sparse_board_control.sv" into library work
+INFO: [VRFC 10-311] analyzing module tb_sparse_board_control
+Vivado Simulator v2024.2.0
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved.
+Copyright 2022-2024 Advanced Micro Devices, Inc. All Rights Reserved.
+Running: C:/Xilinx/Vivado/2024.2/bin/unwrapped/win64.o/xelab.exe tb_sparse_board_control --timescale 1ns/1ps -s board_control 
+Multi-threading is on. Using 10 slave threads.
+Starting static elaboration
+Pass Through NonSizing Optimizer
+Completed static elaboration
+Starting simulation data flow analysis
+Completed simulation data flow analysis
+Time Resolution for simulation is 1ps
+Compiling module work.llm_sparse_board_control
+Compiling module work.tb_sparse_board_control
+Built simulation snapshot board_control
+
+****** xsim v2024.2 (64-bit)
+  **** SW Build 5239630 on Fri Nov 08 22:35:27 MST 2024
+  **** IP Build 5239520 on Sun Nov 10 16:12:51 MST 2024
+  **** SharedData Build 5239561 on Fri Nov 08 14:39:27 MST 2024
+  **** Start of session at: Fri Sep 18 17:22:55 2026
+    ** Copyright 1986-2022 Xilinx, Inc. All Rights Reserved.
+    ** Copyright 2022-2024 Advanced Micro Devices, Inc. All Rights Reserved.
+
+source xsim.dir/board_control/xsim_script.tcl
+# xsim {board_control} -autoloadwcfg -runall
+Time resolution is 1 ps
+run -all
+PASS: sparse board AXI writes=33 reads=51
+$finish called at time : 4060 ns : File "C:/python_projects/capstone_project/FPGA/llm/sim/tb_sparse_board_control.sv" Line 66
+exit
+INFO: [Common 17-206] Exiting xsim at Fri Sep 18 17:22:57 2026...

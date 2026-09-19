@@ -1,0 +1,3 @@
+# Preserve raw validation evidence byte-for-byte, including manifest hashes.
+board100/** -text
+board200/** -text
